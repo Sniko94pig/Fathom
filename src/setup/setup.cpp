@@ -33,7 +33,7 @@ enum Stage { Ready, Working, Done, Failed };
 struct Options {
     Mode mode = Mode::Install;
     bool quiet = false, shortcut = true, registry = true, relaunched = false;
-    std::wstring dir, log;
+    std::wstring dir, log, snapshot;
 } opt;
 
 HWND wnd = nullptr, btnMain = nullptr, btnSecond = nullptr, btnCheck = nullptr;
@@ -466,6 +466,45 @@ void DrawButton(const DRAWITEMSTRUCT* di) {
     DrawTextW(dc, text, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
+void Snapshot(const std::wstring& file) {
+    RECT rc{0, 0, S(540), S(320)};
+    HDC screen = GetDC(nullptr);
+    HDC dc = CreateCompatibleDC(screen);
+    HBITMAP bmp = CreateCompatibleBitmap(screen, rc.right, rc.bottom);
+    HGDIOBJ old = SelectObject(dc, bmp);
+    Paint(dc, rc);
+    for (HWND b : {btnMain, btnSecond, btnCheck}) {
+        if (!IsWindowVisible(b) && !(GetWindowLongW(b, GWL_STYLE) & WS_VISIBLE)) continue;
+        RECT br;
+        GetWindowRect(b, &br);
+        MapWindowPoints(HWND_DESKTOP, wnd, (POINT*)&br, 2);
+        DRAWITEMSTRUCT di{};
+        di.CtlType = ODT_BUTTON;
+        di.CtlID = (UINT)GetDlgCtrlID(b);
+        di.hwndItem = b;
+        di.hDC = dc;
+        di.rcItem = RECT{0, 0, br.right - br.left, br.bottom - br.top};
+        SetViewportOrgEx(dc, br.left, br.top, nullptr);
+        DrawButton(&di);
+        SetViewportOrgEx(dc, 0, 0, nullptr);
+    }
+    BITMAPINFOHEADER bi{sizeof(bi), rc.right, -rc.bottom, 1, 32, BI_RGB};
+    std::vector<uint8_t> px((size_t)rc.right * rc.bottom * 4);
+    GetDIBits(dc, bmp, 0, rc.bottom, px.data(), (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+    BITMAPFILEHEADER fh{};
+    fh.bfType = 0x4D42;
+    fh.bfOffBits = sizeof(fh) + sizeof(bi);
+    fh.bfSize = fh.bfOffBits + (DWORD)px.size();
+    std::ofstream out(fs::path(file), std::ios::binary);
+    out.write((const char*)&fh, sizeof(fh));
+    out.write((const char*)&bi, sizeof(bi));
+    out.write((const char*)px.data(), (std::streamsize)px.size());
+    SelectObject(dc, old);
+    DeleteObject(bmp);
+    DeleteDC(dc);
+    ReleaseDC(nullptr, screen);
+}
+
 void CleanupSelf() {
     if (!opt.relaunched) return;
     std::wstring cmd = L"cmd.exe /c ping 127.0.0.1 -n 3 > nul & del /f /q \"" + SelfPath() + L"\"";
@@ -545,6 +584,7 @@ void ParseArgs() {
         else if (a == L"--relaunched") opt.relaunched = true;
         else if (a == L"--dir" && i + 1 < argc) opt.dir = argv[++i];
         else if (a == L"--log" && i + 1 < argc) opt.log = argv[++i];
+        else if (a == L"--snapshot" && i + 1 < argc) opt.snapshot = argv[++i];
     }
     if (argv) LocalFree(argv);
     fs::path self = SelfPath();
@@ -622,6 +662,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     btnCheck = CreateWindowW(L"BUTTON", L"Also remove settings, map pictures and logs from the game folder", WS_CHILD | BS_OWNERDRAW, S(32),
                              S(204), S(540) - S(64), S(28), wnd, (HMENU)(INT_PTR)ID_CHECK, inst, nullptr);
     Layout();
+    if (!opt.snapshot.empty()) {
+        Snapshot(opt.snapshot);
+        DestroyWindow(wnd);
+        CoUninitialize();
+        return 0;
+    }
     ShowWindow(wnd, SW_SHOWNORMAL);
     UpdateWindow(wnd);
     MSG m;
