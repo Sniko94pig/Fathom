@@ -66,6 +66,10 @@ target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMG
 add_executable(fathom_shots src/preview/shots.cpp src/preview/sample.cpp)
 target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
+if(WIN32)
+  target_sources(fathom_shots PRIVATE src/launcher/home.cpp src/launcher/inject.cpp)
+  target_compile_definitions(fathom_shots PRIVATE FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
+endif()
 
 if(WIN32)
   add_executable(fathom_preview WIN32

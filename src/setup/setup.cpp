@@ -274,6 +274,17 @@ bool Install() {
     }
     progress = 1.0f;
     Show(Working, L"Setting up...", L"Putting the files in place");
+    fs::create_directories(dir / L"save-backups", ec);
+    fs::create_directories(dir / L"old-builds", ec);
+    if (fs::exists(dir / L"Fathom.exe", ec)) {
+        SYSTEMTIME t;
+        GetLocalTime(&t);
+        wchar_t stamp[64];
+        swprintf_s(stamp, L"%04d-%02d-%02d_%02d-%02d-%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        fs::path keep = dir / L"old-builds" / stamp;
+        fs::create_directories(keep, ec);
+        for (const wchar_t* f : kFiles) CopyFileW((dir / f).c_str(), (keep / f).c_str(), FALSE);
+    }
     for (const wchar_t* f : kFiles)
         if (!Replace(dir / (std::wstring(f) + L".download"), dir / f)) {
             Show(Failed, L"Could not replace the old files", L"Close Fathom and Subnautica 2, then press Try again.");
@@ -305,6 +316,8 @@ bool Uninstall() {
     for (const wchar_t* f : {L"Fathom.exe", L"fathom.dll", L"Fathom.exe.download", L"fathom.dll.download"}) ok = RemoveFile(dir / f) && ok;
     fs::path uninstaller = dir / kUninstaller;
     if (!fs::equivalent(SelfPath(), uninstaller, ec)) ok = RemoveFile(uninstaller) && ok;
+    fs::remove_all(dir / L"old-builds", ec);
+    if (fs::is_directory(dir / L"save-backups", ec) && fs::is_empty(dir / L"save-backups", ec)) fs::remove(dir / L"save-backups", ec);
     if (removeGameData) {
         std::wstring win64 = SteamWin64();
         if (!win64.empty()) fs::remove_all(fs::path(win64) / L"fathom", ec);

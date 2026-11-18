@@ -1,19 +1,37 @@
 # Fathom
 
-A mod menu for Subnautica 2 with a clean, minimal look: survival cheats, no-clip and fly, free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
+Fathom is a mod menu and game loader with a clean, minimal look. Pick a game in the Fathom app, start the game and press Inject.
+
+![Games page](shots/12-launcher-games.png)
+
+## Games
+
+| Game | Status |
+|---|---|
+| Subnautica 2 | Ready |
+| Borderlands, Borderlands 2, Borderlands 3, Borderlands 4 | Coming soon |
+| Cyberpunk 2077 | Coming soon |
+| Fallout 4, Fallout: New Vegas | Coming soon |
+| Outlast | Coming soon |
+| Satisfactory | Coming soon |
+| Sons of the Forest, The Forest | Coming soon |
+| Subnautica, Subnautica: Below Zero | Coming soon |
+| The Last of Us Part I, The Last of Us Part II | Coming soon |
+
+The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
 
 ![Survival page](shots/1-survival.png)
 
 ## Install
 
 1. Download `FathomSetup.exe` from the [latest release](https://github.com/Sniko94pig/Fathom/releases/latest).
-2. Run it and press **Install**. Fathom goes into `C:\Users\<you>\Fathom` and you get a **Fathom** shortcut on your desktop.
-3. Start Subnautica 2, open Fathom from the shortcut and press **Inject**.
+2. Run it and press **Install**. Fathom goes into `C:\Users\<you>\Fathom` with a `save-backups` and an `old-builds` folder, and you get a **Fathom** shortcut on your desktop.
+3. Open Fathom from the shortcut, pick Subnautica 2, start the game and press **Inject**.
 4. In the game, **Right Shift** opens the menu and **End** unloads it.
 
 Windows may say the installer is from an unknown publisher, because it isn't signed. Click **More info**, then **Run anyway**.
 
-Running the installer again updates Fathom to the newest version.
+Running the installer again updates Fathom to the newest version. The version you had before is kept in `old-builds`.
 
 ## Uninstall
 

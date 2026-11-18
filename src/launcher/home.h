@@ -9,7 +9,10 @@ struct Home {
     bool busy = false;
     bool injectNow = false;
     bool startNow = false;
+    int game = -1;
     void Draw();
+    void DrawLibrary();
+    void DrawSubnautica();
 };
 
 }

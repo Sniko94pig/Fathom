@@ -1,3 +1,6 @@
+#ifdef FATHOM_LAUNCHER_SHOTS
+#include "launcher/home.h"
+#endif
 #include "preview/sample.h"
 #include "ui/icons.h"
 #include "ui/menu.h"
@@ -228,6 +231,24 @@ int main(int argc, char** argv) {
              u.tab = core::Tab::Legit;
              m.legit = true;
          }, ImVec2(0, 0), nullptr},
+#ifdef FATHOM_LAUNCHER_SHOTS
+        {"12-launcher-games", [](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             u.homePage = [] { home.Draw(); };
+             u.homeName = "Games";
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(470, 230), nullptr},
+        {"13-launcher-subnautica", [](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = 0;
+             u.homePage = [] { home.Draw(); };
+             u.homeName = "Games";
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
+#endif
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {
              m.session = core::Session::Client;

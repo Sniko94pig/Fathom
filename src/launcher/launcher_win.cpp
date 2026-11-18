@@ -208,8 +208,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ui::Menu menu(model);
     menu.embedded = true;
     menu.homePage = [&] { home.Draw(); };
-    menu.homeName = "Inject";
-    menu.homeIcon = ICON_ZAP;
+    menu.homeName = "Games";
+    menu.homeIcon = ICON_PLAY;
     menu.onHome = true;
 
     ImGui_ImplWin32_Init(hwnd);

@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 
 namespace launcher {
@@ -41,6 +42,21 @@ void Step(ImDrawList* dl, ImVec2 p, float w, int n, const char* title, const cha
     TextFit(dl, T().regular, 12, ImVec2(p.x + S(38), p.y + S(20)), w - S(38), White(0.45f), body);
 }
 
+struct GameInfo {
+    const char* name;
+    const char* tag;
+    bool ready;
+};
+
+const GameInfo kGames[] = {
+    {"Subnautica 2", "SN2", true},          {"Borderlands", "BL", false},           {"Borderlands 2", "BL2", false},
+    {"Borderlands 3", "BL3", false},        {"Borderlands 4", "BL4", false},        {"Cyberpunk 2077", "CP", false},
+    {"Fallout 4", "FO4", false},            {"Fallout: New Vegas", "FNV", false},   {"Outlast", "OL", false},
+    {"Satisfactory", "SAT", false},         {"Sons of the Forest", "SOF", false},   {"Subnautica", "SN", false},
+    {"Subnautica: Below Zero", "BZ", false}, {"The Forest", "TF", false},           {"The Last of Us Part I", "TLOU", false},
+    {"The Last of Us Part II", "TLOU2", false},
+};
+
 void Row(ImDrawList* dl, ImVec2 p, float w, const char* label, const std::string& value, bool good) {
     Text(dl, T().medium, 12.5f, p, White(0.62f), label);
     Icon(dl, ImVec2(p.x + w - S(8), p.y + S(8)), S(14), good ? Accent() : Danger(), good ? ICON_CIRCLE_CHECK : ICON_TRIANGLE_ALERT);
@@ -50,9 +66,60 @@ void Row(ImDrawList* dl, ImVec2 p, float w, const char* label, const std::string
 }
 
 void Home::Draw() {
+    if (game == 0) DrawSubnautica();
+    else DrawLibrary();
+}
+
+void Home::DrawLibrary() {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 o = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
+    Text(dl, T().semibold, 18, o, White(0.97f), "Pick a game");
+    Text(dl, T().regular, 12.5f, ImVec2(o.x, o.y + S(28)), White(0.5f), "Subnautica 2 is ready. The other games are coming soon.");
+    const int cols = 3;
+    const int count = (int)(sizeof(kGames) / sizeof(kGames[0]));
+    float gap = S(10), top = o.y + S(58);
+    float tw = std::floor((w - gap * (cols - 1)) / cols), th = S(64);
+    for (int i = 0; i < count; ++i) {
+        const GameInfo& g = kGames[i];
+        ImVec2 a(o.x + (i % cols) * (tw + gap), top + (i / cols) * (th + gap)), b(a.x + tw, a.y + th);
+        ImGui::SetCursorScreenPos(a);
+        ImGui::PushID(i);
+        bool clicked = ImGui::InvisibleButton("game", ImVec2(tw, th));
+        bool hov = ImGui::IsItemHovered();
+        float hv = Ease(ImGui::GetID("hover"), hov && g.ready ? 1.0f : 0.0f, 18.0f);
+        ImGui::PopID();
+        dl->AddRectFilled(a, b, White(g.ready ? 0.045f + 0.03f * hv : 0.022f), S(12));
+        dl->AddRect(a, b, g.ready ? Accent(0.30f + 0.35f * hv) : White(0.045f), S(12));
+        if (g.ready && hv > 0.01f) Glow(dl, a, b, S(12), T().accent, 0.10f * hv, S(14));
+        ImVec2 ba(a.x + S(12), a.y + (th - S(40)) * 0.5f), bb(ba.x + S(40), ba.y + S(40));
+        dl->AddRectFilled(ba, bb, g.ready ? Accent(0.16f) : White(0.05f), S(10));
+        float tagSize = std::strlen(g.tag) > 3 ? 10.0f : 12.5f;
+        ImVec2 ts = Measure(T().semibold, tagSize, g.tag);
+        Text(dl, T().semibold, tagSize, ImVec2((ba.x + bb.x - ts.x) * 0.5f, (ba.y + bb.y - ts.y) * 0.5f), g.ready ? Accent() : White(0.45f), g.tag);
+        float nx = bb.x + S(12), nw = b.x - nx - S(10);
+        TextFit(dl, T().medium, 13.5f, ImVec2(nx, a.y + S(14)), nw, White(g.ready ? 0.95f : 0.62f), g.name);
+        if (g.ready) {
+            dl->AddCircleFilled(ImVec2(nx + S(4), a.y + S(42)), S(3.5f), Accent(), 12);
+            Text(dl, T().medium, 11.5f, ImVec2(nx + S(13), a.y + S(35)), Accent(0.9f), "Ready");
+        } else {
+            Text(dl, T().regular, 11.5f, ImVec2(nx, a.y + S(35)), White(0.38f), "Coming soon");
+        }
+        if (clicked && g.ready) game = i;
+        if (hov && !g.ready) Tip("Fathom does not support this game yet");
+    }
+    int rows = (count + cols - 1) / cols;
+    ImGui::SetCursorScreenPos(o);
+    ImGui::Dummy(ImVec2(w, top + rows * (th + gap) - o.y));
+}
+
+void Home::DrawSubnautica() {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 start = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x;
+    if (Button("back", "All games", start, ImVec2(S(128), S(34)), Btn::Ghost, ICON_UNDO_2, true)) game = -1;
+    Text(dl, T().semibold, 15, ImVec2(start.x + S(144), start.y + S(8)), White(0.9f), "Subnautica 2");
+    ImVec2 o(start.x, start.y + S(48));
     bool running = state != inject::GameState::NotRunning;
     bool injected = state == inject::GameState::Injected;
 
@@ -109,8 +176,8 @@ void Home::Draw() {
     if (Button("log", "Open log", ImVec2(c2.x + S(24) + bw, y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_INFO, hasLog))
         ShellExecuteW(nullptr, L"open", paths.log.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 
-    ImGui::SetCursorScreenPos(o);
-    ImGui::Dummy(ImVec2(w, y + ch - o.y));
+    ImGui::SetCursorScreenPos(start);
+    ImGui::Dummy(ImVec2(w, y + ch - start.y));
 }
 
 }
