@@ -64,6 +64,7 @@ void BuildFeatures(Model& m) {
     Slider(m, Tab::Survival, "Movement", "jump_height", "Jump height", 1.0f, 10.0f, 1.0f, 1.0f, 1.2f, 1.5f, 2.0f);
     Toggle(m, Tab::Survival, "Movement", "noclip", "No-clip", "Swim through walls and rocks like they are not there");
     Toggle(m, Tab::Survival, "Movement", "fly", "Fly", "Fly with WASD, Space and Ctrl, walls still stop you");
+    Slider(m, Tab::Survival, "Movement", "fly_speed", "Fly speed", 0.25f, 10.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
     Toggle(m, Tab::Survival, "Items", "unlimited_battery", "Unlimited tool battery", "Tools never drain");
     Toggle(m, Tab::Survival, "Items", "unlimited_use", "Unlimited use", "Food, medkits and tools come back after use");
 

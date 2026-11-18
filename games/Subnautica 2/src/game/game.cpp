@@ -1566,7 +1566,7 @@ void TickNoClip(bool allowed, double dt) {
     ue::FRotator rot;
     float fov;
     if (!CameraNow(cpos, rot, fov)) return;
-    double speed = 1000.0 * std::max(1.0, (double)Float("player_speed")) * (fast ? 4.0 : 1.0);
+    double speed = 1000.0 * std::clamp((double)Float("fly_speed"), 0.1, 20.0) * (fast ? 4.0 : 1.0);
     double pitch = rot.pitch > 180 ? rot.pitch - 360 : rot.pitch;
     double P = pitch * 3.14159265358979 / 180, Y = rot.yaw * 3.14159265358979 / 180;
     double fx = std::cos(P) * std::cos(Y), fy = std::cos(P) * std::sin(Y), fz = std::sin(P);
@@ -5333,7 +5333,7 @@ void Wire(core::Model& m, std::mutex& lock, unsigned long thread) {
     Implement("refill_food", refill("Food", "MaxFood", "hunger"));
     Implement("refill_water", refill("Water", "MaxWater", "thirst"));
     Implement("refill_oxygen", refill("Oxygen", "MaxOxygen", "oxygen"));
-    for (const char* id : {"unlock_blueprints", "unlock_databank", "unlock_dna", "free_camera_speed", "godmode", "infinite_oxygen", "unlimited_food", "unlimited_water", "unlimited_battery", "noclip", "fly",
+    for (const char* id : {"unlock_blueprints", "unlock_databank", "unlock_dna", "free_camera_speed", "fly_speed", "godmode", "infinite_oxygen", "unlimited_food", "unlimited_water", "unlimited_battery", "noclip", "fly",
                            "instant_build", "instant_deconstruct", "free_craft", "unlimited_power", "unlimited_use",
                            "esp_box", "hide_water_fog", "free_camera", "performance_mode", "game_speed", "instant_craft", "unlimited_biomod_energy",
                            "zero_cooldowns", "instant_scan", "instant_biosampler", "vehicle_hull", "vehicle_speed", "esp", "esp_hostile",
