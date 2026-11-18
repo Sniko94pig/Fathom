@@ -10,6 +10,7 @@ struct GameDef {
     int appId;
     const char* tag;
     bool ready;
+    bool building = false;
 };
 
 const std::vector<GameDef>& Games();

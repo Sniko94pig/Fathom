@@ -194,7 +194,8 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
     if (backName && onBack) list.push_back({0, nullptr, backName, ICON_UNDO_2});
     if (homePage) list.push_back({1, nullptr, homeName, homeIcon ? homeIcon : ICON_ZAP});
     for (const TabDef& d : kTabs)
-        if (showGameTabs || d.tab == Tab::Settings) list.push_back({2, &d, d.name, d.icon});
+        if ((showGameTabs || d.tab == Tab::Settings) && (m.tabs.empty() || std::find(m.tabs.begin(), m.tabs.end(), d.tab) != m.tabs.end()))
+            list.push_back({2, &d, d.name, d.icon});
     int count = (int)list.size();
     int idx = -1;
     for (int i = 0; i < count; ++i)
@@ -317,7 +318,10 @@ void Menu::Content(ImVec2 p, ImVec2 size) {
     } else {
         Banner();
         switch (tab) {
-        case Tab::Spawner: SpawnerPage(); break;
+        case Tab::Spawner:
+            if (std::find(m.plainTabs.begin(), m.plainTabs.end(), tab) != m.plainTabs.end()) FeaturePage(tab);
+            else SpawnerPage();
+            break;
         case Tab::BaseHub: HubPage(); break;
         case Tab::Legit: LegitPage(); break;
         case Tab::Settings: loader ? LoaderPage() : SettingsPage(); break;

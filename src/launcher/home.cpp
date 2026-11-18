@@ -56,11 +56,13 @@ void Row(ImDrawList* dl, ImVec2 p, float w, const char* label, const std::string
     TextFit(dl, T().regular, 12, ImVec2(p.x + S(120), p.y + S(1)), w - S(150), White(0.8f), value.c_str());
 }
 
-void Badge(ImDrawList* dl, ImVec2 p, const char* text, bool accent) {
+void Badge(ImDrawList* dl, ImVec2 p, const GameDef& g) {
+    const char* text = g.ready ? "Ready" : g.building ? "Being built" : "Soon";
     ImVec2 ts = Measure(T().semibold, 10.5f, text);
     ImVec2 b(p.x + ts.x + S(16), p.y + S(20));
-    dl->AddRectFilled(p, b, accent ? Accent(0.92f) : Black(0.62f), S(10));
-    Text(dl, T().semibold, 10.5f, ImVec2(p.x + S(8), p.y + (S(20) - ts.y) * 0.5f), accent ? Black(0.9f) : White(0.88f), text);
+    ImU32 bg = g.ready ? Accent(0.92f) : g.building ? ImGui::GetColorU32(ImVec4(0.98f, 0.74f, 0.30f, 0.92f)) : Black(0.62f);
+    dl->AddRectFilled(p, b, bg, S(10));
+    Text(dl, T().semibold, 10.5f, ImVec2(p.x + S(8), p.y + (S(20) - ts.y) * 0.5f), g.ready || g.building ? Black(0.9f) : White(0.88f), text);
 }
 
 void Cover(ImDrawList* dl, const Art& art, ImVec2 a, ImVec2 b, float rounding, ImU32 tint) {
@@ -104,17 +106,24 @@ void Home::DrawLibrary() {
     ImVec2 o = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
     const auto& games = Games();
-    int ready = 0;
-    for (const GameDef& g : games) ready += g.ready ? 1 : 0;
+    int ready = 0, building = 0;
+    for (const GameDef& g : games) {
+        ready += g.ready ? 1 : 0;
+        building += g.building ? 1 : 0;
+    }
     Input("gamesearch", &search, "Search games", o, S(280), ICON_SEARCH);
     char buf[96];
-    std::snprintf(buf, sizeof(buf), "%d ready  \xc2\xb7  %d coming soon", ready, (int)games.size() - ready);
+    if (building)
+        std::snprintf(buf, sizeof(buf), "%d ready  \xc2\xb7  %d being built  \xc2\xb7  %d coming soon", ready, building,
+                      (int)games.size() - ready - building);
+    else
+        std::snprintf(buf, sizeof(buf), "%d ready  \xc2\xb7  %d coming soon", ready, (int)games.size() - ready);
     TextRight(dl, T().regular, 12, ImVec2(o.x + w, o.y + S(11)), White(0.45f), buf);
 
     std::string q = Lower(search);
     std::vector<int> shown;
     for (int i = 0; i < (int)games.size(); ++i)
-        if ((showSoon || games[i].ready) && (q.empty() || Lower(games[i].name).find(q) != std::string::npos)) shown.push_back(i);
+        if ((showSoon || games[i].ready || games[i].building) && (q.empty() || Lower(games[i].name).find(q) != std::string::npos)) shown.push_back(i);
     if (installedFirst)
         std::stable_partition(shown.begin(), shown.end(), [&](int i) { return i < (int)installed.size() && installed[i]; });
 
@@ -134,12 +143,12 @@ void Home::DrawLibrary() {
         float lift = std::floor(hv * S(3));
         ImVec2 pa(a.x, a.y - lift), pb(a.x + cw, a.y + ph - lift);
         if (g.ready && hv > 0.01f) Glow(dl, pa, pb, S(10), T().accent, 0.16f * hv, S(16));
-        float shade = g.ready ? 1.0f : 0.5f + 0.3f * hv;
+        float shade = g.ready || g.building ? 1.0f : 0.5f + 0.3f * hv;
         if (const Art* cap = Find(g.appId, art::Capsule)) Cover(dl, *cap, pa, pb, S(10), ImGui::GetColorU32(ImVec4(shade, shade, shade, 1)));
         else Placeholder(dl, pa, pb, g, S(10));
         dl->AddRect(pa, pb, g.ready ? Accent(0.35f + 0.5f * hv) : White(0.06f + 0.12f * hv), S(10), S(1.5f));
-        Badge(dl, ImVec2(pa.x + S(8), pa.y + S(8)), g.ready ? "Ready" : "Soon", g.ready);
-        Text(dl, T().medium, 12.5f, ImVec2(a.x + S(2), a.y + ph + S(8)), White(g.ready ? 0.95f : 0.7f), g.name, cw - S(4));
+        Badge(dl, ImVec2(pa.x + S(8), pa.y + S(8)), g);
+        Text(dl, T().medium, 12.5f, ImVec2(a.x + S(2), a.y + ph + S(8)), White(g.ready || g.building ? 0.95f : 0.7f), g.name, cw - S(4));
         bool inst = idx < (int)installed.size() && installed[idx];
         Text(dl, T().regular, 11, ImVec2(a.x + S(2), a.y + ph + S(44)), inst ? Accent(0.75f) : White(0.35f), inst ? "Installed" : "Not installed");
         if (clicked) game = idx;
@@ -169,7 +178,8 @@ void Home::DrawGame() {
     bool running = state != inject::GameState::NotRunning;
     bool injected = state == inject::GameState::Injected;
     std::string line;
-    if (!g.ready) line = "Coming soon. Fathom does not support this game yet.";
+    if (g.building) line = "The menu for this game is being built. Look at the modules on the left.";
+    else if (!g.ready) line = "Coming soon. Fathom does not support this game yet.";
     else if (injected) line = "The menu is running. Press " + openKey + " in the game to open it, " + unloadKey + " to unload it.";
     else if (running) line = "The game is open. Press Inject to load the menu into it.";
     else line = "Start the game first, then press Inject.";
@@ -178,7 +188,12 @@ void Home::DrawGame() {
 
     ImVec2 bs(S(170), S(44));
     ImVec2 bp(b.x - S(24) - bs.x, b.y - S(24) - bs.y);
-    if (!g.ready) {
+    if (g.building) {
+        if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) {
+            std::wstring url = L"steam://rungameid/" + std::to_wstring(g.appId);
+            ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        }
+    } else if (!g.ready) {
         Button("main", "Coming soon", bp, bs, Btn::Ghost, ICON_LOCK, false);
     } else if (busy) {
         Button("main", "Injecting\xe2\x80\xa6", bp, bs, Btn::Primary, ICON_REFRESH_CW, false);
@@ -197,9 +212,11 @@ void Home::DrawGame() {
     }
     float ch = S(132);
     Card(dl, ImVec2(o.x, y), ImVec2(o.x + w, y + ch));
-    Caption(dl, ImVec2(o.x + S(16), y + S(15)), "COMING SOON");
+    Caption(dl, ImVec2(o.x + S(16), y + S(15)), g.building ? "BEING BUILT" : "COMING SOON");
     Text(dl, T().regular, 13, ImVec2(o.x + S(16), y + S(40)), White(0.7f),
-         "Fathom will get a menu for this game in a later update. Updates come through the installer.", w - S(32));
+         g.building ? "Every page on the left shows the modules that are coming. They do not work in the game yet, so there is no Inject button."
+                    : "Fathom will get a menu for this game in a later update. Updates come through the installer.",
+         w - S(32));
     bool inst = game < (int)installed.size() && installed[game];
     Row(dl, ImVec2(o.x + S(16), y + S(86)), w * 0.5f, "On this PC", inst ? "Installed with Steam" : "Not installed", inst);
     std::string store = "https://store.steampowered.com/app/" + std::to_string(g.appId);

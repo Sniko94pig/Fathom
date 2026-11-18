@@ -31,6 +31,7 @@ fathom_dep(minhook https://github.com/TsudaKageyu/minhook master)
 fathom_dep(kiero https://github.com/Rebzzel/kiero master)
 
 set(SN2 "${CMAKE_SOURCE_DIR}/games/Subnautica 2/src")
+set(SN1 "${CMAKE_SOURCE_DIR}/games/Subnautica/src")
 set(GEN ${CMAKE_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${GEN})
 function(fathom_embed out name file)
@@ -66,8 +67,8 @@ target_include_directories(fathom_ui PUBLIC
   ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src ${SN2})
 target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS)
 
-add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp)
-target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR})
+add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp)
+target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
   target_sources(fathom_shots PRIVATE src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
@@ -92,11 +93,13 @@ if(WIN32)
     src/launcher/games.cpp
     src/launcher/art.cpp
     src/launcher/prefs.cpp
+    ${SN1}/core/sn1_features.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
   set_target_properties(fathom_launcher PROPERTIES OUTPUT_NAME Fathom)
+  target_include_directories(fathom_launcher PRIVATE ${SN1})
   target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING FATHOM_VERSION="${FATHOM_VERSION}")
   target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32 wininet advapi32)
 

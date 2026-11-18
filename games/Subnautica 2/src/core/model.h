@@ -106,6 +106,8 @@ struct Tier {
 
 struct Model {
     std::vector<Feature> features;
+    std::vector<Tab> tabs;
+    std::vector<Tab> plainTabs;
     Session session = Session::Solo;
     bool inWorld = false;
 

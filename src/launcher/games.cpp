@@ -22,7 +22,7 @@ const std::vector<GameDef>& Games() {
         {"outlast", "Outlast", 238320, "OL", false},
         {"satisfactory", "Satisfactory", 526870, "SAT", false},
         {"sonsoftheforest", "Sons of the Forest", 1326470, "SOF", false},
-        {"subnautica", "Subnautica", 264710, "SN", false},
+        {"subnautica", "Subnautica", 264710, "SN", false, true},
         {"belowzero", "Subnautica: Below Zero", 848450, "BZ", false},
         {"theforest", "The Forest", 242760, "TF", false},
         {"tlou1", "The Last of Us Part I", 1888930, "TLOU", false},

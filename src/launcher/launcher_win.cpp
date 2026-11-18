@@ -3,6 +3,7 @@
 #include "launcher/games.h"
 #include "launcher/home.h"
 #include "launcher/inject.h"
+#include "core/sn1_features.h"
 #include "launcher/prefs.h"
 #include "ui/icons.h"
 #include "ui/atlas.h"
@@ -178,6 +179,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
 
     core::Model model;
     core::BuildFeatures(model);
+    core::Model sn1Model;
+    sn1::BuildFeatures(sn1Model);
+    sn1Model.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"subnautica-settings.json").wstring());
     launcher::Home home;
     home.paths = inject::Locate();
     std::wstring settingsPath = home.paths.found ? home.paths.settings : L"settings.json";
@@ -235,16 +239,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     ui::LoadFonts();
-    ui::Menu menu(model);
-    menu.embedded = true;
-    menu.homePage = [&] { home.Draw(); };
-    menu.homeName = "Games";
-    menu.homeIcon = ICON_LAYERS;
-    menu.onHome = true;
-    menu.showGameTabs = false;
-    menu.onBack = [&] { home.game = -1; menu.onHome = true; };
-    menu.loader = &loader;
-    menu.uiScale = loader.s.scale;
+    ui::Menu mainMenu(model);
+    ui::Menu sn1Menu(sn1Model);
+    for (ui::Menu* mm : { &mainMenu, &sn1Menu })
+    {
+        mm->embedded = true;
+        mm->homePage = [&] { home.Draw(); };
+        mm->homeName = "Games";
+        mm->homeIcon = ICON_LAYERS;
+        mm->onHome = true;
+        mm->showGameTabs = false;
+        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; };
+        mm->loader = &loader;
+        mm->uiScale = loader.s.scale;
+    }
     ui::T().accent = ui::AccentColor(loader.s.accent);
     bool artRefresh = false, artWipe = false, downloading = false;
     ULONGLONG runningSince = 0, closeAt = 0;
@@ -334,6 +342,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         }
     }
 
+    sn1Model.logoTexture = model.logoTexture;
+
     std::thread worker;
     std::atomic<bool> workerDone{ false };
     std::string workerResult;
@@ -356,6 +366,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         if (done)
             break;
 
+        bool sn1Open = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "subnautica") == 0;
+        ui::Menu& menu = sn1Open ? sn1Menu : mainMenu;
         ULONGLONG now = GetTickCount64();
         if (now - lastPoll >= 1000)
         {
@@ -383,7 +395,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
             bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
-            menu.showGameTabs = sn2;
+            menu.showGameTabs = sn2 || sn1Open;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? "All games" : nullptr;
@@ -416,6 +428,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 menu.status = home.state == inject::GameState::Injected ? "Menu active in game" : home.state == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.state != inject::GameState::NotRunning;
+            }
+            else if (sn1Open)
+            {
+                menu.status = "Being built";
+                menu.statusGood = false;
             }
             else
             {
