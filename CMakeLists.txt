@@ -111,6 +111,18 @@ if(WIN32)
   add_library(fathom_loader SHARED ${SN2}/loader/version.cpp ${SN2}/loader/version.def)
   set_target_properties(fathom_loader PROPERTIES OUTPUT_NAME version)
 
+  set(DEPS ${GEN}/deps)
+  file(READ ${kiero_SOURCE_DIR}/kiero.h KIERO_H)
+  string(REGEX REPLACE "#define KIERO_INCLUDE_D3D12 +0" "#define KIERO_INCLUDE_D3D12  1" KIERO_H "${KIERO_H}")
+  string(REGEX REPLACE "#define KIERO_USE_MINHOOK +0" "#define KIERO_USE_MINHOOK    1" KIERO_H "${KIERO_H}")
+  file(WRITE ${DEPS}/kiero/kiero.h.in "${KIERO_H}")
+  configure_file(${DEPS}/kiero/kiero.h.in ${DEPS}/kiero/kiero.h COPYONLY)
+  file(READ ${kiero_SOURCE_DIR}/kiero.cpp KIERO_CPP)
+  string(REPLACE "#include <assert.h>" "#include <assert.h>\n#include <stdlib.h>" KIERO_CPP "${KIERO_CPP}")
+  file(WRITE ${DEPS}/kiero/kiero.cpp.in "${KIERO_CPP}")
+  configure_file(${DEPS}/kiero/kiero.cpp.in ${DEPS}/kiero/kiero.cpp COPYONLY)
+  configure_file(${minhook_SOURCE_DIR}/include/MinHook.h ${DEPS}/minhook/include/MinHook.h COPYONLY)
+
   add_library(fathom SHARED
     ${SN2}/game/main.cpp
     ${SN2}/game/game.cpp
@@ -118,13 +130,13 @@ if(WIN32)
     ${SN2}/game/overlay.cpp
     ${SN2}/game/log.cpp
     src/common/dx12_texture.cpp
-    ${kiero_SOURCE_DIR}/kiero.cpp
+    ${DEPS}/kiero/kiero.cpp
     ${minhook_SOURCE_DIR}/src/buffer.c
     ${minhook_SOURCE_DIR}/src/hook.c
     ${minhook_SOURCE_DIR}/src/trampoline.c
     ${minhook_SOURCE_DIR}/src/hde/hde64.c
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
-  target_include_directories(fathom PRIVATE ${CMAKE_SOURCE_DIR}/third_party ${minhook_SOURCE_DIR}/include)
+  target_include_directories(fathom PRIVATE ${DEPS} ${minhook_SOURCE_DIR}/include)
   target_compile_definitions(fathom PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_link_libraries(fathom PRIVATE fathom_ui d3d12 dxgi)
   target_compile_options(fathom PRIVATE /Zi)
