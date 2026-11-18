@@ -116,8 +116,8 @@ void Home::DrawLibrary() {
     for (int i = 0; i < (int)games.size(); ++i)
         if (q.empty() || Lower(games[i].name).find(q) != std::string::npos) shown.push_back(i);
 
-    const int cols = 6;
     float gap = S(14), top = o.y + S(54);
+    int cols = std::clamp((int)((w + gap) / (S(118) + gap)), 3, 14);
     float cw = std::floor((w - gap * (cols - 1)) / cols), ph = std::floor(cw * 1.5f), ch = ph + S(62);
     for (int k = 0; k < (int)shown.size(); ++k) {
         int idx = shown[k];
@@ -153,7 +153,7 @@ void Home::DrawGame() {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 o = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
-    float bh = std::min(std::floor(w * 0.32f), S(230));
+    float bh = std::min(std::floor(w * 0.30f), S(320));
     ImVec2 a = o, b(o.x + w, o.y + bh);
     if (const Art* hero = Find(g.appId, art::Hero)) Cover(dl, *hero, a, b, S(14), IM_COL32_WHITE);
     else if (const Art* cap = Find(g.appId, art::Capsule)) Cover(dl, *cap, a, b, S(14), ImGui::GetColorU32(ImVec4(0.55f, 0.55f, 0.55f, 1)));

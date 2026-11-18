@@ -293,6 +293,17 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"14-launcher-wide", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             home.game = -1;
+             u.embedded = true;
+             u.showGameTabs = false;
+             u.homePage = [] { home.Draw(); };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
 #endif
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {

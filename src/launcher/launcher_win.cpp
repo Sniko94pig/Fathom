@@ -142,10 +142,16 @@ static SIZE ClientSize(float scale)
     return SIZE{ (LONG)std::lround(960.0f * scale), (LONG)std::lround(620.0f * scale) };
 }
 
-static void FitWindow(HWND hwnd, float scale)
+static float g_uiScale = 1.0f;
+
+static void FitWindow(HWND hwnd, float from, float to)
 {
-    SIZE c = ClientSize(scale);
-    RECT r = { 0, 0, c.cx, c.cy };
+    if (IsZoomed(hwnd) || from <= 0.0f)
+        return;
+    RECT c;
+    GetClientRect(hwnd, &c);
+    float k = to / from;
+    RECT r = { 0, 0, (LONG)std::lround((c.right - c.left) * k), (LONG)std::lround((c.bottom - c.top) * k) };
     DWORD style = (DWORD)GetWindowLongPtrW(hwnd, GWL_STYLE);
     AdjustWindowRectEx(&r, style, FALSE, 0);
     SetWindowPos(hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -191,7 +197,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     auto knownTime = FileTime(settingsPath);
 
     SIZE cs = ClientSize(model.menuScale);
-    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    DWORD style = WS_OVERLAPPEDWINDOW;
+    g_uiScale = model.menuScale;
     RECT wr = { 0, 0, cs.cx, cs.cy };
     AdjustWindowRectEx(&wr, style, FALSE, 0);
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), LoadIconW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(1)), LoadCursor(nullptr, IDC_ARROW), nullptr, nullptr, L"FathomLauncher", nullptr };
@@ -404,8 +411,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         }
         if (std::fabs(shownScale - model.menuScale) > 0.001f)
         {
+            FitWindow(hwnd, shownScale, model.menuScale);
             shownScale = model.menuScale;
-            FitWindow(hwnd, shownScale);
+            g_uiScale = shownScale;
         }
 
         if ((g_SwapChainOccluded && g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) || ::IsIconic(hwnd))
@@ -700,6 +708,15 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             CreateRenderTarget();
         }
         return 0;
+    case WM_GETMINMAXINFO:
+    {
+        RECT r = { 0, 0, (LONG)std::lround(820.0f * g_uiScale), (LONG)std::lround(540.0f * g_uiScale) };
+        AdjustWindowRectEx(&r, (DWORD)GetWindowLongPtrW(hWnd, GWL_STYLE), FALSE, 0);
+        MINMAXINFO* mm = (MINMAXINFO*)lParam;
+        mm->ptMinTrackSize.x = r.right - r.left;
+        mm->ptMinTrackSize.y = r.bottom - r.top;
+        return 0;
+    }
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU)
             return 0;

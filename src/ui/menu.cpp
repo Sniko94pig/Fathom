@@ -133,7 +133,7 @@ void Menu::Frame() {
 
     if (openAnim > 0.01f) {
         ImGuiViewport* vp = ImGui::GetMainViewport();
-        ImVec2 size(S(kW), S(kH));
+        ImVec2 size = embedded ? vp->Size : ImVec2(S(kW), S(kH));
         ImGui::SetNextWindowSize(size);
         if (embedded) ImGui::SetNextWindowPos(vp->Pos, ImGuiCond_Always);
         else ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
