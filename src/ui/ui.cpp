@@ -1,4 +1,5 @@
 #include "ui/ui.h"
+#include "ui/icons.h"
 #include "imgui_stdlib.h"
 #include <cmath>
 #include <unordered_map>
@@ -331,6 +332,22 @@ bool Input(const char* id, std::string* value, const char* hint, ImVec2 pos, flo
     split.Merge(dl);
     ImGui::PopID();
     return changed;
+}
+
+float BuildingWidth() {
+    return Measure(g_theme.medium, 11.5f, "Under construction").x + S(36);
+}
+
+void Building(ImDrawList* dl, ImVec2 rightCenter) {
+    float w = BuildingWidth();
+    float h = S(24);
+    ImVec2 a(rightCenter.x - w, rightCenter.y - h * 0.5f);
+    ImVec2 b(rightCenter.x, rightCenter.y + h * 0.5f);
+    dl->AddRectFilled(a, b, ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.13f)), h * 0.5f);
+    ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.95f));
+    Icon(dl, ImVec2(a.x + S(15), rightCenter.y), S(12), col, ICON_HAMMER);
+    ImVec2 ts = Measure(g_theme.medium, 11.5f, "Under construction");
+    Text(dl, g_theme.medium, 11.5f, ImVec2(a.x + S(26), rightCenter.y - ts.y * 0.5f), col, "Under construction");
 }
 
 void Tip(const char* text) {

@@ -49,6 +49,8 @@ float ChipWidth(const char* label);
 bool Chip(const char* id, const char* label, ImVec2 pos, bool selected, float width = 0.0f);
 bool Segmented(const char* id, const char* const* labels, int count, int* index, ImVec2 pos, float width);
 bool Input(const char* id, std::string* value, const char* hint, ImVec2 pos, float width, const char* icon = nullptr);
+float BuildingWidth();
+void Building(ImDrawList* dl, ImVec2 rightCenter);
 void Tip(const char* text);
 void DrawTip();
 

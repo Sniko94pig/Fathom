@@ -130,7 +130,7 @@ Feature* Model::find(const std::string& id) {
 int Model::activeCount() const {
     int n = 0;
     for (const Feature& f : features) {
-        if (!f.counts || !f.available) continue;
+        if (!f.counts || !f.available || f.building) continue;
         if (f.kind == Kind::Toggle && f.on) ++n;
         if (f.kind == Kind::Slider && std::fabs(f.value - f.def) > 0.001f) ++n;
     }
@@ -153,7 +153,7 @@ const Marker* Model::player() const {
 
 void SetFeature(Model& m, Feature& f, bool on) {
     if (f.kind != Kind::Toggle || f.on == on) return;
-    if (on && (!f.available || !m.cheatsAllowed())) return;
+    if (on && (!f.available || f.building || !m.cheatsAllowed())) return;
     f.on = on;
     if (f.apply) f.apply(f);
 }
@@ -163,7 +163,7 @@ void SetValue(Model& m, Feature& f, float v) {
     float mx = m.sliderMax(f);
     v = std::clamp(v, std::min(f.min, f.def), mx);
     if (std::fabs(v - f.value) < 0.0001f) return;
-    if (!f.available || !m.cheatsAllowed()) v = f.def;
+    if (!f.available || f.building || !m.cheatsAllowed()) v = f.def;
     f.value = v;
     if (f.apply) f.apply(f);
 }

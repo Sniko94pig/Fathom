@@ -99,7 +99,9 @@ void Menu::HandleKeys() {
     if (m.keyUnload && ImGui::IsKeyPressed((ImGuiKey)m.keyUnload, false)) m.requestUnload = true;
     for (Feature& f : m.features) {
         if (!f.key || f.kind != Kind::Toggle || !ImGui::IsKeyPressed((ImGuiKey)f.key, false)) continue;
-        if (!f.available) {
+        if (f.building) {
+            Notify(f.label + " is under construction", ICON_HAMMER);
+        } else if (!f.available) {
             Notify(f.label + " is not available", ICON_LOCK);
         } else if (!m.cheatsAllowed()) {
             Notify("Cheats are off: you are not the host", ICON_USERS);
@@ -479,7 +481,7 @@ bool Menu::KeyChip(const char* id, ImVec2 rightCenter, int* key) {
 }
 
 float Menu::FeatureRowHeight(const Feature& f) const {
-    if (f.kind == Kind::Slider) return S(60);
+    if (f.kind == Kind::Slider && !f.building) return S(60);
     return f.hint.empty() ? S(40) : S(52);
 }
 
@@ -536,6 +538,12 @@ void Menu::RunPermanent(Feature& f) {
 }
 
 void Menu::FeatureRow(Feature& f, ImVec2 pos, float w) {
+    if (f.building) {
+        float h = FeatureRowHeight(f);
+        RowBase(f.id.c_str(), pos, w, h, f.label.c_str(), f.hint.c_str(), false, "This module is still being built", BuildingWidth() + S(8));
+        Building(ImGui::GetWindowDrawList(), ImVec2(pos.x + w - S(8), pos.y + h * 0.5f));
+        return;
+    }
     bool allowed = m.cheatsAllowed();
     bool enabled = f.available && allowed;
     const char* tip = !f.available ? f.missing.c_str() : !allowed ? "Only the host can use cheats" : nullptr;

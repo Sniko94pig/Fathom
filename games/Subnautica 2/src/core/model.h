@@ -24,6 +24,7 @@ struct Feature {
     bool confirm = false;
     bool counts = true;
     bool available = false;
+    bool building = false;
     std::string missing = "Not found in the game's SDK";
     bool on = false;
     float value = 0;
