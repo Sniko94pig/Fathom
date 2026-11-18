@@ -31,6 +31,9 @@ public:
     const char* homeIcon = nullptr;
     bool onHome = false;
     bool embedded = false;
+    bool showGameTabs = true;
+    const char* backName = nullptr;
+    std::function<void()> onBack;
     std::string status;
     bool statusGood = false;
 

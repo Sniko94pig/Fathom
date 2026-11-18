@@ -182,29 +182,52 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
     Text(dl, T().regular, 11, ImVec2(lp.x + S(44), lp.y + S(18)), White(0.45f), embedded ? "Mod loader" : "Subnautica 2");
 
     float top = p.y + S(80), th = S(40), gap = S(4);
-    int extra = homePage ? 1 : 0;
-    int count = (int)(sizeof(kTabs) / sizeof(kTabs[0])) + extra;
-    int idx = extra && onHome ? 0 : (int)tab + extra;
+    struct Entry {
+        int kind;
+        const TabDef* td;
+        const char* name;
+        const char* icon;
+    };
+    std::vector<Entry> list;
+    if (backName && onBack) list.push_back({0, nullptr, backName, ICON_UNDO_2});
+    if (homePage) list.push_back({1, nullptr, homeName, homeIcon ? homeIcon : ICON_ZAP});
+    for (const TabDef& d : kTabs)
+        if (showGameTabs || d.tab == Tab::Settings) list.push_back({2, &d, d.name, d.icon});
+    int count = (int)list.size();
+    int idx = -1;
+    for (int i = 0; i < count; ++i)
+        if ((onHome && list[i].kind == 1) || (!onHome && list[i].kind == 2 && list[i].td->tab == tab)) idx = i;
+    if (idx < 0) {
+        for (int i = 0; i < count && idx < 0; ++i)
+            if (list[i].kind == 1) idx = i;
+        if (idx >= 0) onHome = true;
+        else idx = 0;
+    }
     float fi = Ease(ImGui::GetID("tabsel"), (float)idx, 18.0f, (float)idx);
     float iy = top + fi * (th + gap);
     dl->AddRectFilled(ImVec2(p.x + S(12), iy), ImVec2(p.x + w - S(12), iy + th), Accent(0.10f), S(10));
     dl->AddRectFilled(ImVec2(p.x + S(12), iy + S(11)), ImVec2(p.x + S(15), iy + th - S(11)), Accent(), S(2));
 
     for (int i = 0; i < count; ++i) {
-        bool isHome = extra && i == 0;
-        const TabDef* td = isHome ? nullptr : &kTabs[i - extra];
-        const char* name = isHome ? homeName : td->name;
-        const char* icon = isHome ? (homeIcon ? homeIcon : ICON_ZAP) : td->icon;
+        const Entry& e = list[i];
+        const char* name = e.name;
+        const char* icon = e.icon;
         bool sel = i == idx;
         ImVec2 tp(p.x + S(12), top + i * (th + gap));
         ImGui::SetCursorScreenPos(tp);
+        ImGui::PushID(i);
         ImGui::PushID(name);
         if (ImGui::InvisibleButton("t", ImVec2(w - S(24), th))) {
-            onHome = isHome;
-            if (td) tab = td->tab;
+            if (e.kind == 0) {
+                onBack();
+            } else {
+                onHome = e.kind == 1;
+                if (e.td) tab = e.td->tab;
+            }
         }
         float h = Ease(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
         float a = Ease(ImGui::GetID("a"), sel ? 1.0f : 0.0f, 18.0f, sel ? 1.0f : 0.0f);
+        ImGui::PopID();
         ImGui::PopID();
         if (h > 0.01f && a < 0.99f) dl->AddRectFilled(tp, ImVec2(tp.x + w - S(24), tp.y + th), White(0.04f * h * (1 - a)), S(10));
         ImU32 col = Mix(ImVec4(1, 1, 1, 0.58f + 0.34f * h), T().accent, a);
@@ -240,13 +263,13 @@ void Menu::TopBar(ImVec2 p, ImVec2 size) {
         fpsTimer = 0.0f;
         fpsShown = ImGui::GetIO().Framerate;
     }
+    if (embedded) return;
     char buf[48];
     int n = m.activeCount();
     std::snprintf(buf, sizeof(buf), "%d active", n);
     float x = p.x + size.x - S(24);
     float cy = p.y + S(kTop) * 0.5f;
     x -= Pill(dl, ImVec2(x, cy), ICON_ZAP, buf, n > 0) + S(8);
-    if (embedded) return;
     std::snprintf(buf, sizeof(buf), "%.0f FPS", fpsShown);
     Pill(dl, ImVec2(x, cy), ICON_ACTIVITY, buf, false);
 }

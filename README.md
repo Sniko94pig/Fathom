@@ -1,8 +1,8 @@
 # Fathom
 
-Fathom is a mod menu and game loader with a clean, minimal look. Pick a game in the Fathom app, start the game and press Inject.
+Fathom is a mod menu and game loader with a clean, minimal look, in the style of game trainer apps. The Fathom app shows your games with their Steam artwork. Pick a game, start it and press Inject. The cheat pages for a game only appear once you pick that game.
 
-![Games page](shots/12-launcher-games.png)
+Game artwork is loaded from your own Steam library cache, or downloaded from Steam when it isn't there. It is kept in the `art` folder next to Fathom and is not part of this repository.
 
 ## Games
 

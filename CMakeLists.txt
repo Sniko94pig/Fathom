@@ -67,7 +67,8 @@ add_executable(fathom_shots src/preview/shots.cpp src/preview/sample.cpp)
 target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
-  target_sources(fathom_shots PRIVATE src/launcher/home.cpp src/launcher/inject.cpp)
+  target_sources(fathom_shots PRIVATE src/launcher/home.cpp src/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
+  target_link_libraries(fathom_shots PRIVATE urlmon ole32)
   target_compile_definitions(fathom_shots PRIVATE FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
@@ -85,13 +86,15 @@ if(WIN32)
     src/launcher/launcher_win.cpp
     src/launcher/home.cpp
     src/launcher/inject.cpp
+    src/launcher/games.cpp
+    src/launcher/art.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
   set_target_properties(fathom_launcher PROPERTIES OUTPUT_NAME Fathom)
   target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
-  target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi)
+  target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32)
 
   add_executable(fathom_setup WIN32 src/setup/setup.cpp src/setup/setup.rc)
   set_target_properties(fathom_setup PROPERTIES OUTPUT_NAME FathomSetup)

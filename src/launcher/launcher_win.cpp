@@ -1,4 +1,6 @@
 #include "core/model.h"
+#include "launcher/art.h"
+#include "launcher/games.h"
 #include "launcher/home.h"
 #include "launcher/inject.h"
 #include "ui/icons.h"
@@ -16,6 +18,8 @@
 #include <shellapi.h>
 #include <atomic>
 #include <cmath>
+#include <cstring>
+#include <vector>
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -31,7 +35,7 @@
 
 static const int APP_NUM_FRAMES_IN_FLIGHT = 2;
 static const int APP_NUM_BACK_BUFFERS = 2;
-static const int APP_SRV_HEAP_SIZE = 64;
+static const int APP_SRV_HEAP_SIZE = 256;
 
 struct FrameContext
 {
@@ -117,6 +121,13 @@ static std::string Narrow(const std::wstring& w)
     std::string s(n, '\0');
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
     return s;
+}
+
+static std::wstring ExeDir()
+{
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    return std::filesystem::path(path).parent_path().wstring();
 }
 
 static std::filesystem::file_time_type FileTime(const std::wstring& path)
@@ -209,8 +220,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     menu.embedded = true;
     menu.homePage = [&] { home.Draw(); };
     menu.homeName = "Games";
-    menu.homeIcon = ICON_PLAY;
+    menu.homeIcon = ICON_LAYERS;
     menu.onHome = true;
+    menu.showGameTabs = false;
+    menu.onBack = [&] { home.game = -1; menu.onHome = true; };
+    const auto& games = launcher::Games();
+    home.installed.resize(games.size());
+    std::vector<std::pair<int, int>> wantedArt;
+    for (size_t i = 0; i < games.size(); ++i)
+    {
+        home.installed[i] = launcher::SteamInstalled(games[i].appId);
+        wantedArt.push_back({ games[i].appId, launcher::art::Capsule });
+    }
+    for (const auto& g : games)
+        wantedArt.push_back({ g.appId, launcher::art::Hero });
+    launcher::art::Start(wantedArt, (std::filesystem::path(ExeDir()) / L"art").wstring());
+    std::vector<ID3D12Resource*> artTex;
 
     ImGui_ImplWin32_Init(hwnd);
 
@@ -298,8 +323,41 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             if (home.state != lastState && lastState == inject::GameState::Injected && home.state == inject::GameState::Running)
                 menu.Notify("The menu was unloaded from the game", ICON_INFO);
             lastState = home.state;
-            menu.status = home.state == inject::GameState::Injected ? "Menu active in game" : home.state == inject::GameState::Running ? "Game running" : "Game not running";
-            menu.statusGood = home.state != inject::GameState::NotRunning;
+        }
+        {
+            bool inGame = home.game >= 0 && home.game < (int)games.size();
+            bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
+            menu.showGameTabs = sn2;
+            menu.homeName = inGame ? games[home.game].name : "Games";
+            menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
+            menu.backName = inGame ? "All games" : nullptr;
+            home.openKey = core::KeyName(model.keyOpen);
+            home.unloadKey = core::KeyName(model.keyUnload);
+            if (sn2)
+            {
+                menu.status = home.state == inject::GameState::Injected ? "Menu active in game" : home.state == inject::GameState::Running ? "Game running" : "Game not running";
+                menu.statusGood = home.state != inject::GameState::NotRunning;
+            }
+            else
+            {
+                menu.status = inGame ? "Coming soon" : "Pick a game";
+                menu.statusGood = false;
+            }
+            launcher::art::Image img;
+            for (int uploads = 0; uploads < 4 && launcher::art::Take(img); ++uploads)
+            {
+                D3D12_CPU_DESCRIPTOR_HANDLE cpu;
+                D3D12_GPU_DESCRIPTOR_HANDLE gpu;
+                g_pd3dSrvDescHeapAlloc.Alloc(&cpu, &gpu);
+                ID3D12Resource* tex = dx12::CreateTexture(g_pd3dDevice, g_pd3dCommandQueue, img.rgba.data(), img.width, img.height, cpu);
+                if (!tex)
+                {
+                    g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
+                    continue;
+                }
+                artTex.push_back(tex);
+                home.art[launcher::ArtKey(img.appId, img.kind)] = { (ImTextureID)gpu.ptr, (float)img.width, (float)img.height };
+            }
         }
         if (home.startNow)
         {
@@ -402,7 +460,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     if (core::SettingsText(model) != lastText)
         core::SaveSettings(model);
 
+    launcher::art::Stop();
     WaitForPendingOperations();
+    for (ID3D12Resource* tex : artTex)
+        tex->Release();
     if (iconTex)
         iconTex->Release();
     if (logoTex)

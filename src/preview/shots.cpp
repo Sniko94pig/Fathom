@@ -1,5 +1,9 @@
 #ifdef FATHOM_LAUNCHER_SHOTS
+#include "launcher/art.h"
+#include "launcher/games.h"
 #include "launcher/home.h"
+#include <chrono>
+#include <thread>
 #endif
 #include "preview/sample.h"
 #include "ui/icons.h"
@@ -11,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <vector>
@@ -163,6 +168,41 @@ struct Shot {
 
 }
 
+#ifdef FATHOM_LAUNCHER_SHOTS
+void LoadShotArt(launcher::Home& home, const std::string& outDir) {
+    static std::vector<std::pair<long long, launcher::Art>> loaded;
+    static bool done = false;
+    if (!done) {
+        done = true;
+        std::vector<std::pair<int, int>> wanted;
+        for (const auto& g : launcher::Games()) wanted.push_back({g.appId, launcher::art::Capsule});
+        for (const auto& g : launcher::Games()) wanted.push_back({g.appId, launcher::art::Hero});
+        std::wstring dir(outDir.begin(), outDir.end());
+        launcher::art::Start(wanted, dir + L"/art_cache");
+        size_t got = 0;
+        for (int wait = 0; wait < 600 && got < wanted.size(); ++wait) {
+            launcher::art::Image img;
+            bool any = false;
+            while (launcher::art::Take(img)) {
+                any = true;
+                ++got;
+                ImTextureData* t = IM_NEW(ImTextureData)();
+                t->Format = ImTextureFormat_RGBA32;
+                t->Width = img.width;
+                t->Height = img.height;
+                t->BytesPerPixel = 4;
+                t->Pixels = (unsigned char*)IM_ALLOC(img.rgba.size());
+                std::memcpy(t->Pixels, img.rgba.data(), img.rgba.size());
+                loaded.push_back({launcher::ArtKey(img.appId, img.kind), {(ImTextureID)(intptr_t)t, (float)img.width, (float)img.height}});
+            }
+            if (!any) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        launcher::art::Stop();
+    }
+    for (const auto& [k, a] : loaded) home.art[k] = a;
+}
+#endif
+
 int main(int argc, char** argv) {
     std::string outDir = argc > 1 ? argv[1] : ".";
     float density = argc > 2 ? (float)std::atof(argv[2]) : 2.0f;
@@ -232,19 +272,24 @@ int main(int argc, char** argv) {
              m.legit = true;
          }, ImVec2(0, 0), nullptr},
 #ifdef FATHOM_LAUNCHER_SHOTS
-        {"12-launcher-games", [](core::Model&, ui::Menu& u) {
+        {"12-launcher-games", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
+             LoadShotArt(home, outDir);
              home.game = -1;
+             u.showGameTabs = false;
              u.homePage = [] { home.Draw(); };
              u.homeName = "Games";
-             u.homeIcon = ICON_PLAY;
+             u.homeIcon = ICON_LAYERS;
              u.onHome = true;
          }, ImVec2(470, 230), nullptr},
-        {"13-launcher-subnautica", [](core::Model&, ui::Menu& u) {
+        {"13-launcher-subnautica", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
+             LoadShotArt(home, outDir);
              home.game = 0;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Subnautica 2";
              u.homePage = [] { home.Draw(); };
-             u.homeName = "Games";
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},

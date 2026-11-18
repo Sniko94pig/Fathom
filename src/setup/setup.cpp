@@ -317,6 +317,7 @@ bool Uninstall() {
     fs::path uninstaller = dir / kUninstaller;
     if (!fs::equivalent(SelfPath(), uninstaller, ec)) ok = RemoveFile(uninstaller) && ok;
     fs::remove_all(dir / L"old-builds", ec);
+    fs::remove_all(dir / L"art", ec);
     if (fs::is_directory(dir / L"save-backups", ec) && fs::is_empty(dir / L"save-backups", ec)) fs::remove(dir / L"save-backups", ec);
     if (removeGameData) {
         std::wstring win64 = SteamWin64();
