@@ -30,6 +30,7 @@ fathom_dep(stb https://github.com/nothings/stb master)
 fathom_dep(minhook https://github.com/TsudaKageyu/minhook master)
 fathom_dep(kiero https://github.com/Rebzzel/kiero master)
 
+set(SN2 "${CMAKE_SOURCE_DIR}/games/Subnautica 2/src")
 set(GEN ${CMAKE_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${GEN})
 function(fathom_embed out name file)
@@ -53,30 +54,30 @@ add_library(fathom_ui STATIC
   ${imgui_SOURCE_DIR}/imgui_widgets.cpp
   ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
   ${ASSET_SRC}
-  src/core/model.cpp
-  src/core/settings.cpp
+  ${SN2}/core/model.cpp
+  ${SN2}/core/settings.cpp
   src/ui/ui.cpp
-  src/ui/menu.cpp
-  src/ui/pages.cpp
+  ${SN2}/ui/menu.cpp
+  ${SN2}/ui/pages.cpp
   src/ui/loader_page.cpp
   src/ui/atlas.cpp)
 target_include_directories(fathom_ui PUBLIC
   ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/misc/cpp ${imgui_SOURCE_DIR}/backends
-  ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src)
+  ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src ${SN2})
 target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS)
 
-add_executable(fathom_shots src/preview/shots.cpp src/preview/sample.cpp)
+add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp)
 target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
-  target_sources(fathom_shots PRIVATE src/launcher/home.cpp src/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
+  target_sources(fathom_shots PRIVATE src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
   target_link_libraries(fathom_shots PRIVATE urlmon ole32)
   target_compile_definitions(fathom_shots PRIVATE FATHOM_VERSION="${FATHOM_VERSION}" FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
 if(WIN32)
   add_executable(fathom_preview WIN32
-    src/preview/preview_win.cpp src/preview/sample.cpp
+    src/preview/preview_win.cpp ${SN2}/preview/sample.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
   target_link_libraries(fathom_preview PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi)
@@ -87,7 +88,7 @@ if(WIN32)
   add_executable(fathom_launcher WIN32
     src/launcher/launcher_win.cpp
     src/launcher/home.cpp
-    src/launcher/inject.cpp
+    ${SN2}/launcher/inject.cpp
     src/launcher/games.cpp
     src/launcher/art.cpp
     src/launcher/prefs.cpp
@@ -107,15 +108,15 @@ if(WIN32)
     set_property(TARGET fathom_setup PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
   endif()
 
-  add_library(fathom_loader SHARED src/loader/version.cpp src/loader/version.def)
+  add_library(fathom_loader SHARED ${SN2}/loader/version.cpp ${SN2}/loader/version.def)
   set_target_properties(fathom_loader PROPERTIES OUTPUT_NAME version)
 
   add_library(fathom SHARED
-    src/game/main.cpp
-    src/game/game.cpp
-    src/game/ue.cpp
-    src/game/overlay.cpp
-    src/game/log.cpp
+    ${SN2}/game/main.cpp
+    ${SN2}/game/game.cpp
+    ${SN2}/game/ue.cpp
+    ${SN2}/game/overlay.cpp
+    ${SN2}/game/log.cpp
     src/common/dx12_texture.cpp
     ${kiero_SOURCE_DIR}/kiero.cpp
     ${minhook_SOURCE_DIR}/src/buffer.c

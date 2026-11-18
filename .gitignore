@@ -7,8 +7,8 @@ preview/*.exe
 HANDOVER.md
 *.log
 *.user
-shots/12-*.png
-shots/13-*.png
-shots/art_cache/
-shots/14-*.png
-shots/15-*.png
+**/shots/12-*.png
+**/shots/13-*.png
+**/shots/art_cache/
+**/shots/14-*.png
+**/shots/15-*.png

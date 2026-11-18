@@ -22,7 +22,7 @@ Every game has its own folder in [games](games).
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
 
-![Survival page](shots/1-survival.png)
+![Survival page](<games/Subnautica 2/shots/1-survival.png>)
 
 ## Install
 
