@@ -1,0 +1,9 @@
+build/
+out/
+.vs/
+sdk/
+third_party/
+preview/*.exe
+HANDOVER.md
+*.log
+*.user

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "bases": [
+    {
+      "name": "Example base",
+      "author": "your-name",
+      "pieces": 0,
+      "file": "bases/example-base.json"
+    }
+  ]
+}
