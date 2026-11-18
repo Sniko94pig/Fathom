@@ -100,7 +100,7 @@ void Menu::HandleKeys() {
     for (Feature& f : m.features) {
         if (!f.key || f.kind != Kind::Toggle || !ImGui::IsKeyPressed((ImGuiKey)f.key, false)) continue;
         if (f.building) {
-            Notify(f.label + " is under construction", ICON_HAMMER);
+            Notify(f.label + " is still being built", ICON_HAMMER);
         } else if (!f.available) {
             Notify(f.label + " is not available", ICON_LOCK);
         } else if (!m.cheatsAllowed()) {

@@ -335,7 +335,7 @@ bool Input(const char* id, std::string* value, const char* hint, ImVec2 pos, flo
 }
 
 float BuildingWidth() {
-    return Measure(g_theme.medium, 11.5f, "Under construction").x + S(36);
+    return Measure(g_theme.medium, 11.5f, "Being built").x + S(36);
 }
 
 void Building(ImDrawList* dl, ImVec2 rightCenter) {
@@ -346,8 +346,8 @@ void Building(ImDrawList* dl, ImVec2 rightCenter) {
     dl->AddRectFilled(a, b, ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.13f)), h * 0.5f);
     ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.95f));
     Icon(dl, ImVec2(a.x + S(15), rightCenter.y), S(12), col, ICON_HAMMER);
-    ImVec2 ts = Measure(g_theme.medium, 11.5f, "Under construction");
-    Text(dl, g_theme.medium, 11.5f, ImVec2(a.x + S(26), rightCenter.y - ts.y * 0.5f), col, "Under construction");
+    ImVec2 ts = Measure(g_theme.medium, 11.5f, "Being built");
+    Text(dl, g_theme.medium, 11.5f, ImVec2(a.x + S(26), rightCenter.y - ts.y * 0.5f), col, "Being built");
 }
 
 void Tip(const char* text) {
