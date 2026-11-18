@@ -1,5 +1,6 @@
 #pragma once
 #include "core/model.h"
+#include "ui/loader.h"
 #include "ui/ui.h"
 #include <functional>
 #include <future>
@@ -36,6 +37,8 @@ public:
     std::function<void()> onBack;
     std::string status;
     bool statusGood = false;
+    Loader* loader = nullptr;
+    float uiScale = 0.0f;
 
 private:
     struct ToastMsg {
@@ -81,6 +84,7 @@ private:
     void HubPage();
     void LegitPage();
     void SettingsPage();
+    void LoaderPage();
     void Teleport(float x, float y, float z, bool useZ, const std::string& name);
     void RunPermanent(core::Feature& f);
     void WithBackup(std::function<void()> then);
@@ -122,6 +126,7 @@ private:
     std::string locName;
     std::string baseName;
     float scaleEdit = 1.0f;
+    float appScaleEdit = -1.0f;
 };
 
 }

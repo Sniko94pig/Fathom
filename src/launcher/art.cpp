@@ -119,14 +119,14 @@ void Shrink(Image& img, int maxW) {
     img.height = nh;
 }
 
-void Run(std::vector<std::pair<int, int>> wanted, std::wstring cacheDir) {
+void Run(std::vector<std::pair<int, int>> wanted, std::wstring cacheDir, bool web) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     std::error_code ec;
     fs::create_directories(cacheDir, ec);
     for (const auto& [appId, kind] : wanted) {
         if (stopping) break;
         fs::path file = fs::path(cacheDir) / (std::to_wstring(appId) + (kind == Hero ? L"_hero.jpg" : L"_capsule.jpg"));
-        if (!fs::exists(file, ec) && !FromSteam(appId, kind, file) && !FromWeb(appId, kind, file)) continue;
+        if (!fs::exists(file, ec) && !FromSteam(appId, kind, file) && !(web && FromWeb(appId, kind, file))) continue;
         Image img;
         img.appId = appId;
         img.kind = kind;
@@ -143,9 +143,14 @@ void Run(std::vector<std::pair<int, int>> wanted, std::wstring cacheDir) {
 
 }
 
-void Start(const std::vector<std::pair<int, int>>& wanted, const std::wstring& cacheDir) {
+void Start(const std::vector<std::pair<int, int>>& wanted, const std::wstring& cacheDir, bool web) {
+    Stop();
+    {
+        std::lock_guard<std::mutex> g(lock);
+        ready.clear();
+    }
     stopping = false;
-    worker = std::thread(Run, wanted, cacheDir);
+    worker = std::thread(Run, wanted, cacheDir, web);
 }
 
 bool Take(Image& out) {

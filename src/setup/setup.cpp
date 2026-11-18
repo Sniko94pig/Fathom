@@ -318,6 +318,8 @@ bool Uninstall() {
     if (!fs::equivalent(SelfPath(), uninstaller, ec)) ok = RemoveFile(uninstaller) && ok;
     fs::remove_all(dir / L"old-builds", ec);
     fs::remove_all(dir / L"art", ec);
+    fs::remove(dir / L"launcher.json", ec);
+    fs::remove(dir / L"launcher.json.tmp", ec);
     if (fs::is_directory(dir / L"save-backups", ec) && fs::is_empty(dir / L"save-backups", ec)) fs::remove(dir / L"save-backups", ec);
     if (removeGameData) {
         std::wstring win64 = SteamWin64();
@@ -330,7 +332,21 @@ bool Uninstall() {
         std::wstring target = ShortcutTarget(link);
         if (!desktop.empty() && !target.empty() && fs::path(target).parent_path() == dir) DeleteFileW(link.c_str());
     }
-    if (opt.registry) RegDeleteTreeW(HKEY_CURRENT_USER, kKey);
+    if (opt.registry) {
+        RegDeleteTreeW(HKEY_CURRENT_USER, kKey);
+        HKEY run;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &run) ==
+            ERROR_SUCCESS) {
+            wchar_t buf[1024];
+            DWORD size = sizeof(buf), type = 0;
+            if (RegQueryValueExW(run, L"Fathom", nullptr, &type, (BYTE*)buf, &size) == ERROR_SUCCESS && type == REG_SZ) {
+                buf[std::min<size_t>(size / sizeof(wchar_t), 1023)] = 0;
+                std::wstring cmd = buf, exe = (dir / L"Fathom.exe").wstring();
+                if (_wcsnicmp(cmd.c_str() + (cmd[0] == L'"' ? 1 : 0), exe.c_str(), exe.size()) == 0) RegDeleteValueW(run, L"Fathom");
+            }
+            RegCloseKey(run);
+        }
+    }
     progress = 1.0f;
     std::wstring left;
     if (fs::is_directory(dir, ec)) {

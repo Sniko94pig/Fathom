@@ -31,7 +31,9 @@ The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creat
 
 Windows may say the installer is from an unknown publisher, because it isn't signed. Click **More info**, then **Run anyway**.
 
-Running the installer again updates Fathom to the newest version. The version you had before is kept in `old-builds`.
+Running the installer again updates Fathom to the newest version. The version you had before is kept in `old-builds`. You can also update from **Settings > Updates** in Fathom.
+
+Fathom's own Settings page can start Fathom with Windows, inject the menu automatically, change the app size and accent color, and filter the games library. The in-game keys are set inside the game menu.
 
 ## Uninstall
 

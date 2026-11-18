@@ -304,6 +304,29 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_LAYERS;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"15-launcher-settings", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             static ui::Loader loader;
+             loader.version = FATHOM_VERSION;
+             loader.updateText = "You have the newest version";
+             loader.gameFound = true;
+             loader.s.accent = 1;
+             loader.checkUpdates = [] {};
+             loader.openHome = [] {};
+             loader.openBackups = [] {};
+             loader.openGame = [] {};
+             loader.refreshArt = [] {};
+             loader.backupSaves = [] { return std::string(); };
+             ui::T().accent = ui::AccentColor(loader.s.accent);
+             u.embedded = true;
+             u.showGameTabs = false;
+             u.loader = &loader;
+             u.homePage = [] { home.Draw(); };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.onHome = false;
+             u.tab = core::Tab::Settings;
+         }, ImVec2(0, 0), nullptr},
 #endif
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {

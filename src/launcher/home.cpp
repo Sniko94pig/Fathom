@@ -114,7 +114,9 @@ void Home::DrawLibrary() {
     std::string q = Lower(search);
     std::vector<int> shown;
     for (int i = 0; i < (int)games.size(); ++i)
-        if (q.empty() || Lower(games[i].name).find(q) != std::string::npos) shown.push_back(i);
+        if ((showSoon || games[i].ready) && (q.empty() || Lower(games[i].name).find(q) != std::string::npos)) shown.push_back(i);
+    if (installedFirst)
+        std::stable_partition(shown.begin(), shown.end(), [&](int i) { return i < (int)installed.size() && installed[i]; });
 
     float gap = S(14), top = o.y + S(54);
     int cols = std::clamp((int)((w + gap) / (S(118) + gap)), 3, 14);

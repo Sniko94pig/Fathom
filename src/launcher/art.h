@@ -15,7 +15,7 @@ struct Image {
     std::vector<uint8_t> rgba;
 };
 
-void Start(const std::vector<std::pair<int, int>>& wanted, const std::wstring& cacheDir);
+void Start(const std::vector<std::pair<int, int>>& wanted, const std::wstring& cacheDir, bool web = true);
 bool Take(Image& out);
 void Stop();
 

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
+set(FATHOM_VERSION 1.4.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,6 +58,7 @@ add_library(fathom_ui STATIC
   src/ui/ui.cpp
   src/ui/menu.cpp
   src/ui/pages.cpp
+  src/ui/loader_page.cpp
   src/ui/atlas.cpp)
 target_include_directories(fathom_ui PUBLIC
   ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/misc/cpp ${imgui_SOURCE_DIR}/backends
@@ -69,7 +71,7 @@ target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
   target_sources(fathom_shots PRIVATE src/launcher/home.cpp src/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
   target_link_libraries(fathom_shots PRIVATE urlmon ole32)
-  target_compile_definitions(fathom_shots PRIVATE FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
+  target_compile_definitions(fathom_shots PRIVATE FATHOM_VERSION="${FATHOM_VERSION}" FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
 if(WIN32)
@@ -88,13 +90,14 @@ if(WIN32)
     src/launcher/inject.cpp
     src/launcher/games.cpp
     src/launcher/art.cpp
+    src/launcher/prefs.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
   set_target_properties(fathom_launcher PROPERTIES OUTPUT_NAME Fathom)
-  target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
-  target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32)
+  target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING FATHOM_VERSION="${FATHOM_VERSION}")
+  target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32 wininet advapi32)
 
   add_executable(fathom_setup WIN32 src/setup/setup.cpp src/setup/setup.rc)
   set_target_properties(fathom_setup PROPERTIES OUTPUT_NAME FathomSetup)

@@ -117,7 +117,7 @@ void Menu::Unfocus() {
 
 void Menu::Frame() {
     PumpBackup();
-    T().scale = m.menuScale;
+    T().scale = uiScale > 0.0f ? uiScale : m.menuScale;
     ApplyStyle();
     m.mapVisible = false;
     m.legitVisible = false;
@@ -318,7 +318,7 @@ void Menu::Content(ImVec2 p, ImVec2 size) {
         case Tab::Spawner: SpawnerPage(); break;
         case Tab::BaseHub: HubPage(); break;
         case Tab::Legit: LegitPage(); break;
-        case Tab::Settings: SettingsPage(); break;
+        case Tab::Settings: loader ? LoaderPage() : SettingsPage(); break;
         default: FeaturePage(tab); break;
         }
     }

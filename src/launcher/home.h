@@ -23,6 +23,8 @@ struct Home {
     std::string openKey = "Right Shift";
     std::string unloadKey = "End";
     std::vector<bool> installed;
+    bool showSoon = true;
+    bool installedFirst = false;
     std::unordered_map<long long, Art> art;
     void Draw();
 

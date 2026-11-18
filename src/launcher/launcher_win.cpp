@@ -3,6 +3,7 @@
 #include "launcher/games.h"
 #include "launcher/home.h"
 #include "launcher/inject.h"
+#include "launcher/prefs.h"
 #include "ui/icons.h"
 #include "ui/atlas.h"
 #include "common/dx12_texture.h"
@@ -196,9 +197,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     std::string lastText = core::SettingsText(model);
     auto knownTime = FileTime(settingsPath);
 
-    SIZE cs = ClientSize(model.menuScale);
+    ui::Loader loader;
+    loader.version = FATHOM_VERSION;
+    loader.gameFound = home.paths.found;
+    const std::wstring prefsPath = (std::filesystem::path(ExeDir()) / L"launcher.json").wstring();
+    launcher::LoadPrefs(loader.s, prefsPath);
+    loader.s.startWithWindows = launcher::StartupEnabled();
+    ui::LoaderSettings applied = loader.s;
+    std::string prefsText = launcher::PrefsText(loader.s);
+
+    SIZE cs = ClientSize(loader.s.scale);
     DWORD style = WS_OVERLAPPEDWINDOW;
-    g_uiScale = model.menuScale;
+    g_uiScale = loader.s.scale;
     RECT wr = { 0, 0, cs.cx, cs.cy };
     AdjustWindowRectEx(&wr, style, FALSE, 0);
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), LoadIconW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(1)), LoadCursor(nullptr, IDC_ARROW), nullptr, nullptr, L"FathomLauncher", nullptr };
@@ -215,7 +225,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         return 1;
     }
 
-    ::ShowWindow(hwnd, SW_SHOWDEFAULT);
+    if (loader.s.onTop)
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    ::ShowWindow(hwnd, cmd && strstr(cmd, "--minimized") ? SW_SHOWMINNOACTIVE : SW_SHOWDEFAULT);
     ::UpdateWindow(hwnd);
 
     IMGUI_CHECKVERSION();
@@ -231,6 +243,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     menu.onHome = true;
     menu.showGameTabs = false;
     menu.onBack = [&] { home.game = -1; menu.onHome = true; };
+    menu.loader = &loader;
+    menu.uiScale = loader.s.scale;
+    ui::T().accent = ui::AccentColor(loader.s.accent);
+    bool artRefresh = false, artWipe = false, downloading = false;
+    ULONGLONG runningSince = 0, closeAt = 0;
+    bool autoTried = false;
+    auto openPath = [](const std::wstring& path) {
+        std::error_code ec;
+        std::filesystem::create_directories(path, ec);
+        ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    };
+    loader.openHome = [&] { openPath(ExeDir()); };
+    loader.openBackups = [&] { openPath((std::filesystem::path(ExeDir()) / L"save-backups").wstring()); };
+    loader.openGame = [&] { openPath(home.paths.folder); };
+    loader.backupSaves = [] { return inject::BackupSaves(); };
+    loader.refreshArt = [&] { artRefresh = true; artWipe = true; };
+    loader.checkUpdates = [] { launcher::update::Check(); };
+    loader.installUpdate = [&] { downloading = true; launcher::update::Download(); };
+    if (loader.s.checkUpdates)
+        launcher::update::Check();
     const auto& games = launcher::Games();
     home.installed.resize(games.size());
     std::vector<std::pair<int, int>> wantedArt;
@@ -241,8 +273,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     }
     for (const auto& g : games)
         wantedArt.push_back({ g.appId, launcher::art::Hero });
-    launcher::art::Start(wantedArt, (std::filesystem::path(ExeDir()) / L"art").wstring());
-    std::vector<ID3D12Resource*> artTex;
+    const std::wstring artDir = (std::filesystem::path(ExeDir()) / L"art").wstring();
+    launcher::art::Start(wantedArt, artDir, loader.s.webArt);
+    struct ArtTex { ID3D12Resource* tex; D3D12_CPU_DESCRIPTOR_HANDLE cpu; D3D12_GPU_DESCRIPTOR_HANDLE gpu; };
+    std::vector<ArtTex> artTex;
 
     ImGui_ImplWin32_Init(hwnd);
 
@@ -305,7 +339,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     std::string workerResult;
     bool workerOk = false;
     ULONGLONG lastPoll = 0, lastSync = 0;
-    float shownScale = model.menuScale;
+    float shownScale = loader.s.scale;
     inject::GameState lastState = inject::GameState::NotRunning;
 
     bool done = false;
@@ -330,6 +364,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             if (home.state != lastState && lastState == inject::GameState::Injected && home.state == inject::GameState::Running)
                 menu.Notify("The menu was unloaded from the game", ICON_INFO);
             lastState = home.state;
+            if (home.state == inject::GameState::NotRunning)
+            {
+                runningSince = 0;
+                autoTried = false;
+            }
+            else if (runningSince == 0)
+                runningSince = now;
+            if (home.state == inject::GameState::Injected)
+                autoTried = true;
+            if (loader.s.autoInject && !autoTried && !home.busy && home.paths.found && home.state == inject::GameState::Running && now - runningSince >= 30000)
+            {
+                autoTried = true;
+                home.injectNow = true;
+                menu.Notify("Injecting the menu automatically", ICON_ZAP);
+            }
         }
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
@@ -339,6 +388,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? "All games" : nullptr;
             home.openKey = core::KeyName(model.keyOpen);
+            home.showSoon = loader.s.showSoon;
+            home.installedFirst = loader.s.installedFirst;
+            ui::T().accent = ui::AccentColor(loader.s.accent);
+            launcher::update::Status us = launcher::update::Get();
+            loader.updateBusy = us.busy;
+            loader.updateReady = us.checked && us.newer;
+            if (downloading)
+                loader.updateText = us.busy ? "Downloading the installer\xe2\x80\xa6" : us.installerReady ? "Opening the installer\xe2\x80\xa6" : "The download did not work. Try again later.";
+            else if (us.busy)
+                loader.updateText = "Checking for updates\xe2\x80\xa6";
+            else if (us.failed)
+                loader.updateText = "Could not reach GitHub. Check your internet.";
+            else if (us.checked)
+                loader.updateText = us.newer ? "Version " + us.latest + " is out" : "You have the newest version";
+            if (downloading && !us.busy)
+            {
+                downloading = false;
+                if (us.installerReady)
+                {
+                    ShellExecuteW(nullptr, L"open", us.installer.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                    done = true;
+                }
+            }
             home.unloadKey = core::KeyName(model.keyUnload);
             if (sn2)
             {
@@ -362,7 +434,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
                     continue;
                 }
-                artTex.push_back(tex);
+                artTex.push_back({ tex, cpu, gpu });
                 home.art[launcher::ArtKey(img.appId, img.kind)] = { (ImTextureID)gpu.ptr, (float)img.width, (float)img.height };
             }
         }
@@ -389,6 +461,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             home.busy = false;
             menu.Notify(workerResult, workerOk ? ICON_CHECK : ICON_TRIANGLE_ALERT);
             lastPoll = 0;
+            if (workerOk && loader.s.closeAfterInject)
+                closeAt = now + 2000;
         }
         if (now - lastSync >= 500)
         {
@@ -409,12 +483,56 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 knownTime = t;
             }
         }
-        if (std::fabs(shownScale - model.menuScale) > 0.001f)
+        if (closeAt && now >= closeAt)
+            done = true;
         {
-            FitWindow(hwnd, shownScale, model.menuScale);
-            shownScale = model.menuScale;
+            std::string text = launcher::PrefsText(loader.s);
+            if (text != prefsText)
+            {
+                prefsText = text;
+                launcher::SavePrefs(loader.s, prefsPath);
+                if (loader.s.startWithWindows != applied.startWithWindows && !launcher::SetStartup(loader.s.startWithWindows))
+                {
+                    loader.s.startWithWindows = applied.startWithWindows;
+                    menu.Notify("Windows did not allow the startup change", ICON_TRIANGLE_ALERT);
+                }
+                if (loader.s.onTop != applied.onTop)
+                    SetWindowPos(hwnd, loader.s.onTop ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                if (loader.s.webArt && !applied.webArt)
+                    artRefresh = true;
+                applied = loader.s;
+            }
+        }
+        menu.uiScale = loader.s.scale;
+        if (std::fabs(shownScale - loader.s.scale) > 0.001f)
+        {
+            FitWindow(hwnd, shownScale, loader.s.scale);
+            shownScale = loader.s.scale;
             g_uiScale = shownScale;
         }
+        if (artRefresh)
+        {
+            artRefresh = false;
+            launcher::art::Stop();
+            WaitForPendingOperations();
+            for (const ArtTex& t : artTex)
+            {
+                t.tex->Release();
+                g_pd3dSrvDescHeapAlloc.Free(t.cpu, t.gpu);
+            }
+            artTex.clear();
+            home.art.clear();
+            if (artWipe)
+            {
+                std::error_code ec;
+                for (const auto& e : std::filesystem::directory_iterator(artDir, ec))
+                    std::filesystem::remove(e.path(), ec);
+            }
+            artWipe = false;
+            launcher::art::Start(wantedArt, artDir, loader.s.webArt);
+        }
+        if (done)
+            break;
 
         if ((g_SwapChainOccluded && g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) || ::IsIconic(hwnd))
         {
@@ -469,9 +587,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(model);
 
     launcher::art::Stop();
+    launcher::update::Wait();
     WaitForPendingOperations();
-    for (ID3D12Resource* tex : artTex)
-        tex->Release();
+    for (const ArtTex& t : artTex)
+        t.tex->Release();
     if (iconTex)
         iconTex->Release();
     if (logoTex)
