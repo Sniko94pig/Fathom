@@ -11,6 +11,7 @@
 #include "ui/icons.h"
 #include "ui/menu.h"
 #include "core/sn1_features.h"
+#include "core/sotf_features.h"
 #include "ui/ui.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -375,7 +376,51 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"22-launcher-sotf", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             home.game = launcher::FindGame("sonsoftheforest");
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Sons of the Forest";
+             u.homePage = [] { home.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
 #endif
+        {"23-sotf-player", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             u.tab = core::Tab::Survival;
+         }, ImVec2(0, 0), nullptr},
+        {"24-sotf-combat", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             u.tab = core::Tab::Biomods;
+         }, ImVec2(0, 0), nullptr},
+        {"25-sotf-building", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             u.tab = core::Tab::Crafting;
+         }, ImVec2(0, 0), nullptr},
+        {"26-sotf-world", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             u.tab = core::Tab::World;
+         }, ImVec2(0, 0), nullptr},
+        {"27-sotf-companions", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             u.tab = core::Tab::BaseHub;
+         }, ImVec2(0, 0), nullptr},
+        {"28-sotf-spawner", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             u.tab = core::Tab::Spawner;
+         }, ImVec2(0, 0), nullptr},
         {"17-sn1-survival", [](core::Model& m, ui::Menu&) {
              m = core::Model();
              sn1::BuildFeatures(m);

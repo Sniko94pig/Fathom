@@ -28,6 +28,20 @@ const TabDef kTabs[] = {
     {Tab::Legit, "Legit Run", ICON_SHIELD_CHECK}, {Tab::Settings, "Settings", ICON_SETTINGS},
 };
 
+const char* TabName(const core::Model& m, Tab t) {
+    for (const core::TabLabel& l : m.tabLabels)
+        if (l.tab == t && !l.name.empty()) return l.name.c_str();
+    return kTabs[(int)t].name;
+}
+
+const char* TabIcon(const core::Model& m, Tab t) {
+    for (const core::TabLabel& l : m.tabLabels)
+        if (l.tab == t && l.icon) return l.icon;
+    return kTabs[(int)t].icon;
+}
+
+bool Plain(const core::Model& m, Tab t) { return std::find(m.plainTabs.begin(), m.plainTabs.end(), t) != m.plainTabs.end(); }
+
 void Approach(float& v, float target, float speed) {
     v += (target - v) * (1.0f - std::exp(-speed * Dt()));
     if (std::fabs(target - v) < 0.002f) v = target;
@@ -202,9 +216,11 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
     std::vector<Entry> list;
     if (backName && onBack) list.push_back({0, nullptr, backName, ICON_UNDO_2});
     if (homePage) list.push_back({1, nullptr, homeName, homeIcon ? homeIcon : ICON_ZAP});
-    for (const TabDef& d : kTabs)
-        if ((showGameTabs || d.tab == Tab::Settings) && (m.tabs.empty() || std::find(m.tabs.begin(), m.tabs.end(), d.tab) != m.tabs.end()))
-            list.push_back({2, &d, d.name, d.icon});
+    std::vector<Tab> order = m.tabs;
+    if (order.empty())
+        for (const TabDef& d : kTabs) order.push_back(d.tab);
+    for (Tab t : order)
+        if (showGameTabs || t == Tab::Settings) list.push_back({2, &kTabs[(int)t], TabName(m, t), TabIcon(m, t)});
     int count = (int)list.size();
     int idx = -1;
     for (int i = 0; i < count; ++i)
@@ -266,7 +282,7 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
 
 void Menu::TopBar(ImVec2 p, ImVec2 size) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const char* title = homePage && onHome ? homeName : kTabs[(int)tab].name;
+    const char* title = homePage && onHome ? homeName : TabName(m, tab);
     ImVec2 ts = Measure(T().semibold, 18, title);
     Text(dl, T().semibold, 18, ImVec2(p.x + S(kSide) + S(24), p.y + (S(kTop) - ts.y) * 0.5f), White(0.97f), title);
 
@@ -328,15 +344,21 @@ void Menu::Content(ImVec2 p, ImVec2 size) {
         Banner();
         switch (tab) {
         case Tab::Spawner:
-            if (std::find(m.plainTabs.begin(), m.plainTabs.end(), tab) != m.plainTabs.end()) {
+            if (Plain(m, tab)) {
                 if (page.empty()) FeaturePage(tab);
                 else SubPage();
             } else {
                 SpawnerPage();
             }
             break;
-        case Tab::BaseHub: HubPage(); break;
-        case Tab::Legit: LegitPage(); break;
+        case Tab::BaseHub:
+            if (Plain(m, tab)) FeaturePage(tab);
+            else HubPage();
+            break;
+        case Tab::Legit:
+            if (Plain(m, tab)) FeaturePage(tab);
+            else LegitPage();
+            break;
         case Tab::Settings: loader ? LoaderPage() : SettingsPage(); break;
         default: FeaturePage(tab); break;
         }
@@ -615,7 +637,7 @@ void Menu::FeaturePage(Tab t) {
             y += FeatureRowHeight(*f);
         }
     }
-    if (t == Tab::Biomods) {
+    if (t == Tab::Biomods && !Plain(m, t)) {
         bool allowed = m.cheatsAllowed() && (bool)m.setAdaptation;
         float rowH = S(52);
         float h = S(38) + S(8) + (m.adaptations.empty() ? S(56) : rowH * m.adaptations.size());

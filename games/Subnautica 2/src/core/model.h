@@ -100,6 +100,12 @@ struct TierStep {
     bool done = false;
 };
 
+struct TabLabel {
+    Tab tab = Tab::Survival;
+    std::string name;
+    const char* icon = nullptr;
+};
+
 struct Tier {
     std::string name, blurb, caps;
     std::vector<TierStep> steps;
@@ -109,6 +115,7 @@ struct Model {
     std::vector<Feature> features;
     std::vector<Tab> tabs;
     std::vector<Tab> plainTabs;
+    std::vector<TabLabel> tabLabels;
     Session session = Session::Solo;
     bool inWorld = false;
 

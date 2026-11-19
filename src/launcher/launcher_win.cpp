@@ -6,6 +6,7 @@
 #include "launcher/inject.h"
 #include "launcher/sn1_inject.h"
 #include "core/sn1_features.h"
+#include "core/sotf_features.h"
 #include "launcher/prefs.h"
 #include "ui/icons.h"
 #include "ui/atlas.h"
@@ -215,6 +216,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::LoadSettings(sn1Model);
     std::string sn1LastText = core::SettingsText(sn1Model);
     auto sn1KnownTime = FileTime(sn1SettingsPath);
+    core::Model sotfModel;
+    sotf::BuildFeatures(sotfModel);
+    sotfModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"sonsoftheforest-settings.json").wstring());
+    sotfModel.openUrl = model.openUrl;
+    core::LoadSettings(sotfModel);
+    std::string sotfLastText = core::SettingsText(sotfModel);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -258,7 +265,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     launcher::LogView logView;
     ui::Menu mainMenu(model);
     ui::Menu sn1Menu(sn1Model);
-    for (ui::Menu* mm : { &mainMenu, &sn1Menu })
+    ui::Menu sotfMenu(sotfModel);
+    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu })
     {
         mm->embedded = true;
         mm->homePage = [&] { home.Draw(); };
@@ -266,7 +274,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->homeIcon = ICON_LAYERS;
         mm->onHome = true;
         mm->showGameTabs = false;
-        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; };
+        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; };
         mm->loader = &loader;
         mm->uiScale = loader.s.scale;
     }
@@ -366,6 +374,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     }
 
     sn1Model.logoTexture = model.logoTexture;
+    sotfModel.logoTexture = model.logoTexture;
 
     std::thread worker;
     std::atomic<bool> workerDone{ false };
@@ -389,7 +398,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             break;
 
         bool sn1Open = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "subnautica") == 0;
-        ui::Menu& menu = sn1Open ? sn1Menu : mainMenu;
+        bool sotfOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "sonsoftheforest") == 0;
+        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mainMenu;
         ULONGLONG now = GetTickCount64();
         if (now - lastPoll >= 1000)
         {
@@ -425,7 +435,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
             bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
-            menu.showGameTabs = sn2 || sn1Open;
+            menu.showGameTabs = sn2 || sn1Open || sotfOpen;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? "All games" : nullptr;
@@ -470,6 +480,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 menu.status = home.sn1State == inject::GameState::Injected ? "Menu active in game" : home.sn1State == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.sn1State != inject::GameState::NotRunning;
+            }
+            else if (sotfOpen)
+            {
+                menu.status = "Being built";
+                menu.statusGood = false;
             }
             else
             {
@@ -628,6 +643,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         logView.Draw();
         model.requestUnload = false;
         sn1Model.requestUnload = false;
+        sotfModel.requestUnload = false;
         ImGui::Render();
 
         FrameContext* frameCtx = WaitForNextFrameContext();
@@ -669,6 +685,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(model);
     if (core::SettingsText(sn1Model) != sn1LastText)
         core::SaveSettings(sn1Model);
+    if (core::SettingsText(sotfModel) != sotfLastText)
+        core::SaveSettings(sotfModel);
 
     launcher::art::Stop();
     launcher::update::Wait();
