@@ -11,7 +11,7 @@ void Wire(core::Model& model, std::mutex& lock);
 bool Start(std::string& err);
 void RequestStop();
 bool Stopped();
-void ForceStop();
+bool SafeToUnload();
 bool Ticking();
 std::vector<std::string> TakeNotes();
 void SetMenu(bool open, bool focused);

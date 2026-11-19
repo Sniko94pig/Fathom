@@ -107,14 +107,25 @@ bool WaitForGame() {
     return false;
 }
 
-void Unload() {
+bool Unload() {
     LOG("unloading");
-    sn1game::RequestStop();
-    for (int i = 0; i < 300 && !sn1game::Stopped(); ++i) Sleep(10);
-    if (!sn1game::Stopped()) {
-        LOG("the game did not answer, detaching directly");
-        sn1game::ForceStop();
+    {
+        std::lock_guard<std::mutex> g(modelLock);
+        if (menu) menu->open = false;
     }
+    sn1game::SetMenu(false, false);
+    sn1game::RequestStop();
+    ULONGLONG start = GetTickCount64(), told = 0;
+    while (!sn1game::Stopped()) {
+        Sleep(20);
+        ULONGLONG waited = GetTickCount64() - start;
+        if (waited >= 3000 && waited - told >= 10000) {
+            told = waited;
+            LOG("waiting for the game to draw a frame so the cheats can be switched off");
+        }
+    }
+    bool safe = sn1game::SafeToUnload();
+    if (!safe) LOG("the menu file stays loaded but does nothing until the game closes");
     {
         std::lock_guard<std::mutex> g(modelLock);
         core::SaveSettings(model);
@@ -131,6 +142,7 @@ void Unload() {
     monoThread = nullptr;
     LOG("unloaded");
     slog::Close();
+    return safe;
 }
 
 DWORD WINAPI MainThread(void*) {
@@ -222,8 +234,8 @@ DWORD WINAPI MainThread(void*) {
             LOG("settings reloaded from the app");
         }
     }
-    Unload();
-    FreeLibraryAndExitThread(self, 0);
+    if (Unload()) FreeLibraryAndExitThread(self, 0);
+    ExitThread(0);
 }
 
 std::wstring ModuleFolder() {

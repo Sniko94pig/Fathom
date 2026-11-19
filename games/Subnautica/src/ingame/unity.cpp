@@ -267,6 +267,26 @@ bool Resolve(std::string& err) {
     R.ttAsString = M(R.techTypeExt, "AsString", 2);
     R.wsWaiting = M(R.waitScreen, "get_IsWaiting", 0);
 
+    R.gameModeOption = C(game, "", "GameModeOption");
+    R.damageType = C(game, "", "DamageType");
+    R.behaviourType = C(game, "", "BehaviourType");
+    auto E = [](Class* c, const char* name) {
+        int v = c ? mono::EnumValue(c, name) : -1;
+        if (c && v < 0) missing.push_back(std::string(mono::ClassName(c)) + "." + name);
+        return v;
+    };
+    R.E.noRadiation = E(R.gameModeOption, "NoRadiation");
+    R.E.noOxygen = E(R.gameModeOption, "NoOxygen");
+    R.E.noAggression = E(R.gameModeOption, "NoAggression");
+    R.E.noBlueprints = E(R.gameModeOption, "NoBlueprints");
+    R.E.noCost = E(R.gameModeOption, "NoCost");
+    R.E.deconstruct = E(mono::ParamClass(R.giButtonHeld, 0), "Deconstruct");
+    R.E.damageNormal = E(R.damageType, "Normal");
+    R.E.modeNormal = E(mono::FieldClass(R.plMode.f), "Normal");
+    R.E.leviathan = E(R.behaviourType, "Leviathan");
+    R.E.shark = E(R.behaviourType, "Shark");
+    R.E.qtiIgnore = E(mono::ParamClass(R.capsuleCast ? R.capsuleCast : R.sphereCast, R.capsuleCast ? 7 : 6), "Ignore");
+
     for (const std::string& s : missing) LOG("not found in the game: %s", s.c_str());
     if (!R.cachedPtr || !R.findObjectsOfType || !R.compTransform || !R.compGetComponent || !R.trGetPosition || !R.addWillRender ||
         !R.removeWillRender || !R.willRenderType || !R.delegateForPointer || !R.playerMain) {

@@ -35,6 +35,11 @@ struct Fld {
     explicit operator bool() const { return f && off >= 0; }
 };
 
+struct Enums {
+    int noRadiation = -1, noOxygen = -1, noAggression = -1, noBlueprints = -1, noCost = -1;
+    int deconstruct = -1, damageNormal = -1, modeNormal = -1, leviathan = -1, shark = -1, qtiIgnore = -1;
+};
+
 struct Refs {
     Class *object, *component, *gameObject, *transform, *behaviour, *time, *camera, *collider, *rigidbody, *physics,
         *canvas, *marshal;
@@ -100,6 +105,8 @@ struct Refs {
     Fld bpUsed, scOpen;
     Method *lgMain, *lgGet, *ttAsString;
     Method *wsWaiting;
+    Class *gameModeOption, *damageType, *behaviourType;
+    Enums E;
 };
 
 extern Refs R;

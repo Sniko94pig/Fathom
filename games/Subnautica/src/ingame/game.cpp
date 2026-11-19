@@ -210,9 +210,9 @@ int Kind(int tt) {
     if (levSet.count(tt)) k = 2;
     else if (hostileSet.count(tt)) k = 1;
     else if (R.cdBehaviour && tt > 0) {
-        int b = CallInt(R.cdBehaviour, nullptr, {&tt}, 0);
-        if (b == 6) k = 2;
-        else if (b == 4) k = 1;
+        int b = CallInt(R.cdBehaviour, nullptr, {&tt}, -1);
+        if (b >= 0 && b == R.E.leviathan) k = 2;
+        else if (b >= 0 && b == R.E.shark) k = 1;
     }
     kindCache[tt] = k;
     return k;
@@ -222,17 +222,17 @@ int ownedCheats = 0;
 
 void GameModes(const Snap& s, bool active) {
     if (!R.gmCheats || !R.gmActivate || !R.gmDeactivate) return;
+    const std::pair<int, int> options[] = {{T_RAD, R.E.noRadiation}, {T_OXYGEN, R.E.noOxygen}, {T_GHOST, R.E.noAggression},
+                                           {T_PRINTS, R.E.noBlueprints}, {T_FREE, R.E.noCost}};
     int want = 0;
-    if (active) {
-        if (s.on[T_RAD]) want |= 512;
-        if (s.on[T_OXYGEN]) want |= 64;
-        if (s.on[T_GHOST]) want |= 128;
-        if (s.on[T_PRINTS]) want |= 8;
-        if (s.on[T_FREE]) want |= 4;
-    }
+    if (active)
+        for (const auto& o : options)
+            if (o.second > 0 && s.on[o.first]) want |= o.second;
     int cur = 0;
     mono::StaticGet(R.gmCheats.cls, R.gmCheats.f, &cur);
-    for (int bit : {512, 64, 128, 8, 4}) {
+    for (const auto& o : options) {
+        int bit = o.second;
+        if (bit <= 0) continue;
         if ((want & bit) && !(cur & bit)) {
             Call(R.gmActivate, nullptr, {&bit});
             ownedCheats |= bit;
@@ -361,7 +361,8 @@ int LayerMask() {
 bool Cast(Vec3 c, Vec3 dir, float dist, float& allowed, Vec3& normal) {
     float radius = 0.3f, half = 0.5f, skin = 0.05f;
     float maxd = dist + skin;
-    int mask = LayerMask(), qti = 1;
+    int mask = LayerMask(), qti = R.E.qtiIgnore;
+    if (qti < 0) return false;
     RayHit hit{};
     bool any;
     if (R.capsuleCast) {
@@ -398,12 +399,12 @@ Vec3 Sweep(Vec3 c, Vec3 move) {
 }
 
 void Fly(Object* player, Object* pc, const Snap& s, bool inVeh) {
-    int mode = player ? Val<int>(player, R.plMode) : 0;
+    bool normal = player && Val<int>(player, R.plMode, -1) == R.E.modeNormal;
     bool cine = player && CallBool(R.plCinematic, player);
-    bool can = player && Alive(pc) && s.on[T_FLY] && !inVeh && mode == 0 && !cine;
+    bool can = player && Alive(pc) && s.on[T_FLY] && !inVeh && normal && !cine;
     if (!can) {
         if (flyActive) {
-            if (player && Alive(pc) && !inVeh && mode == 0) {
+            if (player && Alive(pc) && !inVeh && normal) {
                 int t = 1;
                 Call(R.pcSetEnabled, pc, {&t});
             }
@@ -488,8 +489,8 @@ void Crafting(const Snap& s, double now, bool inGame) {
     Object* nc = Static(R.ncMain);
     if (Alive(nc)) {
         if (inGame && (s.on[T_BUILD] || s.on[T_DECON])) {
-            int btn = 2;
-            bool decon = R.giButtonHeld && CallBool(R.giButtonHeld, nullptr, {&btn});
+            int btn = R.E.deconstruct;
+            bool decon = R.giButtonHeld && btn >= 0 && CallBool(R.giButtonHeld, nullptr, {&btn});
             uint8_t want = (decon ? s.on[T_DECON] : s.on[T_BUILD]) ? 1 : 0;
             if (Val<uint8_t>(nc, R.ncFastBuild) != want) SetVal<uint8_t>(nc, R.ncFastBuild, want);
             fastBuildOwned = true;
@@ -891,7 +892,7 @@ void Esp(Object* player, const Snap& s, double now) {
 
 void ClearHostiles(Object* player, float radius) {
     Vec3 pp = Position(player);
-    int n = 0, dmg = 0;
+    int n = 0, dmg = R.E.damageNormal;
     for (Object* c : FindAll(R.creature)) {
         if (Dist(Position(c), pp) > radius) continue;
         if (Kind(TechOf(GameObjectOf(c))) != 1) continue;
@@ -979,20 +980,29 @@ void ReleaseWorld(const Snap& off) {
     }
 }
 
-void Unsubscribe() {
+std::atomic<bool> subscribed{false};
+bool unsubscribed = false;
+int stopAttempts = 0;
+
+bool Unsubscribe() {
+    if (!delegateHandle) return true;
     Object* del = mono::Pinned(delegateHandle);
-    if (del) Call(R.removeWillRender, nullptr, {del});
-    mono::Unpin(delegateHandle);
-    delegateHandle = 0;
+    bool ok = !del;
+    if (del) Call(R.removeWillRender, nullptr, {del}, &ok);
+    if (ok) {
+        mono::Unpin(delegateHandle);
+        delegateHandle = 0;
+        subscribed = false;
+    }
+    return ok;
 }
 
 void Tick() {
     try {
         lastTick = GetTickCount64();
-        bool stopping = stop.load() == 1;
-        Snap s = stopping ? Off() : TakeSnap();
+        Snap s = TakeSnap();
         double now = Now();
-        MenuInput(stopping);
+        MenuInput(false);
         Object* player = Static(R.playerMain);
         bool inGame = Alive(player) && !Loading();
         GameModes(s, inGame);
@@ -1010,21 +1020,54 @@ void Tick() {
             Movement(player, s, veh || cyc);
             Vehicles(veh, cyc, s);
             Esp(player, s, now);
-        } else if (wasInGame || stopping) {
+        } else if (wasInGame) {
             ReleaseWorld(Off());
         }
         wasInGame = inGame;
         Actions(player, inGame, s);
         prev = s;
-        if (stopping) {
-            ReleaseWorld(Off());
-            ReleasePower();
-            Unsubscribe();
-            stop = 2;
-        }
     } catch (...) {
         if (faults++ < 5) LOG("error in the game update");
     }
+}
+
+template <class F>
+void Step(F&& fn) {
+    try {
+        fn();
+    } catch (...) {
+        if (faults++ < 10) LOG("error while switching the cheats off");
+    }
+}
+
+void StopFrame() {
+    lastTick = GetTickCount64();
+    Snap off = Off();
+    double now = Now();
+    Object* player = Static(R.playerMain);
+    if (!Alive(player)) player = nullptr;
+    Object* veh = nullptr;
+    Object* cyc = nullptr;
+    if (player)
+        Step([&] {
+            veh = Call(R.plGetVehicle, player);
+            if (!Alive(veh)) veh = nullptr;
+            Object* sub = Call(R.plCurrentSub, player);
+            cyc = Alive(sub) && Val<uint8_t>(sub, R.srCyclops) ? sub : nullptr;
+        });
+    Step([&] { MenuInput(true); });
+    Step([&] { GameModes(off, false); });
+    Step([&] { GameSpeed(off, false); });
+    Step([&] { Crafting(off, now, false); });
+    Step([&] { Bases(off, now, false); });
+    Step([&] { Fog(off, now, false); });
+    Step([&] { Vitals(player, off); });
+    Step([&] { Stealth(player, veh, cyc, off, now); });
+    Step([&] { Movement(player, off, veh || cyc); });
+    Step([&] { Vehicles(veh, cyc, off); });
+    Step([&] { ReleaseWorld(off); });
+    Step([&] { ReleasePower(); });
+    Step([&] { unsubscribed = Unsubscribe(); });
 }
 
 int Filter(unsigned int code) {
@@ -1039,26 +1082,49 @@ void SafeTick() {
     }
 }
 
+void SafeStop() {
+    __try {
+        StopFrame();
+    } __except (Filter(GetExceptionCode())) {
+    }
+}
+
 void __stdcall OnRender() {
-    if (stop.load() == 2) return;
+    int st = stop.load();
+    if (st >= 2) return;
     ticking.fetch_add(1);
-    SafeTick();
+    if (st == 1) {
+        SafeStop();
+        if (unsubscribed) {
+            stop = 2;
+            LOG("cheats switched off and detached from the game");
+        } else if (++stopAttempts >= 5) {
+            stop = 3;
+            LOG("could not detach from the game");
+        }
+    } else {
+        SafeTick();
+    }
     ticking.fetch_sub(1);
 }
 
 bool Supported(const std::string& id) {
+    bool modes = R.gmCheats && R.gmActivate && R.gmDeactivate;
     if (id == "godmode") return (bool)R.lmInvincible;
     if (id == "unlimited_health" || id == "refill_health") return R.lmHealth && R.lmMaxHealth;
-    if (id == "radiation_immunity" || id == "infinite_oxygen" || id == "ghost" || id == "unlock_blueprints" || id == "free_craft")
-        return R.gmCheats && R.gmActivate;
+    if (id == "radiation_immunity") return modes && R.E.noRadiation > 0;
+    if (id == "infinite_oxygen") return modes && R.E.noOxygen > 0;
+    if (id == "ghost") return modes && R.E.noAggression > 0;
+    if (id == "unlock_blueprints") return modes && R.E.noBlueprints > 0;
+    if (id == "free_craft") return modes && R.E.noCost > 0;
     if (id == "unlimited_food" || id == "unlimited_water" || id == "refill_food" || id == "refill_water") return R.svFood && R.svWater;
     if (id == "refill_oxygen") return R.oxAdd && R.oxCapacity;
     if (id == "player_speed") return R.pmDebugSpeed && R.pmForward;
     if (id == "jump_height") return R.gmJumping && R.jmpBaseHeight;
     if (id == "noclip") return R.rbSetDetect && R.pmRb;
-    if (id == "fly" || id == "fly_speed") return R.pcSetEnabled && R.trForward && R.camMain;
+    if (id == "fly" || id == "fly_speed") return R.pcSetEnabled && R.trForward && R.camMain && R.E.modeNormal >= 0 && R.E.qtiIgnore >= 0;
     if (id == "instant_craft") return R.clEnd && R.clBegin;
-    if (id == "instant_build" || id == "instant_deconstruct") return R.ncMain && R.ncFastBuild;
+    if (id == "instant_build" || id == "instant_deconstruct") return R.ncMain && R.ncFastBuild && R.E.deconstruct >= 0;
     if (id == "instant_scan") return R.ncMain && R.ncFastScan;
     if (id == "base_integrity") return R.bhStrength && R.lkLive;
     if (id == "unlimited_power") return R.prList && R.prInternal && R.goAddComponent;
@@ -1068,7 +1134,7 @@ bool Supported(const std::string& id) {
     if (id == "vehicle_energy") return R.vhEnergy && R.prModify;
     if (id == "vehicle_invisible") return R.ecoTarget != nullptr;
     if (id == "vehicle_speed") return R.vhForward && R.scForward;
-    if (id == "clear_radius" || id == "clear_hostiles") return R.lmKill && R.creature;
+    if (id == "clear_radius" || id == "clear_hostiles") return R.lmKill && R.creature && R.E.damageNormal >= 0;
     if (id == "esp" || id == "item_esp") return R.camView && R.camProj;
     return true;
 }
@@ -1147,29 +1213,19 @@ bool Start(std::string& err) {
         err = "could not attach to the game's frame";
         return false;
     }
+    subscribed = true;
     LOG("attached to the game's frame");
     return true;
 }
 
 void RequestStop() {
     int expected = 0;
-    stop.compare_exchange_strong(expected, 1);
+    stop.compare_exchange_strong(expected, subscribed ? 1 : 2);
 }
 
-bool Stopped() { return stop.load() == 2 && ticking.load() == 0; }
+bool Stopped() { return stop.load() >= 2 && ticking.load() == 0; }
 
-void ForceStop() {
-    if (stop.load() == 2) return;
-    stop = 2;
-    for (int i = 0; i < 200 && ticking.load() > 0; ++i) Sleep(10);
-    Unsubscribe();
-    ReleaseTracked();
-    for (uint32_t h : fogOff) mono::Unpin(h);
-    fogOff.clear();
-    for (uint32_t h : powered) mono::Unpin(h);
-    powered.clear();
-    esp::Clear();
-}
+bool SafeToUnload() { return stop.load() == 2; }
 
 bool Ticking() { return GetTickCount64() - lastTick.load() < 2000; }
 
