@@ -26,8 +26,8 @@ void Empty(ImDrawList* dl, ImVec2 a, ImVec2 size, const char* icon, const char* 
 }
 
 void Panel(ImDrawList* dl, ImVec2 a, ImVec2 size) {
-    dl->AddRectFilled(a, ImVec2(a.x + size.x, a.y + size.y), White(0.035f), S(12));
-    dl->AddRect(a, ImVec2(a.x + size.x, a.y + size.y), White(0.05f), S(12));
+    dl->AddRectFilled(a, ImVec2(a.x + size.x, a.y + size.y), White(0.035f));
+    dl->AddRectFilled(a, ImVec2(a.x + size.x, a.y + S(2)), White(0.09f));
 }
 
 void Label(ImDrawList* dl, ImVec2 pos, const char* text) {
@@ -209,8 +209,8 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
                 float sv = Ease(ImGui::GetID("s"), selected == idx ? 1.0f : 0.0f, 18.0f);
                 ImGui::PopID();
                 ImVec2 rq(rp.x + rwid - S(6), rp.y + rh - S(2));
-                if (sv > 0.01f) cl->AddRectFilled(rp, rq, Accent(0.12f * sv), S(8));
-                else if (hv > 0.01f) cl->AddRectFilled(rp, rq, White(0.04f * hv), S(8));
+                if (sv > 0.01f) cl->AddRectFilled(rp, rq, Accent(0.12f * sv));
+                else if (hv > 0.01f) cl->AddRectFilled(rp, rq, White(0.04f * hv));
                 ImVec2 cs = Measure(T().regular, 11.5f, it.category.c_str());
                 float tx = rp.x + S(44);
                 auto ic = m.icons.find(it.id);
@@ -219,7 +219,7 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
                     cl->AddImage((ImTextureID)m.iconTexture, ImVec2(rp.x + S(8), rp.y + S(3)), ImVec2(rp.x + S(36), rp.y + S(31)),
                                  ImVec2(u[0], u[1]), ImVec2(u[2], u[3]));
                 } else {
-                    cl->AddRectFilled(ImVec2(rp.x + S(9), rp.y + S(4)), ImVec2(rp.x + S(35), rp.y + S(30)), Accent(0.10f), S(7));
+                    cl->AddRectFilled(ImVec2(rp.x + S(9), rp.y + S(4)), ImVec2(rp.x + S(35), rp.y + S(30)), Accent(0.10f));
                     Icon(cl, ImVec2(rp.x + S(22), rp.y + S(17)), S(14), Accent(0.85f), CategoryIcon(it.category));
                 }
                 TextFit(cl, T().medium, 13, ImVec2(tx, rp.y + S(9)), rwid - cs.x - S(48) - (tx - rp.x - S(12)),
@@ -240,7 +240,7 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
         auto ic = m.icons.find(sel->id);
         if (ic != m.icons.end()) {
             const auto& u = ic->second;
-            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + S(64), y + S(64)), White(0.04f), S(10));
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + S(64), y + S(64)), White(0.04f));
             dl->AddImage((ImTextureID)m.iconTexture, ImVec2(x + S(4), y + S(4)), ImVec2(x + S(60), y + S(60)), ImVec2(u[0], u[1]),
                          ImVec2(u[2], u[3]));
             y += S(74);
@@ -257,7 +257,7 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
     if (IconButton("minus", ICON_MINUS, ImVec2(x, y), S(36))) amount -= stepAmt;
     if (IconButton("plus", ICON_PLUS, ImVec2(x + iw - S(36), y), S(36))) amount += stepAmt;
     amount = std::clamp(amount, 1, std::max(1, sp.maxAmount));
-    dl->AddRectFilled(ImVec2(x + S(44), y), ImVec2(x + iw - S(44), y + S(36)), White(0.05f), S(8));
+    dl->AddRectFilled(ImVec2(x + S(44), y), ImVec2(x + iw - S(44), y + S(36)), White(0.05f));
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%d", amount);
     ImVec2 ts = Measure(T().semibold, 14, buf);
@@ -424,7 +424,7 @@ void Menu::LoadoutView(ImVec2 b, float W, float H) {
                 cl->AddImage((ImTextureID)m.iconTexture, ImVec2(rp.x + S(8), rp.y + S(6)), ImVec2(rp.x + S(36), rp.y + S(34)),
                              ImVec2(u[0], u[1]), ImVec2(u[2], u[3]));
             } else {
-                cl->AddRectFilled(ImVec2(rp.x + S(9), rp.y + S(7)), ImVec2(rp.x + S(35), rp.y + S(33)), Accent(0.10f), S(7));
+                cl->AddRectFilled(ImVec2(rp.x + S(9), rp.y + S(7)), ImVec2(rp.x + S(35), rp.y + S(33)), Accent(0.10f));
                 Icon(cl, ImVec2(rp.x + S(22), rp.y + S(20)), S(14), Accent(0.85f), CategoryIcon(it ? it->category : ""));
             }
             TextFit(cl, T().medium, 13, ImVec2(rp.x + S(46), rp.y + S(12)), rwid - S(46) - S(200), White(0.9f),
@@ -435,7 +435,7 @@ void Menu::LoadoutView(ImVec2 b, float W, float H) {
             char buf[16];
             std::snprintf(buf, sizeof(buf), "%d", e.second);
             ImVec2 ts = Measure(T().semibold, 13, buf);
-            cl->AddRectFilled(ImVec2(bx + S(38), rp.y + S(4)), ImVec2(bx + S(98), rp.y + S(36)), White(0.05f), S(8));
+            cl->AddRectFilled(ImVec2(bx + S(38), rp.y + S(4)), ImVec2(bx + S(98), rp.y + S(36)), White(0.05f));
             Text(cl, T().semibold, 13, ImVec2(bx + S(68) - ts.x * 0.5f, rp.y + S(20) - ts.y * 0.5f), White(0.95f), buf);
             if (IconButton("p", ICON_PLUS, ImVec2(bx + S(104), rp.y + S(4)), S(32))) e.second = std::min(999, e.second + step);
             if (IconButton("d", ICON_TRASH_2, ImVec2(bx + S(156), rp.y + S(4)), S(32), true, true)) remove = i;
@@ -475,7 +475,7 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     float zoom = mapZoom * T().scale;
     ImVec2 a = b, q(b.x + lw, b.y + H);
     ImVec2 c((a.x + q.x) * 0.5f, (a.y + q.y) * 0.5f);
-    dl->AddRectFilled(a, q, Black(0.30f), S(12));
+    dl->AddRectFilled(a, q, Black(0.30f));
 
     ImGui::SetCursorScreenPos(a);
     ImGui::InvisibleButton("map", ImVec2(lw, H));
@@ -598,7 +598,7 @@ void Menu::MapView(ImVec2 b, float W, float H) {
         Text(dl, T().regular, 11, ImVec2(a.x + S(16), a.y + S(14)), White(0.42f), photo.c_str());
     }
     dl->PopClipRect();
-    dl->AddRect(a, q, White(0.06f), S(12));
+    dl->AddRect(a, q, White(0.06f));
 
     if (hot) {
         float d = me ? std::hypot(hot->x - me->x, hot->y - me->y) : 0;
@@ -675,7 +675,7 @@ void Menu::MapView(ImVec2 b, float W, float H) {
             ImGui::PushID(i);
             bool go = ImGui::InvisibleButton("pl", ImVec2(rwid, S(36)));
             float hv = Ease(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
-            if (hv > 0.01f) cl->AddRectFilled(p, ImVec2(p.x + rwid, p.y + S(34)), White(0.04f * hv), S(8));
+            if (hv > 0.01f) cl->AddRectFilled(p, ImVec2(p.x + rwid, p.y + S(34)), White(0.04f * hv));
             Icon(cl, ImVec2(p.x + S(16), p.y + S(17)), S(14), Accent(0.9f), ICON_NAVIGATION);
             TextFit(cl, T().medium, 12.5f, ImVec2(p.x + S(30), p.y + S(9)), rwid - S(40), White(0.9f), l.name.c_str());
             ImGui::PopID();
@@ -700,7 +700,7 @@ void Menu::MapView(ImVec2 b, float W, float H) {
             bool go = ImGui::InvisibleButton("l", ImVec2(rwid, S(36)));
             bool rh = ImGui::IsItemHovered() || ImGui::IsMouseHoveringRect(p, ImVec2(p.x + rwid, p.y + S(36)));
             float hv = Ease(ImGui::GetID("h"), rh ? 1.0f : 0.0f, 18.0f);
-            if (hv > 0.01f) cl->AddRectFilled(p, ImVec2(p.x + rwid, p.y + S(34)), White(0.04f * hv), S(8));
+            if (hv > 0.01f) cl->AddRectFilled(p, ImVec2(p.x + rwid, p.y + S(34)), White(0.04f * hv));
             Icon(cl, ImVec2(p.x + S(16), p.y + S(17)), S(14), Accent(0.9f), ICON_MAP_PIN);
             TextFit(cl, T().medium, 12.5f, ImVec2(p.x + S(30), p.y + S(9)), rwid - S(70), White(0.9f), l.name.c_str());
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * hv);
@@ -745,8 +745,8 @@ void Menu::MapView(ImVec2 b, float W, float H) {
         TextFit(dl, T().regular, 11.5f, ImVec2(x, sy), iw, White(0.62f), m.mapScanText.c_str());
         float py = sy + S(20);
         float fill = iw * std::clamp(m.mapScanProgress, 0.0f, 1.0f);
-        dl->AddRectFilled(ImVec2(x, py), ImVec2(x + iw, py + S(4)), White(0.08f), S(2));
-        if (fill > 0.5f) dl->AddRectFilled(ImVec2(x, py), ImVec2(x + fill, py + S(4)), Accent(), S(2));
+        dl->AddRectFilled(ImVec2(x, py), ImVec2(x + iw, py + S(4)), White(0.08f));
+        if (fill > 0.5f) dl->AddRectFilled(ImVec2(x, py), ImVec2(x + fill, py + S(4)), Accent());
         if (Button("scanstop", "Stop scan", ImVec2(x, bottom - S(36)), ImVec2(iw, S(36)), Btn::Danger, ICON_X, (bool)m.mapScan)) {
             m.mapScan(false);
             Notify("Stopping the map scan", ICON_X);
@@ -779,7 +779,7 @@ void Menu::HubPage() {
         ImVec2 p(o.x, y);
         float h = S(64);
         Panel(dl, p, ImVec2(W, h));
-        dl->AddRectFilled(ImVec2(p.x + S(14), p.y + S(14)), ImVec2(p.x + S(50), p.y + S(50)), Accent(0.10f), S(10));
+        dl->AddRectFilled(ImVec2(p.x + S(14), p.y + S(14)), ImVec2(p.x + S(50), p.y + S(50)), Accent(0.10f));
         Icon(dl, ImVec2(p.x + S(32), p.y + S(32)), S(17), Accent(), shared ? ICON_CLOUD_DOWNLOAD : ICON_HOUSE);
         if (shared) std::snprintf(buf, sizeof(buf), "by %s  \xc2\xb7  %d pieces", bi.author.c_str(), bi.pieces);
         else std::snprintf(buf, sizeof(buf), "%d pieces  \xc2\xb7  %s", bi.pieces, bi.date.c_str());
@@ -857,8 +857,8 @@ void Menu::HubPage() {
 
         if (m.ghostActive) {
             ImVec2 p(o.x, y);
-            dl->AddRectFilled(p, ImVec2(p.x + W, p.y + S(52)), Accent(0.10f), S(12));
-            dl->AddRect(p, ImVec2(p.x + W, p.y + S(52)), Accent(0.35f), S(12));
+            dl->AddRectFilled(p, ImVec2(p.x + W, p.y + S(52)), Accent(0.10f));
+            dl->AddRect(p, ImVec2(p.x + W, p.y + S(52)), Accent(0.35f));
             Icon(dl, ImVec2(p.x + S(24), p.y + S(26)), S(16), Accent(), ICON_EYE);
             std::string t = "Previewing \"" + m.ghostName + "\". Move to where you want it.";
             TextFit(dl, T().medium, 13, ImVec2(p.x + S(44), p.y + S(17)), W - S(260), Accent(), t.c_str());
@@ -879,7 +879,7 @@ void Menu::HubPage() {
         for (int i = 0; i < (int)m.localBases.size(); ++i) baseRow(m.localBases[i], i, false);
     } else {
         float bw = S(108);
-        dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + W - bw - S(8), y + S(36)), White(0.05f), S(8));
+        dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + W - bw - S(8), y + S(36)), White(0.05f));
         Icon(dl, ImVec2(o.x + S(18), y + S(18)), S(15), White(0.45f), ICON_GITHUB);
         TextFit(dl, T().regular, 12.5f, ImVec2(o.x + S(36), y + S(10)), W - bw - S(60), White(0.6f), m.hubRepo.c_str());
         if (Button("refresh", "Refresh", ImVec2(o.x + W - bw, y), ImVec2(bw, S(36)), Btn::Ghost, ICON_REFRESH_CW, (bool)m.refreshShared)) {
@@ -938,8 +938,8 @@ void Menu::LegitPage() {
             ImGui::PushID(i);
             float fa = Ease(ImGui::GetID("pf"), f, 10.0f, f);
             ImGui::PopID();
-            dl->AddRectFilled(ImVec2(px, y + S(56)), ImVec2(px + cw, y + S(62)), White(0.08f), S(3));
-            if (fa > 0.003f) dl->AddRectFilled(ImVec2(px, y + S(56)), ImVec2(px + cw * fa, y + S(62)), Accent(), S(3));
+            dl->AddRectFilled(ImVec2(px, y + S(56)), ImVec2(px + cw, y + S(62)), White(0.08f));
+            if (fa > 0.003f) dl->AddRectFilled(ImVec2(px, y + S(56)), ImVec2(px + cw * fa, y + S(62)), Accent());
         }
     }
     y += oh + S(16);
@@ -992,7 +992,7 @@ void Menu::LegitPage() {
                 ImGui::SetNextItemAllowOverlap();
                 ImGui::InvisibleButton("row", ImVec2(rw, rh - S(4)));
                 float hv = Ease(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
-                if (hv > 0.01f) cl->AddRectFilled(rp, ImVec2(rp.x + rw, rp.y + rh - S(4)), White(0.04f * hv), S(8));
+                if (hv > 0.01f) cl->AddRectFilled(rp, ImVec2(rp.x + rw, rp.y + rh - S(4)), White(0.04f * hv));
                 float dim = e.done ? 0.5f : 1.0f;
                 auto ic = m.icons.find(e.icon);
                 if (m.iconTexture && !e.icon.empty() && ic != m.icons.end()) {
@@ -1000,7 +1000,7 @@ void Menu::LegitPage() {
                     cl->AddImage((ImTextureID)m.iconTexture, ImVec2(rp.x + S(8), rp.y + S(6)), ImVec2(rp.x + S(40), rp.y + S(38)),
                                  ImVec2(u[0], u[1]), ImVec2(u[2], u[3]), ImGui::GetColorU32(ImVec4(1, 1, 1, dim)));
                 } else {
-                    cl->AddRectFilled(ImVec2(rp.x + S(8), rp.y + S(6)), ImVec2(rp.x + S(40), rp.y + S(38)), Accent(0.10f * dim), S(8));
+                    cl->AddRectFilled(ImVec2(rp.x + S(8), rp.y + S(6)), ImVec2(rp.x + S(40), rp.y + S(38)), Accent(0.10f * dim));
                     Icon(cl, ImVec2(rp.x + S(24), rp.y + S(22)), S(15), Accent(dim), kindIcon[progSub]);
                 }
                 float tw = rw - S(52) - S(210);

@@ -49,11 +49,13 @@ void Approach(float& v, float target, float speed) {
 
 float Pill(ImDrawList* dl, ImVec2 rightCenter, const char* icon, const char* text, bool accent) {
     ImVec2 ts = Measure(T().medium, 12, text);
-    float w = ts.x + S(38), h = S(28);
+    float w = ts.x + S(44), h = S(28);
     ImVec2 a(rightCenter.x - w, rightCenter.y - h * 0.5f);
-    dl->AddRectFilled(a, ImVec2(a.x + w, a.y + h), accent ? Accent(0.14f) : White(0.05f), h * 0.5f);
-    Icon(dl, ImVec2(a.x + S(17), rightCenter.y), S(14), accent ? Accent() : White(0.55f), icon);
-    Text(dl, T().medium, 12, ImVec2(a.x + S(28), rightCenter.y - ts.y * 0.5f), accent ? Accent() : White(0.8f), text);
+    ImVec2 b(a.x + w, a.y + h);
+    Para(dl, a, b, accent ? Accent(0.14f) : White(0.05f));
+    ParaLine(dl, a, b, accent ? Accent(0.45f) : White(0.08f));
+    Icon(dl, ImVec2(a.x + S(20), rightCenter.y), S(14), accent ? Accent() : White(0.55f), icon);
+    Text(dl, T().medium, 12, ImVec2(a.x + S(31), rightCenter.y - ts.y * 0.5f), accent ? Accent() : White(0.8f), text);
     return w;
 }
 
@@ -174,14 +176,15 @@ void Menu::Frame() {
         windowPos = p;
         windowSize = size;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        float r = embedded ? 0.0f : S(16);
         ImVec2 q(p.x + size.x, p.y + size.y);
-        if (!embedded) Glow(ImGui::GetBackgroundDrawList(), p, q, r, ImVec4(0, 0, 0, 1), 0.55f, S(28));
-        dl->AddRectFilled(p, q, Bg(m.menuOpacity), r);
-        dl->AddRectFilled(p, ImVec2(p.x + S(kSide), q.y), Black(0.18f), r, ImDrawFlags_RoundCornersLeft);
-        dl->AddLine(ImVec2(p.x + S(kSide), p.y), ImVec2(p.x + S(kSide), q.y), White(0.06f));
-        dl->AddLine(ImVec2(p.x + S(kSide), p.y + S(kTop)), ImVec2(q.x, p.y + S(kTop)), White(0.06f));
-        if (!embedded) dl->AddRect(p, q, White(0.09f), r);
+        if (!embedded) Glow(ImGui::GetBackgroundDrawList(), p, q, 0.0f, ImVec4(0, 0, 0, 1), 0.55f, S(28));
+        dl->AddRectFilled(p, q, Bg(embedded ? 1.0f : m.menuOpacity));
+        dl->AddRectFilled(p, ImVec2(p.x + S(kSide), q.y), White(0.03f));
+        dl->AddLine(ImVec2(p.x + S(kSide), p.y), ImVec2(p.x + S(kSide), q.y), White(0.07f));
+        if (!embedded) {
+            dl->AddRect(p, q, White(0.08f));
+            dl->AddRectFilled(p, ImVec2(q.x, p.y + S(3)), Accent());
+        }
         Sidebar(p, size);
         TopBar(p, size);
         Content(p, size);
@@ -200,10 +203,10 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
     if (m.logoTexture) {
         dl->AddImage((ImTextureID)m.logoTexture, ImVec2(lp.x - S(2), lp.y - S(2)), ImVec2(lp.x + S(34), lp.y + S(34)));
     } else {
-        dl->AddRectFilled(lp, ImVec2(lp.x + S(32), lp.y + S(32)), Accent(0.14f), S(10));
-        Icon(dl, ImVec2(lp.x + S(16), lp.y + S(16)), S(18), Accent(), ICON_WAVES);
+        Para(dl, lp, ImVec2(lp.x + S(34), lp.y + S(32)), Accent());
+        Icon(dl, ImVec2(lp.x + S(17), lp.y + S(16)), S(18), White(), ICON_WAVES);
     }
-    Text(dl, T().semibold, 15, ImVec2(lp.x + S(44), lp.y - S(1)), White(0.96f), "Fathom");
+    Upper(dl, T().semibold, 14, ImVec2(lp.x + S(44), lp.y), White(0.97f), "Fathom");
     Text(dl, T().regular, 11, ImVec2(lp.x + S(44), lp.y + S(18)), White(0.45f), embedded ? "Mod loader" : m.gameName.c_str());
 
     float top = p.y + S(80), th = S(40), gap = S(4);
@@ -233,8 +236,7 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
     }
     float fi = Ease(ImGui::GetID("tabsel"), (float)idx, 18.0f, (float)idx);
     float iy = top + fi * (th + gap);
-    dl->AddRectFilled(ImVec2(p.x + S(12), iy), ImVec2(p.x + w - S(12), iy + th), Accent(0.10f), S(10));
-    dl->AddRectFilled(ImVec2(p.x + S(12), iy + S(11)), ImVec2(p.x + S(15), iy + th - S(11)), Accent(), S(2));
+    Para(dl, ImVec2(p.x + S(12), iy), ImVec2(p.x + w - S(12), iy + th), Accent());
 
     for (int i = 0; i < count; ++i) {
         const Entry& e = list[i];
@@ -257,11 +259,11 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
         float a = Ease(ImGui::GetID("a"), sel ? 1.0f : 0.0f, 18.0f, sel ? 1.0f : 0.0f);
         ImGui::PopID();
         ImGui::PopID();
-        if (h > 0.01f && a < 0.99f) dl->AddRectFilled(tp, ImVec2(tp.x + w - S(24), tp.y + th), White(0.04f * h * (1 - a)), S(10));
-        ImU32 col = Mix(ImVec4(1, 1, 1, 0.58f + 0.34f * h), T().accent, a);
+        if (h > 0.01f && a < 0.99f) Para(dl, tp, ImVec2(tp.x + w - S(24), tp.y + th), White(0.045f * h * (1 - a)));
+        ImU32 col = Mix(ImVec4(1, 1, 1, 0.58f + 0.34f * h), ImVec4(1, 1, 1, 1), a);
         Icon(dl, ImVec2(tp.x + S(26), tp.y + th * 0.5f), S(17), col, icon);
-        ImVec2 ts = Measure(T().medium, 13.5f, name);
-        Text(dl, T().medium, 13.5f, ImVec2(tp.x + S(46), tp.y + (th - ts.y) * 0.5f), col, name);
+        ImVec2 ts = Measure(sel ? T().semibold : T().medium, 13.5f, name);
+        Text(dl, sel ? T().semibold : T().medium, 13.5f, ImVec2(tp.x + S(46), tp.y + (th - ts.y) * 0.5f), col, name);
     }
 
     float by = p.y + size.y - S(68);
@@ -272,7 +274,8 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
         st = status.c_str();
         dot = statusGood ? Accent() : White(0.35f);
     }
-    dl->AddCircleFilled(ImVec2(p.x + S(26), by + S(8)), S(3.5f), dot, 16);
+    dl->AddLine(ImVec2(p.x + S(12), by - S(14)), ImVec2(p.x + S(kSide) - S(12), by - S(14)), White(0.07f));
+    Diamond(dl, ImVec2(p.x + S(26), by + S(8)), S(4), dot);
     Text(dl, T().medium, 12, ImVec2(p.x + S(38), by), White(0.72f), st);
     std::string hint = embedded  ? std::string("Changes are saved automatically")
                        : !focused ? std::string(core::KeyName(m.keyOpen)) + " to use the menu"
@@ -283,8 +286,10 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
 void Menu::TopBar(ImVec2 p, ImVec2 size) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const char* title = homePage && onHome ? homeName : TabName(m, tab);
-    ImVec2 ts = Measure(T().semibold, 18, title);
-    Text(dl, T().semibold, 18, ImVec2(p.x + S(kSide) + S(24), p.y + (S(kTop) - ts.y) * 0.5f), White(0.97f), title);
+    ImVec2 ts = MeasureUpper(T().semibold, 20, title);
+    float tx = p.x + S(kSide) + S(24), ty = p.y + std::floor((S(kTop) - ts.y) * 0.5f) - S(2);
+    Upper(dl, T().semibold, 20, ImVec2(tx, ty), White(0.98f), title);
+    dl->AddRectFilled(ImVec2(tx, ty + ts.y + S(6)), ImVec2(tx + S(36), ty + ts.y + S(9)), Accent());
 
     fpsTimer += Dt();
     if (fpsTimer > 0.25f) {
@@ -311,12 +316,14 @@ void Menu::Banner() {
     float w = ImGui::GetContentRegionAvail().x, h = S(40);
     char buf[96];
     if (client) {
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Danger(0.12f), S(10));
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Danger(0.12f));
+        dl->AddRectFilled(p, ImVec2(p.x + S(3), p.y + h), Danger());
         Icon(dl, ImVec2(p.x + S(20), p.y + h * 0.5f), S(15), Danger(), ICON_USERS);
         Text(dl, T().medium, 12.5f, ImVec2(p.x + S(36), p.y + S(12)), Danger(), "You are not the host, so cheats are switched off in this session.");
     } else {
         std::snprintf(buf, sizeof(buf), "Legit Run is on. Sliders are capped to Tier %d limits.", m.legitTier + 1);
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Accent(0.10f), S(10));
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Accent(0.10f));
+        dl->AddRectFilled(p, ImVec2(p.x + S(3), p.y + h), Accent());
         Icon(dl, ImVec2(p.x + S(20), p.y + h * 0.5f), S(15), Accent(), ICON_SHIELD_CHECK);
         Text(dl, T().medium, 12.5f, ImVec2(p.x + S(36), p.y + S(12)), Accent(), buf);
     }
@@ -391,12 +398,10 @@ Menu::Masonry Menu::BeginMasonry() {
 
 float Menu::CardBegin(ImVec2 pos, float w, float h, const char* title) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), White(0.035f), S(12));
-    dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), White(0.05f), S(12));
+    dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), White(0.035f));
+    dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + S(2)), White(0.09f));
     if (!title) return pos.y + S(8);
-    std::string up = title;
-    for (char& c : up) c = (char)std::toupper((unsigned char)c);
-    Text(dl, T().semibold, 10.5f, ImVec2(pos.x + S(16), pos.y + S(15)), White(0.42f), up.c_str());
+    Title(dl, ImVec2(pos.x + S(16), pos.y + S(15)), title);
     return pos.y + S(38);
 }
 
@@ -410,7 +415,10 @@ bool Menu::RowBase(const char* id, ImVec2 pos, float w, float h, const char* lab
     bool hov = ImGui::IsItemHovered();
     float hv = Ease(ImGui::GetID("h"), hov && enabled ? 1.0f : 0.0f, 18.0f);
     ImGui::PopID();
-    if (hv > 0.01f) dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), White(0.04f * hv), S(8));
+    if (hv > 0.01f) {
+        dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), White(0.035f * hv));
+        dl->AddRectFilled(pos, ImVec2(pos.x + S(2), pos.y + h), Accent(hv));
+    }
     float dim = enabled ? 1.0f : 0.38f;
     float tw = w - S(16) - reserveRight;
     if (hint && hint[0]) {
@@ -427,7 +435,7 @@ bool Menu::RowBase(const char* id, ImVec2 pos, float w, float h, const char* lab
 bool Menu::ToggleRow(const char* id, ImVec2 pos, float w, const char* label, const char* hint, bool* v, bool enabled, const char* tip,
                      bool locked) {
     float h = hint && hint[0] ? S(52) : S(40);
-    bool pressed = RowBase(id, pos, w, h, label, hint, enabled, tip, S(52));
+    bool pressed = RowBase(id, pos, w, h, label, hint, enabled, tip, SwitchSize().x + S(12));
     ImGui::PushID(id);
     float t = Ease(ImGui::GetID("t"), *v ? 1.0f : 0.0f, 16.0f, *v ? 1.0f : 0.0f);
     ImGui::PopID();
@@ -483,14 +491,15 @@ bool Menu::SliderRow(const char* id, ImVec2 pos, float w, const char* label, flo
     float k = Ease(ImGui::GetID("k"), f, 26.0f, f);
     float hv = Ease(ImGui::GetID("h"), hov || act ? 1.0f : 0.0f, 18.0f);
     float kx = x0 + (x1 - x0) * k;
-    dl->AddRectFilled(ImVec2(x0 - kr, ty - S(2)), ImVec2(x1 + kr, ty + S(2)), White(0.10f * dim), S(2));
-    dl->AddRectFilled(ImVec2(x0 - kr, ty - S(2)), ImVec2(kx, ty + S(2)), Accent(dim), S(2));
+    dl->AddRectFilled(ImVec2(x0 - kr, ty - S(3)), ImVec2(x1 + kr, ty + S(3)), White(0.09f * dim));
+    dl->AddRectFilled(ImVec2(x0 - kr, ty - S(3)), ImVec2(kx, ty + S(3)), Accent(dim));
     if (cap > 0 && top < mx - 0.001f) {
         float cx = x0 + (x1 - x0) * (top - mn) / (mx - mn);
         dl->AddRectFilled(ImVec2(cx + kr + S(2), ty - S(5)), ImVec2(cx + kr + S(4), ty + S(5)), White(0.35f), S(1));
         if (hov) Tip("Capped by Legit Run");
     }
-    dl->AddCircleFilled(ImVec2(kx, ty), kr - S(1) + S(1.5f) * hv, White(dim), 24);
+    float kw = S(4) + S(1) * hv, kh = S(10) + S(1.5f) * hv;
+    Para(dl, ImVec2(kx - kw - S(2), ty - kh), ImVec2(kx + kw + S(2), ty + kh), White(dim));
     ImGui::PopID();
     if (active) *active = act;
     return changed;
@@ -508,8 +517,9 @@ bool Menu::KeyChip(const char* id, ImVec2 rightCenter, int* key) {
     bool pressed = ImGui::InvisibleButton("k", ImVec2(w, h));
     float hv = Ease(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
     ImGui::PopID();
-    dl->AddRectFilled(a, ImVec2(a.x + w, a.y + h), cap ? Accent(0.14f) : White(0.06f + 0.04f * hv), S(7));
-    if (cap) dl->AddRect(a, ImVec2(a.x + w, a.y + h), Accent(0.6f), S(7));
+    dl->AddRectFilled(a, ImVec2(a.x + w, a.y + h), cap ? Accent(0.14f) : White(0.06f + 0.04f * hv));
+    dl->AddRect(a, ImVec2(a.x + w, a.y + h), cap ? Accent(0.7f) : White(0.09f));
+    if (!cap) dl->AddRectFilled(ImVec2(a.x, a.y + h - S(2)), ImVec2(a.x + w, a.y + h), White(0.09f));
     Text(dl, T().medium, 12, ImVec2(a.x + (w - ts.x) * 0.5f, a.y + (h - ts.y) * 0.5f),
          cap ? Accent() : White(*key ? 0.9f : 0.42f), label);
     if (pressed) {
@@ -676,7 +686,7 @@ void Menu::Confirm() {
     if (!confirmOpen) flags |= ImGuiWindowFlags_NoInputs;
     ImGui::Begin("##fathom_confirm", nullptr, flags);
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(windowPos, ImVec2(windowPos.x + windowSize.x, windowPos.y + windowSize.y), Black(0.55f), S(16));
+    dl->AddRectFilled(windowPos, ImVec2(windowPos.x + windowSize.x, windowPos.y + windowSize.y), Black(0.6f));
 
     float w = S(400), wrap = w - S(48);
     ImGui::PushFont(T().regular, S(13));
@@ -685,10 +695,11 @@ void Menu::Confirm() {
     float h = S(24) + S(22) + S(10) + bs.y + S(24) + S(36) + S(24);
     ImVec2 c(windowPos.x + std::floor((windowSize.x - w) * 0.5f),
              windowPos.y + std::floor((windowSize.y - h) * 0.5f) + std::floor((1.0f - confirmAnim) * S(10)));
-    Glow(dl, c, ImVec2(c.x + w, c.y + h), S(14), ImVec4(0, 0, 0, 1), 0.5f, S(20));
-    dl->AddRectFilled(c, ImVec2(c.x + w, c.y + h), Bg(0.985f), S(14));
-    dl->AddRect(c, ImVec2(c.x + w, c.y + h), White(0.10f), S(14));
-    Text(dl, T().semibold, 16, ImVec2(c.x + S(24), c.y + S(24)), White(0.97f), confirmTitle.c_str());
+    Glow(dl, c, ImVec2(c.x + w, c.y + h), 0.0f, ImVec4(0, 0, 0, 1), 0.5f, S(20));
+    dl->AddRectFilled(c, ImVec2(c.x + w, c.y + h), Bg(0.985f));
+    dl->AddRect(c, ImVec2(c.x + w, c.y + h), White(0.10f));
+    dl->AddRectFilled(c, ImVec2(c.x + w, c.y + S(3)), Accent());
+    Upper(dl, T().semibold, 16, ImVec2(c.x + S(24), c.y + S(24)), White(0.97f), confirmTitle.c_str());
     Text(dl, T().regular, 13, ImVec2(c.x + S(24), c.y + S(56)), White(0.68f), confirmBody.c_str(), wrap);
     float bw = S(112), by = c.y + h - S(24) - S(36);
     bool yes = Button("yes", confirmYes.c_str(), ImVec2(c.x + w - S(24) - bw, by), ImVec2(bw, S(36)), Btn::Primary);
@@ -717,7 +728,7 @@ void Menu::Toasts() {
         float a = std::min(in, out);
         a = a * a * (3.0f - 2.0f * a);
         ImVec2 ts = Measure(T().medium, 13, t.text.c_str());
-        float h = S(40), w = ts.x + S(56);
+        float h = S(40), w = ts.x + S(66);
         float target = y - h;
         if (!t.placed) {
             t.y = target;
@@ -727,11 +738,12 @@ void Menu::Toasts() {
         float x = vp->Pos.x + vp->Size.x - S(24) - w + (1.0f - a) * S(24);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, a);
         ImVec2 p(x, t.y), q(x + w, t.y + h);
-        Glow(dl, p, q, S(10), ImVec4(0, 0, 0, 1), 0.35f, S(12));
-        dl->AddRectFilled(p, q, Bg(0.95f), S(10));
-        dl->AddRect(p, q, White(0.09f), S(10));
-        Icon(dl, ImVec2(x + S(22), t.y + h * 0.5f), S(15), Accent(), t.icon);
-        Text(dl, T().medium, 13, ImVec2(x + S(40), t.y + (h - ts.y) * 0.5f), White(0.93f), t.text.c_str());
+        Glow(dl, p, q, 0.0f, ImVec4(0, 0, 0, 1), 0.35f, S(12));
+        Para(dl, p, q, Bg(0.97f));
+        ParaLine(dl, p, q, White(0.09f));
+        Para(dl, p, ImVec2(p.x + Slant(h) + S(4), q.y), Accent());
+        Icon(dl, ImVec2(x + S(28), t.y + h * 0.5f), S(15), Accent(), t.icon);
+        Text(dl, T().medium, 13, ImVec2(x + S(44), t.y + (h - ts.y) * 0.5f), White(0.93f), t.text.c_str());
         ImGui::PopStyleVar();
         y -= (h + S(8)) * out;
     }
