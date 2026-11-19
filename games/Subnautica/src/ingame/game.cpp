@@ -670,7 +670,7 @@ void Fog(const Snap& s, double now, bool inGame) {
 }
 
 Flag hullFlag;
-Scaled vF, vB, vS, vV, vT, cF, cE, cV, cB;
+Scaled vF, vB, vS, vV, cF, cE, cV, cB;
 
 void Vehicles(Object* veh, Object* cyc, const Snap& s) {
     Object* live = veh ? Ref(veh, R.vhLive) : cyc ? Ref(cyc, R.srLive) : nullptr;
@@ -700,8 +700,6 @@ void Vehicles(Object* veh, Object* cyc, const Snap& s) {
     Scale(veh, R.vhBackward, k, vB);
     Scale(veh, R.vhSide, k, vS);
     Scale(veh, R.vhVertical, k, vV);
-    Object* exo = veh && R.exosuit && mono::IsSubclass(mono::ClassOf(veh), R.exosuit) ? veh : nullptr;
-    Scale(exo, R.exThrust, k, vT);
     Object* sc = cyc ? CompInChildren(cyc, R.subControl) : nullptr;
     Scale(sc, R.scForward, k, cF);
     Scale(sc, R.scPerEngine, k, cE);
@@ -768,43 +766,89 @@ void RescanCreatures(Vec3 pp, const Snap& s) {
     }
 }
 
-void RescanItems(Vec3 pp, const Snap& s) {
-    itemCache.clear();
+uint32_t itemArr = 0;
+size_t itemIdx = 0;
+bool itemScanning = false;
+std::vector<esp::Dot> itemNext;
+
+void ReleaseItemScan() {
+    mono::Unpin(itemArr);
+    itemArr = 0;
+    itemIdx = 0;
+    itemScanning = false;
+    itemNext.clear();
+}
+
+void AddItem(std::vector<esp::Dot>& out, Vec3 p, int kind, const std::string& name) {
+    if (out.size() >= 400) return;
+    esp::Dot d;
+    d.x = d.bx = p.x;
+    d.y = d.by = p.y;
+    d.z = d.bz = p.z;
+    d.ex = d.ey = d.ez = 0.4f;
+    d.box = true;
+    d.kind = kind;
+    d.name = name;
+    out.push_back(std::move(d));
+}
+
+void StepItems(Vec3 pp, const Snap& s, double now) {
     float range = s.v[S_RANGE];
-    auto add = [&](Object* comp, int kind, const std::string& name) {
-        if (itemCache.size() >= 400) return;
-        Vec3 p = Position(comp);
-        if (Dist(p, pp) > range) return;
-        esp::Dot d;
-        d.x = d.bx = p.x;
-        d.y = d.by = p.y;
-        d.z = d.bz = p.z;
-        d.ex = d.ey = d.ez = 0.4f;
-        d.box = true;
-        d.kind = kind;
-        d.name = name;
-        itemCache.push_back(std::move(d));
-    };
-    if (s.on[T_I_RES] || s.on[T_I_FRAG])
-        for (Object* rt : FindAll(R.resourceTracker)) {
-            Vec3 p = Position(rt);
-            if (Dist(p, pp) > range) continue;
-            if (R.blueprintTarget && Comp(rt, R.blueprintTarget)) continue;
-            int tt = Val<int>(rt, R.rtTech), ov = Val<int>(rt, R.rtOverride);
-            bool frag = (fragmentTech > 0 && tt == fragmentTech) || (R.techFragment && Comp(rt, R.techFragment));
-            if (frag ? !s.on[T_I_FRAG] : !s.on[T_I_RES]) continue;
-            std::string name = TechName(ov > 0 ? ov : tt);
-            if (name.empty()) name = frag ? "Fragment" : "Resource";
-            add(rt, frag ? 1 : 0, name);
+    if (!itemScanning) {
+        if (now - lastItemScan < 1.0) return;
+        lastItemScan = now;
+        itemNext.clear();
+        Vec3 p;
+        auto inRange = [&](Object* comp) {
+            p = Position(comp);
+            return Dist(p, pp) <= range;
+        };
+        if (s.on[T_I_DATA]) {
+            for (Object* bp : FindAll(R.blueprintTarget))
+                if (!Val<uint8_t>(bp, R.bpUsed) && inRange(bp)) AddItem(itemNext, p, 2, "Data box");
+            for (Object* st : FindAll(R.storyTarget))
+                if (inRange(st)) AddItem(itemNext, p, 2, "PDA");
         }
-    if (s.on[T_I_DATA]) {
-        for (Object* bp : FindAll(R.blueprintTarget))
-            if (!Val<uint8_t>(bp, R.bpUsed)) add(bp, 2, "Data box");
-        for (Object* st : FindAll(R.storyTarget)) add(st, 2, "PDA");
+        if (s.on[T_I_CRATE])
+            for (Object* sc : FindAll(R.supplyCrate))
+                if (!Val<uint8_t>(sc, R.scOpen) && inRange(sc)) AddItem(itemNext, p, 3, "Supply crate");
+        if ((s.on[T_I_RES] || s.on[T_I_FRAG]) && R.resourceTracker) {
+            Object* t = mono::TypeObject(R.resourceTracker);
+            Object* arr = t ? Call(R.findObjectsOfType, nullptr, {t}) : nullptr;
+            if (mono::Length(arr)) {
+                itemArr = mono::Pin(arr);
+                itemIdx = 0;
+                itemScanning = true;
+                return;
+            }
+        }
+        itemCache.swap(itemNext);
+        itemNext.clear();
+        return;
     }
-    if (s.on[T_I_CRATE])
-        for (Object* sc : FindAll(R.supplyCrate))
-            if (!Val<uint8_t>(sc, R.scOpen)) add(sc, 3, "Supply crate");
+    Object* arr = mono::Pinned(itemArr);
+    size_t n = mono::Length(arr);
+    size_t end = std::min(n, itemIdx + 200);
+    for (; itemIdx < end; ++itemIdx) {
+        Object* rt = mono::At(arr, itemIdx);
+        if (!Alive(rt)) continue;
+        Vec3 p = Position(rt);
+        if (Dist(p, pp) > range) continue;
+        if (R.blueprintTarget && Comp(rt, R.blueprintTarget)) continue;
+        int tt = Val<int>(rt, R.rtTech), ov = Val<int>(rt, R.rtOverride);
+        bool frag = (fragmentTech > 0 && tt == fragmentTech) || (R.techFragment && Comp(rt, R.techFragment));
+        if (frag ? !s.on[T_I_FRAG] : !s.on[T_I_RES]) continue;
+        std::string name = TechName(ov > 0 ? ov : tt);
+        if (name.empty()) name = frag ? "Fragment" : "Resource";
+        AddItem(itemNext, p, frag ? 1 : 0, name);
+    }
+    if (itemIdx >= n) {
+        mono::Unpin(itemArr);
+        itemArr = 0;
+        itemScanning = false;
+        itemCache.swap(itemNext);
+        itemNext.clear();
+    }
 }
 
 void Esp(Object* player, const Snap& s, double now) {
@@ -812,6 +856,7 @@ void Esp(Object* player, const Snap& s, double now) {
     if (!cre && !itm) {
         if (espLive) {
             ReleaseTracked();
+            ReleaseItemScan();
             itemCache.clear();
             esp::Clear();
             espLive = false;
@@ -879,12 +924,10 @@ void Esp(Object* player, const Snap& s, double now) {
         ReleaseTracked();
     }
     if (itm) {
-        if (now - lastItemScan >= 1.0) {
-            lastItemScan = now;
-            RescanItems(pp, s);
-        }
+        StepItems(pp, s, now);
         f.itemDots = itemCache;
-    } else {
+    } else if (itemScanning || !itemCache.empty()) {
+        ReleaseItemScan();
         itemCache.clear();
     }
     esp::Publish(std::move(f));
@@ -973,6 +1016,7 @@ void ReleaseWorld(const Snap& off) {
     flyActive = false;
     noclipActive = false;
     ReleaseTracked();
+    ReleaseItemScan();
     itemCache.clear();
     if (espLive) {
         esp::Clear();
