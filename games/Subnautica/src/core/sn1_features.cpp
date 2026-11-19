@@ -93,6 +93,10 @@ void BuildFeatures(Model& m) {
     Action(m, Tab::Spawner, "Items", "instant_loadout", "Instant loadout", "Pick a set of items once, get them all in one press", "Open");
     Action(m, Tab::Spawner, "Map", "map", "Map with teleport", "See the whole map and teleport anywhere", "Open");
 
+    for (const char* id : {"godmode", "unlimited_health", "radiation_immunity", "unlimited_food", "unlimited_water", "infinite_oxygen",
+                           "refill_health", "refill_food", "refill_water", "refill_oxygen"})
+        if (Feature* f = m.find(id)) f->building = false;
+
     m.keyOpen = ImGuiKey_RightShift;
     m.keyUnload = ImGuiKey_End;
 }
