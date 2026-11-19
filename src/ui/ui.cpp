@@ -2,6 +2,9 @@
 #include "ui/icons.h"
 #include "imgui_stdlib.h"
 #include <cmath>
+#include <fstream>
+#include <cstdlib>
+#include <string>
 #include <unordered_map>
 
 extern const unsigned char font_inter_regular[];
@@ -47,6 +50,23 @@ void LoadFonts() {
     g_theme.semibold = io.Fonts->AddFontFromMemoryTTF((void*)font_inter_semibold, (int)font_inter_semibold_size, 14.0f, &cfg);
     g_theme.icons = io.Fonts->AddFontFromMemoryTTF((void*)font_lucide, (int)font_lucide_size, 16.0f, &cfg);
     io.FontDefault = g_theme.regular;
+}
+
+void LoadMonoFont() {
+    ImGuiIO& io = ImGui::GetIO();
+    char* win = nullptr;
+    size_t len = 0;
+    std::string dir = _dupenv_s(&win, &len, "WINDIR") == 0 && win ? win : "C:\\Windows";
+    free(win);
+    dir += "\\Fonts\\";
+    for (const char* name : {"CascadiaMono.ttf", "consola.ttf"}) {
+        std::string p = dir + name;
+        if (std::ifstream(p, std::ios::binary).good()) {
+            g_theme.mono = io.Fonts->AddFontFromFileTTF(p.c_str(), 14.0f);
+            if (g_theme.mono) return;
+        }
+    }
+    g_theme.mono = g_theme.regular;
 }
 
 void ApplyStyle() {

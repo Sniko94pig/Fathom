@@ -261,7 +261,10 @@ void Home::DrawSubnauticaCards(float y, float w, ImVec2 o, const inject::Paths& 
         ShellExecuteW(nullptr, L"open", paths.folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     bool hasLog = paths.found && std::filesystem::exists(paths.log, ec);
     if (Button("log", "Open log", ImVec2(c2.x + S(24) + bw, y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_INFO, hasLog))
-        ShellExecuteW(nullptr, L"open", paths.log.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    {
+        logPath = paths.log;
+        logTitle = Games()[game].name;
+    }
 
     ImGui::SetCursorScreenPos(o);
     ImGui::Dummy(ImVec2(w, y + ch - o.y));

@@ -21,6 +21,8 @@ struct Home {
     bool injectNow = false;
     bool injectSn1 = false;
     bool startNow = false;
+    std::wstring logPath;
+    std::string logTitle;
     int game = -1;
     std::string search;
     std::string openKey = "Right Shift";

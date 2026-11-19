@@ -2,6 +2,7 @@
 #include "launcher/art.h"
 #include "launcher/games.h"
 #include "launcher/home.h"
+#include "launcher/logview.h"
 #include "launcher/inject.h"
 #include "launcher/sn1_inject.h"
 #include "core/sn1_features.h"
@@ -253,6 +254,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     ui::LoadFonts();
+    ui::LoadMonoFont();
+    launcher::LogView logView;
     ui::Menu mainMenu(model);
     ui::Menu sn1Menu(sn1Model);
     for (ui::Menu* mm : { &mainMenu, &sn1Menu })
@@ -489,6 +492,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 home.art[launcher::ArtKey(img.appId, img.kind)] = { (ImTextureID)gpu.ptr, (float)img.width, (float)img.height };
             }
         }
+        if (!home.logPath.empty())
+        {
+            logView.Open(home.logPath, home.logTitle);
+            home.logPath.clear();
+        }
         if (home.startNow)
         {
             home.startNow = false;
@@ -617,6 +625,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         menu.Frame();
+        logView.Draw();
         model.requestUnload = false;
         sn1Model.requestUnload = false;
         ImGui::Render();

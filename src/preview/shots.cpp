@@ -2,6 +2,8 @@
 #include "launcher/art.h"
 #include "launcher/games.h"
 #include "launcher/home.h"
+#include "launcher/logview.h"
+#include <fstream>
 #include <chrono>
 #include <thread>
 #endif
@@ -342,6 +344,37 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"21-launcher-log", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             static launcher::LogView view;
+             m = core::Model();
+             sn1::BuildFeatures(m);
+             home.game = launcher::FindGame("subnautica");
+             std::string file = outDir + "/fathom.log";
+             {
+                 std::ofstream f(file, std::ios::binary | std::ios::trunc);
+                 f << "[14:02:11.204] fathom starting\n"
+                      "[14:02:11.209] game folder found\n"
+                      "[14:02:11.388] waiting for the game to finish loading\n"
+                      "[14:02:13.902] script runtime attached\n"
+                      "[14:02:13.941] classes resolved: Player, Survival, LiveMixin, Oxygen\n"
+                      "[14:02:14.012] could not find class Exosuit, Prawn Suit cheats are off\n"
+                      "[14:02:14.120] render hook ready (DirectX 11)\n"
+                      "[14:02:14.121] settings loaded from settings.json\n"
+                      "[14:02:31.560] godmode on\n"
+                      "[14:02:35.017] unlimited food on\n"
+                      "[14:02:40.733] refill oxygen\n"
+                      "[14:03:02.418] settings reloaded from the app\n";
+             }
+             view.Open(std::wstring(file.begin(), file.end()), "Subnautica");
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Subnautica";
+             u.homePage = [] { home.Draw(); view.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
 #endif
         {"17-sn1-survival", [](core::Model& m, ui::Menu&) {
              m = core::Model();
@@ -378,6 +411,7 @@ int main(int argc, char** argv) {
         io.DeltaTime = 1.0f / 60.0f;
         ui::T() = ui::Theme();
         ui::LoadFonts();
+        ui::LoadMonoFont();
 
         core::Model model;
         preview::Fill(model);

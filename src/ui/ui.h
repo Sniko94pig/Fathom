@@ -13,12 +13,14 @@ struct Theme {
     ImFont* medium = nullptr;
     ImFont* semibold = nullptr;
     ImFont* icons = nullptr;
+    ImFont* mono = nullptr;
 };
 
 enum class Btn { Ghost, Primary, Tint, Danger };
 
 Theme& T();
 void LoadFonts();
+void LoadMonoFont();
 void ApplyStyle();
 
 float S(float v);

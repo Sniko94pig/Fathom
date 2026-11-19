@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.5.1)
+set(FATHOM_VERSION 1.5.2)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,7 +71,7 @@ add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp ${SN
 target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
-  target_sources(fathom_shots PRIVATE src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
+  target_sources(fathom_shots PRIVATE src/launcher/logview.cpp src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
   target_link_libraries(fathom_shots PRIVATE urlmon ole32)
   target_compile_definitions(fathom_shots PRIVATE FATHOM_VERSION="${FATHOM_VERSION}" FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
@@ -91,6 +91,7 @@ if(WIN32)
     src/launcher/home.cpp
     ${SN2}/launcher/inject.cpp
     src/launcher/sn1_inject.cpp
+    src/launcher/logview.cpp
     src/launcher/games.cpp
     src/launcher/art.cpp
     src/launcher/prefs.cpp
