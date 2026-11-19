@@ -137,7 +137,7 @@ int FrameCount();
 int InstanceId(Object* o);
 std::string Name(Object* o);
 Object* MainCamera();
-bool Raycast(Vec3 origin, Vec3 dir, float maxDist, RayHit& hit, int mask = ~0);
+bool Raycast(Vec3 origin, Vec3 dir, float maxDist, RayHit& hit, int mask = ~0, int triggers = 1);
 Object* Instantiate(Object* original, Vec3 pos, Quat rot);
 void Destroy(Object* o);
 

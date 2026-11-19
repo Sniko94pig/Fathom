@@ -44,6 +44,7 @@ struct Group {
     bool (*action)(const std::string& id, const Ctx& c) = nullptr;
     void (*release)(const Ctx& c) = nullptr;
     void (*wire)(core::Model& m, std::mutex& lock) = nullptr;
+    bool (*start)(std::string& err) = nullptr;
 };
 
 void Note(const std::string& text);

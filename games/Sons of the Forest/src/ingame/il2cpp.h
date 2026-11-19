@@ -69,6 +69,7 @@ std::string EnumName(Class* enumClass, long long value);
 bool StaticGet(Field* f, void* out, size_t size);
 bool StaticSet(Field* f, void* in);
 void SetRef(Object* o, Field* f, Object* value);
+void StoreRef(Object* owner, void* slot, Object* value);
 
 uint32_t Pin(Object* o);
 uint32_t Weak(Object* o);

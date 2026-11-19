@@ -53,7 +53,13 @@ struct WorldRefs {
     Class* localPlayer = nullptr;
     Fld lpInstance;
     Class* bolt = nullptr;
-    Method *boltRunning = nullptr, *boltServer = nullptr, *boltClient = nullptr, *boltSingle = nullptr;
+    Method *boltRunning = nullptr, *boltServer = nullptr, *boltClient = nullptr;
+    Class* loadScene = nullptr;
+    Fld lsLoading, lsMainLoaded;
+    Method* saveLoading = nullptr;
+    Class *inputSystem = nullptr, *inputState = nullptr, *softwareCursor = nullptr;
+    Method *inSetState = nullptr, *inGetState = nullptr, *inCursor = nullptr, *curRefresh = nullptr;
+    int lockedState = 0;
 } W;
 
 using TickFn = void (*)(const void*);
@@ -93,6 +99,7 @@ Snap TakeSnap() {
     if (!g.owns_lock()) return lastSnap;
     if (!droppedPending.empty()) ApplyDropped();
     if (sessionKnown && model->session != lastSession) model->session = lastSession;
+    model->inWorld = wasInWorld;
     Snap s;
     bool allowed = model->cheatsAllowed();
     for (const Feature& f : model->features) {
@@ -109,7 +116,6 @@ Snap TakeSnap() {
 
 core::Session DetectSession() {
     if (!W.boltRunning || !un::CallBool(W.boltRunning, nullptr)) return core::Session::Solo;
-    if (W.boltSingle && un::CallBool(W.boltSingle, nullptr)) return core::Session::Solo;
     if (W.boltServer && un::CallBool(W.boltServer, nullptr)) return core::Session::Host;
     if (W.boltClient && un::CallBool(W.boltClient, nullptr)) return core::Session::Client;
     return core::Session::Solo;
@@ -130,22 +136,43 @@ Object* LocalPlayer() {
     return un::Alive(p) ? p : nullptr;
 }
 
-bool Loading() { return false; }
+bool Loading() {
+    if (W.lsLoading && un::StaticVal<bool>(W.lsLoading, false)) return true;
+    if (W.lsMainLoaded && !un::StaticVal<bool>(W.lsMainLoaded, true)) return true;
+    if (W.saveLoading && un::CallBool(W.saveLoading, nullptr)) return true;
+    return false;
+}
 
 bool cursorFreed = false;
+bool ownLock = false;
 int lockWas = 0;
 bool visibleWas = false;
 
+bool InputLocked() {
+    if (!W.inGetState) return false;
+    int st = W.lockedState;
+    return un::CallBool(W.inGetState, nullptr, {&st});
+}
+
+void SetInputLock(bool on) {
+    if (!W.inSetState) return;
+    int st = W.lockedState;
+    un::Call(W.inSetState, nullptr, {&st, &on});
+}
+
 void MenuInput(bool stopping) {
     bool focus = !stopping && menuOpen.load() && menuFocused.load();
-    if (!un::E.cursorGetLock || !un::E.cursorSetLock) return;
     if (focus) {
         if (!cursorFreed) {
             lockWas = un::CallInt(un::E.cursorGetLock, nullptr);
             visibleWas = un::CallBool(un::E.cursorGetVisible, nullptr);
             cursorFreed = true;
         }
-        if (un::CallInt(un::E.cursorGetLock, nullptr) != 0) {
+        if (W.inSetState && !InputLocked()) {
+            SetInputLock(true);
+            ownLock = true;
+        }
+        if (un::E.cursorSetLock && un::CallInt(un::E.cursorGetLock, nullptr) != 0) {
             int none = 0;
             un::Call(un::E.cursorSetLock, nullptr, {&none});
         }
@@ -155,8 +182,17 @@ void MenuInput(bool stopping) {
         }
     } else if (cursorFreed) {
         cursorFreed = false;
-        un::Call(un::E.cursorSetLock, nullptr, {&lockWas});
-        if (un::E.cursorSetVisible) un::Call(un::E.cursorSetVisible, nullptr, {&visibleWas});
+        if (ownLock) {
+            SetInputLock(false);
+            ownLock = false;
+        }
+        Object* cursor = W.inCursor ? un::Call(W.inCursor, nullptr) : nullptr;
+        if (cursor && W.curRefresh) {
+            un::Call(W.curRefresh, cursor);
+        } else {
+            if (un::E.cursorSetLock) un::Call(un::E.cursorSetLock, nullptr, {&lockWas});
+            if (un::E.cursorSetVisible) un::Call(un::E.cursorSetVisible, nullptr, {&visibleWas});
+        }
     }
 }
 
@@ -264,6 +300,7 @@ void StopFrame() {
     MenuInput(true);
     ReleaseGroups(c);
     prevSnap = off;
+    wasInWorld = false;
 }
 
 void SafeTick() {
@@ -336,9 +373,24 @@ bool Prepare(std::string& err) {
         W.boltRunning = il2::Getter(W.bolt, "isRunning");
         W.boltServer = il2::Getter(W.bolt, "isServer");
         W.boltClient = il2::Getter(W.bolt, "isClient");
-        W.boltSingle = il2::Getter(W.bolt, "IsSinglePlayer");
     } else {
         un::Missing("BoltNetwork");
+    }
+    W.loadScene = un::C("Sons.Loading", "Sons.Loading", "LoadScene");
+    if (W.loadScene) {
+        W.lsLoading = un::F(W.loadScene, "_isLoading");
+        W.lsMainLoaded = un::F(W.loadScene, "_isMainSceneLoadComplete");
+    }
+    if (Class* sgm = un::C("Sons.Save", "Sons.Save", "SaveGameManager")) W.saveLoading = il2::FindStaticMethod(sgm, "LoadInProgress", 0);
+    W.inputSystem = un::C("Sons.Input", "Sons.Input", "InputSystem");
+    W.inputState = un::C("Sons.Input", "TheForest.Utils", "InputState");
+    if (W.inputSystem && W.inputState) {
+        W.inSetState = un::M(W.inputSystem, "SetState", std::vector<std::string>{"TheForest.Utils.InputState", "System.Boolean"});
+        W.inGetState = un::M(W.inputSystem, "GetState", std::vector<std::string>{"TheForest.Utils.InputState"});
+        W.inCursor = il2::FindStaticMethod(W.inputSystem, "get_Cursor", 0);
+        W.softwareCursor = il2::Nested(W.inputSystem, "SoftwareCursor");
+        W.curRefresh = W.softwareCursor ? un::M(W.softwareCursor, "RefreshCursorVisibility", 0) : nullptr;
+        W.lockedState = (int)il2::EnumValue(W.inputState, "Locked", 0);
     }
     if (slots.empty()) {
         for (const Group* g : {&VitalsGroup(), &MovementGroup(), &WeaponsGroup(), &EnemiesGroup(), &BuildingGroup(), &WorldGroup(),
@@ -408,6 +460,11 @@ bool Start(std::string& err) {
     tickTarget = target;
     hooked = true;
     LOG("attached to the game's frame");
+    for (Slot& sl : slots) {
+        if (!sl.ok || !sl.g->start) continue;
+        std::string gerr;
+        if (!sl.g->start(gerr)) LOG("%s could not attach some parts: %s", sl.g->name, gerr.c_str());
+    }
     return true;
 }
 

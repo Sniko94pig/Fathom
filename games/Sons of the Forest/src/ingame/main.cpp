@@ -230,6 +230,10 @@ DWORD WINAPI MainThread(void*) {
             f.missing = "Could not connect to the game";
         }
     }
+    if (gameThread) {
+        il2::Detach(gameThread);
+        gameThread = nullptr;
+    }
 
     std::wstring settingsFile = dir + L"\\settings.json";
     std::string lastText;

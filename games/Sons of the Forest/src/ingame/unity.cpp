@@ -175,7 +175,7 @@ bool Resolve(std::string& err) {
 
     E.raycast = M(E.physics, "Raycast",
                   std::vector<std::string>{"UnityEngine.Vector3", "UnityEngine.Vector3", "UnityEngine.RaycastHit&", "System.Single",
-                                           "System.Int32"});
+                                           "System.Int32", "UnityEngine.QueryTriggerInteraction"});
 
     E.cursorGetLock = M(E.cursor, "get_lockState", 0);
     E.cursorSetLock = M(E.cursor, "set_lockState", 1);
@@ -365,10 +365,10 @@ Object* MainCamera() {
     return Alive(c) ? c : nullptr;
 }
 
-bool Raycast(Vec3 origin, Vec3 dir, float maxDist, RayHit& hit, int mask) {
+bool Raycast(Vec3 origin, Vec3 dir, float maxDist, RayHit& hit, int mask, int triggers) {
     if (!E.raycast) return false;
     hit = RayHit{};
-    return CallBool(E.raycast, nullptr, {&origin, &dir, &hit, &maxDist, &mask});
+    return CallBool(E.raycast, nullptr, {&origin, &dir, &hit, &maxDist, &mask, &triggers});
 }
 
 Object* Instantiate(Object* original, Vec3 pos, Quat rot) {

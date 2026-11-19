@@ -41,6 +41,7 @@ struct Api {
     const Type* (*method_get_param)(Method*, uint32_t);
     const Type* (*method_get_return_type)(Method*);
     bool (*method_is_instance)(Method*);
+    bool (*method_is_generic)(Method*);
     char* (*type_get_name)(const Type*);
     int (*type_get_type)(const Type*);
     Field* (*class_get_field_from_name)(Class*, const char*);
@@ -70,6 +71,7 @@ struct Api {
     int32_t (*string_length)(Object*);
     wchar_t* (*string_chars)(Object*);
     void (*format_exception)(Object*, char*, int);
+    void (*gc_wbarrier_set_field)(Object*, void**, void*);
     void (*free_)(void*);
 };
 
@@ -190,6 +192,8 @@ bool Load(std::string& err) {
     Optional(m, api.array_object_header_size, "il2cpp_array_object_header_size");
     Optional(m, api.class_get_static_field_data, "il2cpp_class_get_static_field_data");
     Optional(m, api.format_exception, "il2cpp_format_exception");
+    Optional(m, api.method_is_generic, "il2cpp_method_is_generic");
+    Optional(m, api.gc_wbarrier_set_field, "il2cpp_gc_wbarrier_set_field");
     Domain* d = api.domain_get();
     size_t count = 0;
     Assembly** list = d ? api.domain_get_assemblies(d, &count) : nullptr;
@@ -279,8 +283,13 @@ int ValueSize(Class* c) {
 
 Method* FindMethod(Class* c, const char* name, int args) {
     for (Class* k = c; k; k = api.class_get_parent(k)) {
-        Method* m = api.class_get_method_from_name(k, name, args);
-        if (m) return m;
+        void* iter = nullptr;
+        while (Method* m = api.class_get_methods(k, &iter)) {
+            if (std::strcmp(api.method_get_name(m), name) != 0) continue;
+            if (api.method_is_generic && api.method_is_generic(m)) continue;
+            if (args >= 0 && (int)api.method_get_param_count(m) != args) continue;
+            return m;
+        }
     }
     return nullptr;
 }
@@ -290,6 +299,7 @@ Method* FindMethod(Class* c, const char* name, const std::vector<std::string>& p
         void* iter = nullptr;
         while (Method* m = api.class_get_methods(k, &iter)) {
             if (std::strcmp(api.method_get_name(m), name) != 0) continue;
+            if (api.method_is_generic && api.method_is_generic(m)) continue;
             if (api.method_get_param_count(m) != params.size()) continue;
             bool match = true;
             for (uint32_t i = 0; i < params.size() && match; ++i) match = TypeName(api.method_get_param(m, i)) == params[i];
@@ -304,6 +314,7 @@ Method* FindStaticMethod(Class* c, const char* name, int args) {
         void* iter = nullptr;
         while (Method* m = api.class_get_methods(k, &iter)) {
             if (std::strcmp(api.method_get_name(m), name) != 0 || api.method_is_instance(m)) continue;
+            if (api.method_is_generic && api.method_is_generic(m)) continue;
             if (args >= 0 && (int)api.method_get_param_count(m) != args) continue;
             return m;
         }
@@ -467,6 +478,12 @@ bool StaticSet(Field* f, void* in) {
 
 void SetRef(Object* o, Field* f, Object* value) {
     if (o && f) api.field_set_value(o, f, value);
+}
+
+void StoreRef(Object* owner, void* slot, Object* value) {
+    if (!slot) return;
+    if (api.gc_wbarrier_set_field) api.gc_wbarrier_set_field(owner, (void**)slot, value);
+    else *(Object**)slot = value;
 }
 
 uint32_t Pin(Object* o) { return o ? api.gchandle_new(o, false) : 0; }
