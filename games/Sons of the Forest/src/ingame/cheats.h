@@ -48,6 +48,7 @@ struct Group {
 };
 
 void Note(const std::string& text);
+void WarnAchievementsOnce();
 bool GameFocused();
 bool KeyDown(int vk);
 const std::wstring& Folder();
@@ -60,5 +61,6 @@ const Group& BuildingGroup();
 const Group& WorldGroup();
 const Group& CompanionsGroup();
 const Group& SpawnGroup();
+const Group& MapGroup();
 
 }

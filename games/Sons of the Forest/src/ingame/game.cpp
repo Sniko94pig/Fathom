@@ -342,6 +342,13 @@ void Note(const std::string& text) {
     if (notes.size() < 32) notes.push_back(text);
 }
 
+void WarnAchievementsOnce() {
+    static bool warned = false;
+    if (warned) return;
+    warned = true;
+    Note("Heads up: this can unlock Steam achievements, and Steam keeps them");
+}
+
 bool GameFocused() {
     HWND w = GetForegroundWindow();
     if (!w) return false;
@@ -394,7 +401,7 @@ bool Prepare(std::string& err) {
     }
     if (slots.empty()) {
         for (const Group* g : {&VitalsGroup(), &MovementGroup(), &WeaponsGroup(), &EnemiesGroup(), &BuildingGroup(), &WorldGroup(),
-                               &CompanionsGroup(), &SpawnGroup()}) {
+                               &CompanionsGroup(), &SpawnGroup(), &MapGroup()}) {
             Slot sl;
             sl.g = g;
             std::string gerr;

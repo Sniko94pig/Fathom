@@ -22,5 +22,6 @@ void Stop();
 bool Rendering();
 int VirtualKeyFor(int imguiKey);
 void LoadAtlas(const std::wstring& folder);
+void ReloadMap();
 
 }

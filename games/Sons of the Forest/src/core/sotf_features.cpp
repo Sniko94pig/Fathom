@@ -136,13 +136,19 @@ void BuildFeatures(Model& m) {
     Toggle(m, Companions, "Virginia", "virginia_freeze", "Freeze Virginia", "Virginia stops moving and doing tasks");
     Toggle(m, Companions, "Virginia", "virginia_godmode", "Virginia cannot die", "Nothing can kill Virginia");
 
-    Action(m, Spawner, "Items", "add_items", "Add items", "Put items in your inventory, with hotkeys for your favorites", "Open");
-    Action(m, Spawner, "Items", "spawner", "Spawn items", "Drop items in front of you, with hotkeys", "Open");
+    Action(m, Spawner, "Items", "add_items", "Add items", "Put items in your inventory", "Open");
+    Action(m, Spawner, "Items", "spawner", "Spawn items", "Drop items in front of you", "Open");
     Action(m, Spawner, "Items", "instant_loadout", "Loadout loader", "Guns, ammo, GPS and more in one press", "Open");
     Action(m, Spawner, "Items", "add_all_items", "Add all items", "Every item in the game goes in your inventory", "Apply");
     Action(m, Spawner, "Spawn", "vehicle_spawner", "Spawn vehicle", "Spawn a vehicle in front of you", "Open");
     Action(m, Spawner, "Spawn", "creature_spawner", "Spawn enemies and creatures", "Spawn enemies and animals near you", "Open");
+    Action(m, Spawner, "Spawn", "remove_spawned_creatures", "Remove creatures I spawned", "Works until you load a save again", "Remove");
     Action(m, Spawner, "Map", "map", "Map with teleport", "See the whole map and teleport anywhere", "Open");
+
+    for (const char* id : {"add_items", "spawner", "creature_spawner", "instant_loadout", "map"})
+        if (Feature* f = m.find(id)) f->page = id;
+    if (Feature* f = m.find("vehicle_spawner")) f->page = "spawner";
+    m.mapDrawn = true;
 
     m.gameName = "Sons of the Forest";
     m.keyOpen = ImGuiKey_RightShift;

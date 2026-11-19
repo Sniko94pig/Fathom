@@ -17,6 +17,7 @@ add_library(fathom_sotf SHARED
   ${SOTF_SRC}/ingame/world.cpp
   ${SOTF_SRC}/ingame/companions.cpp
   ${SOTF_SRC}/ingame/spawn.cpp
+  ${SOTF_SRC}/ingame/map.cpp
   ${SOTF_SRC}/ingame/overlay.cpp
   ${SOTF_SRC}/ingame/log.cpp
   ${SOTF_SRC}/core/sotf_features.cpp

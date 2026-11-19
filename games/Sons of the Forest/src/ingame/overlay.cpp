@@ -55,7 +55,7 @@ LARGE_INTEGER freq{}, last{};
 ID3D11ShaderResourceView* logoSrv = nullptr;
 bool logoTried = false;
 ID3D11ShaderResourceView* mapSrv = nullptr;
-bool mapTried = false;
+std::atomic<bool> mapTried{false};
 std::mutex atlasLock;
 std::wstring atlasRequest;
 std::future<ui::Atlas> atlasJob;
@@ -354,6 +354,11 @@ void PumpAtlas() {
 void LoadMapPicture() {
     mapTried = true;
     if (cbs.folder.empty()) return;
+    if (mapSrv) {
+        if (cbs.mapImageReady) cbs.mapImageReady(0, 0, 0);
+        mapSrv->Release();
+        mapSrv = nullptr;
+    }
     std::vector<uint8_t> px;
     int w = 0, h = 0;
     for (const wchar_t* name : {L"\\map.png", L"\\map.jpg", L"\\map.jpeg"})
@@ -555,6 +560,8 @@ int VirtualKeyFor(int imguiKey) {
         if (ToKey(vk) == (ImGuiKey)imguiKey) return vk;
     return 0;
 }
+
+void ReloadMap() { mapTried = false; }
 
 void LoadAtlas(const std::wstring& folder) {
     std::lock_guard<std::mutex> g(atlasLock);
