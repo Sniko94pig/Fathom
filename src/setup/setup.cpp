@@ -29,6 +29,7 @@ const wchar_t* kBase = L"https://github.com/Sniko94pig/Fathom/releases/latest/do
 const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll"};
 const wchar_t* kKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fathom";
 const wchar_t* kUninstaller = L"Uninstall Fathom.exe";
+const wchar_t* kSetup = L"FathomSetup.exe";
 const wchar_t* kGameExe = L"Subnautica2-Win64-Shipping.exe";
 const UINT WM_REFRESH = WM_APP + 1;
 const int ID_MAIN = 101, ID_SECOND = 102, ID_CHECK = 103;
@@ -211,6 +212,13 @@ bool MakeShortcut(const fs::path& target, const fs::path& link) {
     return ok;
 }
 
+void RefreshIcons(const fs::path& dir, const fs::path& link) {
+    for (const fs::path& p : {dir / L"Fathom.exe", dir / kUninstaller, dir / kSetup, link})
+        if (!p.empty()) SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, p.c_str(), nullptr);
+    SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir.c_str(), nullptr);
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, nullptr, nullptr);
+}
+
 std::wstring ShortcutTarget(const fs::path& link) {
     IShellLinkW* sl = nullptr;
     if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, (void**)&sl)) || !sl) return {};
@@ -298,12 +306,16 @@ bool Install() {
         }
     fs::path self = SelfPath(), uninstaller = dir / kUninstaller;
     if (!fs::equivalent(self, uninstaller, ec)) CopyFileW(self.c_str(), uninstaller.c_str(), FALSE);
+    fs::path setupCopy = dir / kSetup;
+    if (!fs::equivalent(self, setupCopy, ec)) CopyFileW(self.c_str(), setupCopy.c_str(), FALSE);
+    fs::path link;
     if (opt.shortcut) {
         std::wstring desktop = Known(FOLDERID_Desktop);
-        if (desktop.empty() || !MakeShortcut(dir / L"Fathom.exe", fs::path(desktop) / L"Fathom.lnk"))
-            Log(L"could not make the desktop shortcut");
+        if (!desktop.empty()) link = fs::path(desktop) / L"Fathom.lnk";
+        if (link.empty() || !MakeShortcut(dir / L"Fathom.exe", link)) Log(L"could not make the desktop shortcut");
     }
     if (opt.registry) Register(dir);
+    RefreshIcons(dir, link);
     Show(Done, L"Fathom is installed",
          L"Open it with the Fathom shortcut on your desktop. To remove it later, use Uninstall Fathom in the Fathom folder or in Windows Settings > Apps.");
     return true;
@@ -322,6 +334,8 @@ bool Uninstall() {
     for (const wchar_t* f : {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"Fathom.exe.download", L"fathom.dll.download", L"fathom_sn1.dll.download"}) ok = RemoveFile(dir / f) && ok;
     fs::path uninstaller = dir / kUninstaller;
     if (!fs::equivalent(SelfPath(), uninstaller, ec)) ok = RemoveFile(uninstaller) && ok;
+    fs::path setupCopy = dir / kSetup;
+    if (fs::exists(setupCopy, ec) && !fs::equivalent(SelfPath(), setupCopy, ec)) ok = RemoveFile(setupCopy) && ok;
     fs::remove_all(dir / L"old-builds", ec);
     fs::remove_all(dir / L"art", ec);
     fs::remove(dir / L"launcher.json", ec);
