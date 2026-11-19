@@ -175,8 +175,11 @@ void Home::DrawGame() {
     dl->AddRect(a, b, White(0.07f), S(14));
 
     bool sn2 = std::strcmp(g.id, "subnautica2") == 0;
-    bool running = state != inject::GameState::NotRunning;
-    bool injected = state == inject::GameState::Injected;
+    bool sn1 = std::strcmp(g.id, "subnautica") == 0;
+    const inject::Paths& gp = sn1 ? sn1Paths : paths;
+    inject::GameState gs = sn1 ? sn1State : state;
+    bool running = gs != inject::GameState::NotRunning;
+    bool injected = gs == inject::GameState::Injected;
     std::string line;
     if (g.building) line = "The menu for this game is being built. Look at the modules on the left.";
     else if (!g.ready) line = "Coming soon. Fathom does not support this game yet.";
@@ -200,14 +203,17 @@ void Home::DrawGame() {
     } else if (injected) {
         Button("main", "Injected", bp, bs, Btn::Tint, ICON_CHECK, false);
     } else if (running) {
-        if (Button("main", "Inject", bp, bs, Btn::Primary, ICON_ZAP, paths.found)) injectNow = true;
+        if (Button("main", "Inject", bp, bs, Btn::Primary, ICON_ZAP, gp.found)) {
+            injectNow = true;
+            injectSn1 = sn1;
+        }
     } else {
         if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) startNow = true;
     }
 
     float y = b.y + S(16);
-    if (sn2 && g.ready) {
-        DrawSubnauticaCards(y, w, o);
+    if ((sn2 || sn1) && g.ready) {
+        DrawSubnauticaCards(y, w, o, gp, gs, sn1 ? "Subnautica (Steam)" : "Subnautica2 (Steam)", sn1 ? "fathom_sn1.dll" : "fathom.dll");
         return;
     }
     float ch = S(132);
@@ -228,7 +234,7 @@ void Home::DrawGame() {
     ImGui::Dummy(ImVec2(w, y + ch - o.y));
 }
 
-void Home::DrawSubnauticaCards(float y, float w, ImVec2 o) {
+void Home::DrawSubnauticaCards(float y, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     bool running = state != inject::GameState::NotRunning;
     bool injected = state == inject::GameState::Injected;
@@ -246,9 +252,9 @@ void Home::DrawSubnauticaCards(float y, float w, ImVec2 o) {
     Caption(dl, ImVec2(c2.x + S(16), y + S(15)), "FILES");
     std::error_code ec;
     bool hasDll = paths.found && (std::filesystem::exists(paths.dll, ec) || std::filesystem::exists(paths.bundled, ec));
-    Row(dl, ImVec2(c2.x + S(16), y + S(46)), colW - S(32), "Game folder", paths.found ? "Subnautica2 (Steam)" : "Not found", paths.found);
+    Row(dl, ImVec2(c2.x + S(16), y + S(46)), colW - S(32), "Game folder", paths.found ? folderName : "Not found", paths.found);
     if (paths.found && ImGui::IsMouseHoveringRect(ImVec2(c2.x, y + S(40)), ImVec2(c2.x + colW, y + S(66)))) Tip(Narrow(paths.win64).c_str());
-    Row(dl, ImVec2(c2.x + S(16), y + S(74)), colW - S(32), "Menu file", hasDll ? "fathom.dll" : "Missing", hasDll);
+    Row(dl, ImVec2(c2.x + S(16), y + S(74)), colW - S(32), "Menu file", hasDll ? dllName : "Missing", hasDll);
     Row(dl, ImVec2(c2.x + S(16), y + S(102)), colW - S(32), "Settings", paths.found ? "settings.json" : "-", paths.found);
     float bw = std::floor((colW - S(40)) * 0.5f);
     if (Button("folder", "Open folder", ImVec2(c2.x + S(16), y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_FOLDER_OPEN, paths.found))

@@ -181,7 +181,7 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
         Icon(dl, ImVec2(lp.x + S(16), lp.y + S(16)), S(18), Accent(), ICON_WAVES);
     }
     Text(dl, T().semibold, 15, ImVec2(lp.x + S(44), lp.y - S(1)), White(0.96f), "Fathom");
-    Text(dl, T().regular, 11, ImVec2(lp.x + S(44), lp.y + S(18)), White(0.45f), embedded ? "Mod loader" : "Subnautica 2");
+    Text(dl, T().regular, 11, ImVec2(lp.x + S(44), lp.y + S(18)), White(0.45f), embedded ? "Mod loader" : m.gameName.c_str());
 
     float top = p.y + S(80), th = S(40), gap = S(4);
     struct Entry {

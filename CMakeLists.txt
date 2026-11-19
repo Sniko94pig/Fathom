@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.4.4)
+set(FATHOM_VERSION 1.5.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -90,6 +90,7 @@ if(WIN32)
     src/launcher/launcher_win.cpp
     src/launcher/home.cpp
     ${SN2}/launcher/inject.cpp
+    src/launcher/sn1_inject.cpp
     src/launcher/games.cpp
     src/launcher/art.cpp
     src/launcher/prefs.cpp
@@ -144,4 +145,8 @@ if(WIN32)
   target_link_libraries(fathom PRIVATE fathom_ui d3d12 dxgi)
   target_compile_options(fathom PRIVATE /Zi)
   target_link_options(fathom PRIVATE /DEBUG /PDBALTPATH:fathom.pdb /OPT:REF /OPT:ICF)
+
+  if(EXISTS "${CMAKE_SOURCE_DIR}/games/Subnautica/src/CMakeLists.txt")
+    add_subdirectory(games/Subnautica/src)
+  endif()
 endif()

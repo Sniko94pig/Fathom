@@ -15,8 +15,11 @@ struct Art {
 struct Home {
     inject::Paths paths;
     inject::GameState state = inject::GameState::NotRunning;
+    inject::Paths sn1Paths;
+    inject::GameState sn1State = inject::GameState::NotRunning;
     bool busy = false;
     bool injectNow = false;
+    bool injectSn1 = false;
     bool startNow = false;
     int game = -1;
     std::string search;
@@ -31,7 +34,7 @@ struct Home {
 private:
     void DrawLibrary();
     void DrawGame();
-    void DrawSubnauticaCards(float top, float w, ImVec2 o);
+    void DrawSubnauticaCards(float top, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName);
     const Art* Find(int appId, int kind) const;
 };
 

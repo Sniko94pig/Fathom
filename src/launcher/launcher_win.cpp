@@ -3,6 +3,7 @@
 #include "launcher/games.h"
 #include "launcher/home.h"
 #include "launcher/inject.h"
+#include "launcher/sn1_inject.h"
 #include "core/sn1_features.h"
 #include "launcher/prefs.h"
 #include "ui/icons.h"
@@ -181,9 +182,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::BuildFeatures(model);
     core::Model sn1Model;
     sn1::BuildFeatures(sn1Model);
-    sn1Model.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"subnautica-settings.json").wstring());
     launcher::Home home;
     home.paths = inject::Locate();
+    home.sn1Paths = sn1inject::Locate();
+    std::wstring sn1SettingsPath = home.sn1Paths.found ? home.sn1Paths.settings : (std::filesystem::path(ExeDir()) / L"subnautica-settings.json").wstring();
+    if (home.sn1Paths.found) { std::error_code ec; std::filesystem::create_directories(home.sn1Paths.folder, ec); }
+    sn1Model.settingsPath = Narrow(sn1SettingsPath);
     std::wstring settingsPath = home.paths.found ? home.paths.settings : L"settings.json";
     if (home.paths.found) { std::error_code ec; std::filesystem::create_directories(home.paths.folder, ec); }
     model.settingsPath = Narrow(settingsPath);
@@ -200,6 +204,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::LoadSettings(model);
     std::string lastText = core::SettingsText(model);
     auto knownTime = FileTime(settingsPath);
+    for (core::Feature& f : sn1Model.features)
+    {
+        f.available = false;
+        f.missing = "Turn this on inside the game. Cheats always start off.";
+    }
+    sn1Model.backupSaves = [&home] { return sn1inject::BackupSaves(home.sn1Paths); };
+    sn1Model.openUrl = model.openUrl;
+    core::LoadSettings(sn1Model);
+    std::string sn1LastText = core::SettingsText(sn1Model);
+    auto sn1KnownTime = FileTime(sn1SettingsPath);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -255,8 +269,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     }
     ui::T().accent = ui::AccentColor(loader.s.accent);
     bool artRefresh = false, artWipe = false, downloading = false, updateAsked = false;
-    ULONGLONG runningSince = 0, closeAt = 0;
-    bool autoTried = false;
+    ULONGLONG closeAt = 0;
+    struct Watch
+    {
+        inject::GameState last = inject::GameState::NotRunning;
+        ULONGLONG since = 0;
+        bool tried = false;
+    };
+    Watch watch[2];
     auto openPath = [](const std::wstring& path) {
         std::error_code ec;
         std::filesystem::create_directories(path, ec);
@@ -350,7 +370,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     bool workerOk = false;
     ULONGLONG lastPoll = 0, lastSync = 0;
     float shownScale = loader.s.scale;
-    inject::GameState lastState = inject::GameState::NotRunning;
 
     bool done = false;
     while (!done)
@@ -373,23 +392,31 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             lastPoll = now;
             home.state = inject::State(home.paths);
-            if (home.state != lastState && lastState == inject::GameState::Injected && home.state == inject::GameState::Running)
-                menu.Notify("The menu was unloaded from the game", ICON_INFO);
-            lastState = home.state;
-            if (home.state == inject::GameState::NotRunning)
+            home.sn1State = sn1inject::State(home.sn1Paths);
+            for (int gi = 0; gi < 2; ++gi)
             {
-                runningSince = 0;
-                autoTried = false;
-            }
-            else if (runningSince == 0)
-                runningSince = now;
-            if (home.state == inject::GameState::Injected)
-                autoTried = true;
-            if (loader.s.autoInject && !autoTried && !home.busy && home.paths.found && home.state == inject::GameState::Running && now - runningSince >= 30000)
-            {
-                autoTried = true;
-                home.injectNow = true;
-                menu.Notify("Injecting the menu automatically", ICON_ZAP);
+                inject::GameState st = gi ? home.sn1State : home.state;
+                bool found = gi ? home.sn1Paths.found : home.paths.found;
+                Watch& wt = watch[gi];
+                if (wt.last == inject::GameState::Injected && st == inject::GameState::Running)
+                    menu.Notify("The menu was unloaded from the game", ICON_INFO);
+                wt.last = st;
+                if (st == inject::GameState::NotRunning)
+                {
+                    wt.since = 0;
+                    wt.tried = false;
+                }
+                else if (wt.since == 0)
+                    wt.since = now;
+                if (st == inject::GameState::Injected)
+                    wt.tried = true;
+                if (loader.s.autoInject && !wt.tried && !home.busy && !home.injectNow && found && st == inject::GameState::Running && now - wt.since >= 30000)
+                {
+                    wt.tried = true;
+                    home.injectNow = true;
+                    home.injectSn1 = gi == 1;
+                    menu.Notify("Injecting the menu automatically", ICON_ZAP);
+                }
             }
         }
         {
@@ -399,7 +426,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? "All games" : nullptr;
-            home.openKey = core::KeyName(model.keyOpen);
+            home.openKey = core::KeyName(sn1Open ? sn1Model.keyOpen : model.keyOpen);
             home.showSoon = loader.s.showSoon;
             home.installedFirst = loader.s.installedFirst;
             ui::T().accent = ui::AccentColor(loader.s.accent);
@@ -430,7 +457,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     done = true;
                 }
             }
-            home.unloadKey = core::KeyName(model.keyUnload);
+            home.unloadKey = core::KeyName(sn1Open ? sn1Model.keyUnload : model.keyUnload);
             if (sn2)
             {
                 menu.status = home.state == inject::GameState::Injected ? "Menu active in game" : home.state == inject::GameState::Running ? "Game running" : "Game not running";
@@ -438,8 +465,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             }
             else if (sn1Open)
             {
-                menu.status = "Being built";
-                menu.statusGood = false;
+                menu.status = home.sn1State == inject::GameState::Injected ? "Menu active in game" : home.sn1State == inject::GameState::Running ? "Game running" : "Game not running";
+                menu.statusGood = home.sn1State != inject::GameState::NotRunning;
             }
             else
             {
@@ -465,19 +492,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         if (home.startNow)
         {
             home.startNow = false;
-            inject::StartGame();
-            menu.Notify("Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
+            if (sn1Open)
+                sn1inject::StartGame();
+            else
+                inject::StartGame();
+            menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6" : "Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
         }
         if (home.injectNow && !home.busy)
         {
             home.injectNow = false;
             home.busy = true;
-            core::SaveSettings(model);
-            lastText = core::SettingsText(model);
-            knownTime = FileTime(settingsPath);
+            bool forSn1 = home.injectSn1;
+            if (forSn1)
+            {
+                core::SaveSettings(sn1Model);
+                sn1LastText = core::SettingsText(sn1Model);
+                sn1KnownTime = FileTime(sn1SettingsPath);
+            }
+            else
+            {
+                core::SaveSettings(model);
+                lastText = core::SettingsText(model);
+                knownTime = FileTime(settingsPath);
+            }
             workerDone = false;
-            inject::Paths paths = home.paths;
-            worker = std::thread([&, paths] { workerResult = inject::Inject(paths, workerOk); workerDone = true; });
+            inject::Paths paths = forSn1 ? home.sn1Paths : home.paths;
+            std::string key = core::KeyName(sn1Model.keyOpen);
+            worker = std::thread([&, paths, forSn1, key] {
+                workerResult = forSn1 ? sn1inject::Inject(paths, workerOk, key) : inject::Inject(paths, workerOk);
+                workerDone = true;
+            });
         }
         if (home.busy && workerDone)
         {
@@ -491,21 +535,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         if (now - lastSync >= 500)
         {
             lastSync = now;
-            std::string text = core::SettingsText(model);
-            auto t = FileTime(settingsPath);
-            if (text != lastText)
-            {
-                core::SaveSettings(model);
-                lastText = text;
-                knownTime = FileTime(settingsPath);
-            }
-            else if (t != knownTime && t != std::filesystem::file_time_type::min())
-            {
-                core::LoadSettings(model);
-                menu.SyncFromModel();
-                lastText = core::SettingsText(model);
-                knownTime = t;
-            }
+            auto sync = [](core::Model& m, ui::Menu& mm, const std::wstring& path, std::string& last, std::filesystem::file_time_type& known) {
+                std::string text = core::SettingsText(m);
+                auto t = FileTime(path);
+                if (text != last)
+                {
+                    core::SaveSettings(m);
+                    last = text;
+                    known = FileTime(path);
+                }
+                else if (t != known && t != std::filesystem::file_time_type::min())
+                {
+                    core::LoadSettings(m);
+                    mm.SyncFromModel();
+                    last = core::SettingsText(m);
+                    known = t;
+                }
+            };
+            sync(model, mainMenu, settingsPath, lastText, knownTime);
+            sync(sn1Model, sn1Menu, sn1SettingsPath, sn1LastText, sn1KnownTime);
         }
         if (closeAt && now >= closeAt)
             done = true;
@@ -570,6 +618,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         ImGui::NewFrame();
         menu.Frame();
         model.requestUnload = false;
+        sn1Model.requestUnload = false;
         ImGui::Render();
 
         FrameContext* frameCtx = WaitForNextFrameContext();
@@ -609,6 +658,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         worker.join();
     if (core::SettingsText(model) != lastText)
         core::SaveSettings(model);
+    if (core::SettingsText(sn1Model) != sn1LastText)
+        core::SaveSettings(sn1Model);
 
     launcher::art::Stop();
     launcher::update::Wait();

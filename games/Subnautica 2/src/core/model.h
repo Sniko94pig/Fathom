@@ -175,6 +175,7 @@ struct Model {
     std::function<std::string()> backupSaves;
     std::string lastBackup;
     std::string settingsPath = "fathom_settings.json";
+    std::string gameName = "Subnautica 2";
     bool requestUnload = false;
     bool menuOpen = false;
     bool mapVisible = false;
