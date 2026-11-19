@@ -64,6 +64,11 @@ std::string SettingsText(const Model& m) {
     j["hub"] = {{"repo", m.hubRepo}, {"legs_to_seabed", m.legsToSeabed}};
     j["legit"] = {{"enabled", m.legit}};
     j["map"] = {{"show_picture", m.mapShowImage}, {"points", m.calibPoints}, {"u", {m.calibU[0], m.calibU[1]}}, {"v", {m.calibV[0], m.calibV[1]}}, {"x", {m.calibX[0], m.calibX[1]}}, {"y", {m.calibY[0], m.calibY[1]}}};
+    if (!m.loadout.empty() || m.loadoutKey) {
+        json items = json::array();
+        for (const auto& e : m.loadout) items.push_back({{"id", e.first}, {"amount", e.second}});
+        j["loadout"] = {{"key", KeyName(m.loadoutKey)}, {"items", items}};
+    }
     return j.dump(2);
 }
 
@@ -121,6 +126,18 @@ bool LoadSettings(Model& m) {
             m.locations.push_back({l.value("name", std::string("Location")), l.value("x", 0.0f), l.value("y", 0.0f),
                                    l.value("z", 0.0f)});
         }
+    }
+    if (j.contains("loadout") && j["loadout"].is_object()) {
+        const json& lo = j["loadout"];
+        m.loadoutKey = KeyFromName(lo.value("key", std::string()));
+        m.loadout.clear();
+        if (lo.contains("items") && lo["items"].is_array())
+            for (const json& e : lo["items"]) {
+                if (!e.is_object()) continue;
+                std::string id = e.value("id", std::string());
+                int amount = std::clamp(e.value("amount", 1), 1, 999);
+                if (!id.empty()) m.loadout.push_back({id, amount});
+            }
     }
     if (j.contains("features") && j["features"].is_object()) {
         for (Feature& f : m.features) {

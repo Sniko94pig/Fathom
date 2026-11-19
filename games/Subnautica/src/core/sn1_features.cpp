@@ -110,8 +110,11 @@ void BuildFeatures(Model& m) {
     Action(m, Tab::Spawner, "Items", "instant_loadout", "Instant loadout", "Pick a set of items once, get them all in one press", "Open");
     Action(m, Tab::Spawner, "Map", "map", "Map with teleport", "See the whole map and teleport anywhere", "Open");
 
-    for (Feature& f : m.features)
-        if (f.tab != Tab::Spawner) f.building = false;
+    for (const char* id : {"add_items", "spawner", "creature_spawner", "instant_loadout", "map"})
+        if (Feature* f = m.find(id)) f->page = id;
+    m.mapDrawn = true;
+
+    for (Feature& f : m.features) f.building = false;
 
     for (const char* id : {"esp_hostile", "esp_passive", "esp_leviathan", "esp_name", "esp_distance", "esp_health", "esp_box",
                            "itemesp_resources", "itemesp_fragments", "itemesp_data", "itemesp_crates", "itemesp_name",

@@ -1,6 +1,7 @@
 #include "ingame/game.h"
 #include "ingame/esp.h"
 #include "ingame/log.h"
+#include "ingame/spawn.h"
 #include "ingame/unity.h"
 #include <windows.h>
 #include <algorithm>
@@ -44,6 +45,7 @@ const char* kActions[] = {"refill_health", "refill_food", "refill_water", "refil
 struct Snap {
     bool on[T_COUNT];
     float v[S_COUNT];
+    bool mapVisible;
 };
 
 Snap Defaults() {
@@ -82,11 +84,6 @@ bool wasInGame = false;
 std::unordered_set<int> levSet, hostileSet;
 std::unordered_map<int, int> kindCache;
 int fragmentTech = -1;
-
-void Note(const std::string& s) {
-    std::lock_guard<std::mutex> g(qLock);
-    if (notes.size() < 32) notes.push_back(s);
-}
 
 double Now() { return GetTickCount64() / 1000.0; }
 
@@ -201,6 +198,7 @@ Snap TakeSnap() {
         if (!f) continue;
         s.v[i] = (f->available && !f->building) || i == S_RANGE ? f->value : f->def;
     }
+    s.mapVisible = model && model->mapVisible;
     lastSnap = s;
     return s;
 }
@@ -1179,6 +1177,7 @@ void Tick() {
         }
         wasInGame = inGame;
         Actions(player, inGame, s);
+        sn1spawn::Tick(inGame ? player : nullptr, inGame, now, s.mapVisible);
         prev = s;
     } catch (...) {
         if (faults++ < 5) LOG("error in the game update");
@@ -1222,6 +1221,7 @@ void StopFrame() {
     Step([&] { Vehicles(veh, cyc, off); });
     Step([&] { ReleaseWorld(off); });
     Step([&] { ReleasePower(); });
+    Step([&] { sn1spawn::Release(); });
     Step([&] { unsubscribed = Unsubscribe(); });
 }
 
@@ -1399,5 +1399,12 @@ void SetMenu(bool open, bool focused) {
 void SetGameWindow(void* hwnd) { gameWnd = hwnd; }
 
 void SetFolder(const std::wstring& dir) { folder = dir; }
+
+void Note(const std::string& text) {
+    std::lock_guard<std::mutex> g(qLock);
+    if (notes.size() < 32) notes.push_back(text);
+}
+
+int CreatureKind(int techType) { return Kind(techType); }
 
 }

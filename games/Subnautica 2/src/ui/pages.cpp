@@ -40,8 +40,13 @@ const char* CategoryIcon(const std::string& c) {
     if (c == "Healing") return ICON_HEART_PULSE;
     if (c == "Tools") return ICON_HAMMER;
     if (c == "Equipment") return ICON_SHIELD_CHECK;
-    if (c == "Creatures") return ICON_WAVES;
+    if (c == "Creatures" || c == "Passive") return ICON_WAVES;
     if (c == "Plants") return ICON_SPARKLES;
+    if (c == "Vehicles") return ICON_SHIP;
+    if (c == "Placeable gear") return ICON_ARCHIVE;
+    if (c == "Hostile") return ICON_TRIANGLE_ALERT;
+    if (c == "Leviathans") return ICON_ANCHOR;
+    if (c == "Eggs") return ICON_CIRCLE;
     return ICON_PACKAGE;
 }
 
@@ -51,6 +56,8 @@ const char* MarkerIcon(MarkerType t) {
     case MarkerType::Base: return ICON_HOUSE;
     case MarkerType::Wreck: return ICON_ANCHOR;
     case MarkerType::DataBox: return ICON_BOX;
+    case MarkerType::Beacon: return ICON_MAP_PIN;
+    case MarkerType::Place: return ICON_ANCHOR;
     default: return ICON_NAVIGATION;
     }
 }
@@ -86,9 +93,56 @@ void Menu::SpawnerPage() {
 }
 
 void Menu::SpawnerView(ImVec2 b, float W, float H) {
+    BrowserSpec sp;
+    sp.items = &m.items;
+    sp.categories = &m.categories;
+    sp.key = "spawner";
+    sp.hiddenChip = "Show unreleased";
+    sp.actionIcon = ICON_PACKAGE;
+    sp.action = m.spawn;
+    sp.addAll = true;
+    sp.duplicate = true;
+    Browser(b, W, H, sp);
+}
+
+void Menu::GuardedSpawn(std::function<void()> fn) {
+    if (sessionBackup || !m.backupSaves || embedded) {
+        if (fn) fn();
+        return;
+    }
+    WithBackup([this, fn] {
+        sessionBackup = true;
+        if (fn) fn();
+    });
+}
+
+void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     bool allowed = m.cheatsAllowed();
     float rw = S(248), gap = S(16), lw = W - rw - gap;
+    if (browserKey != sp.key) {
+        browserKey = sp.key;
+        search.clear();
+        category = "All";
+        selected = -1;
+        showHidden = false;
+    }
+    static const std::vector<core::Item> none;
+    static const std::vector<std::string> noCats;
+    const std::vector<core::Item>& items = sp.items ? *sp.items : none;
+    const std::vector<std::string>& cats = sp.categories ? *sp.categories : noCats;
+    auto act = [&](const core::Item& it, int n) {
+        auto fn = sp.action;
+        core::Item copy = it;
+        std::string msg = std::string(sp.doneVerb) + " " + std::to_string(n) + " x " + it.name;
+        const char* icon = sp.actionIcon ? sp.actionIcon : ICON_PACKAGE;
+        auto run = [this, fn, copy, n, msg, icon] {
+            if (fn) fn(copy, n);
+            Notify(msg, icon);
+        };
+        if (sp.guarded) GuardedSpawn(run);
+        else run();
+    };
 
     if (Input("search", &search, "Search items", b, lw, ICON_SEARCH)) selected = -1;
 
@@ -106,9 +160,9 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
         cx += cw + S(8);
     };
     chip("All");
-    for (const std::string& c : m.categories) chip(c);
-    {
-        const char* lbl = "Show unreleased";
+    for (const std::string& c : cats) chip(c);
+    if (sp.hiddenChip) {
+        const char* lbl = sp.hiddenChip;
         float cw = ChipWidth(lbl);
         if (cx + cw > b.x + lw) {
             cx = b.x;
@@ -122,8 +176,8 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
 
     std::string q = Lower(search);
     std::vector<int> rows;
-    for (int i = 0; i < (int)m.items.size(); ++i) {
-        const core::Item& it = m.items[i];
+    for (int i = 0; i < (int)items.size(); ++i) {
+        const core::Item& it = items[i];
         if (it.hidden && !showHidden) continue;
         if (category != "All" && it.category != category) continue;
         if (!q.empty() && Lower(it.name).find(q) == std::string::npos && Lower(it.id).find(q) == std::string::npos) continue;
@@ -134,7 +188,7 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
     ImVec2 ls(lw, b.y + H - lp.y);
     Panel(dl, lp, ls);
     if (rows.empty()) {
-        Empty(dl, lp, ls, ICON_PACKAGE, m.items.empty() ? "The item list loads once you are in a save" : "No items match");
+        Empty(dl, lp, ls, ICON_PACKAGE, items.empty() ? "The item list loads once you are in a save" : "No items match");
     } else {
         ImGui::SetCursorScreenPos(ImVec2(lp.x + S(6), lp.y + S(6)));
         ImGui::BeginChild("items", ImVec2(ls.x - S(12), ls.y - S(12)), 0, ImGuiWindowFlags_NoBackground);
@@ -145,15 +199,12 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
         while (clip.Step()) {
             for (int r = clip.DisplayStart; r < clip.DisplayEnd; ++r) {
                 int idx = rows[r];
-                const core::Item& it = m.items[idx];
+                const core::Item& it = items[idx];
                 ImVec2 rp = ImGui::GetCursorScreenPos();
                 ImGui::PushID(idx);
                 if (ImGui::InvisibleButton("i", ImVec2(rwid, rh))) selected = idx;
                 bool hov = ImGui::IsItemHovered();
-                if (hov && ImGui::IsMouseDoubleClicked(0) && m.spawn && allowed) {
-                    m.spawn(it, amount);
-                    Notify("Spawned " + std::to_string(amount) + " x " + it.name, ICON_PACKAGE);
-                }
+                if (hov && ImGui::IsMouseDoubleClicked(0) && sp.action && allowed) act(it, amount);
                 float hv = Ease(ImGui::GetID("h"), hov ? 1.0f : 0.0f, 18.0f);
                 float sv = Ease(ImGui::GetID("s"), selected == idx ? 1.0f : 0.0f, 18.0f);
                 ImGui::PopID();
@@ -184,7 +235,7 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
     float x = rp.x + S(16), y = rp.y + S(16), iw = rw - S(32);
     Label(dl, ImVec2(x, y), "SELECTED");
     y += S(22);
-    const core::Item* sel = selected >= 0 && selected < (int)m.items.size() ? &m.items[selected] : nullptr;
+    const core::Item* sel = selected >= 0 && selected < (int)items.size() ? &items[selected] : nullptr;
     if (sel && m.iconTexture) {
         auto ic = m.icons.find(sel->id);
         if (ic != m.icons.end()) {
@@ -205,7 +256,7 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
     int stepAmt = ImGui::GetIO().KeyShift ? 10 : 1;
     if (IconButton("minus", ICON_MINUS, ImVec2(x, y), S(36))) amount -= stepAmt;
     if (IconButton("plus", ICON_PLUS, ImVec2(x + iw - S(36), y), S(36))) amount += stepAmt;
-    amount = std::clamp(amount, 1, 999);
+    amount = std::clamp(amount, 1, std::max(1, sp.maxAmount));
     dl->AddRectFilled(ImVec2(x + S(44), y), ImVec2(x + iw - S(44), y + S(36)), White(0.05f), S(8));
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%d", amount);
@@ -219,22 +270,194 @@ void Menu::SpawnerView(ImVec2 b, float W, float H) {
         if (Chip(buf, buf, ImVec2(x + i * (qw + S(8)), y), amount == quick[i], qw)) amount = quick[i];
     }
     y += S(44);
-    if (Button("spawn", "Spawn", ImVec2(x, y), ImVec2(iw, S(40)), Btn::Primary, ICON_PACKAGE, sel && m.spawn && allowed)) {
-        m.spawn(*sel, amount);
-        Notify("Spawned " + std::to_string(amount) + " x " + sel->name, ICON_PACKAGE);
-    }
+    if (Button("spawn", sp.actionLabel, ImVec2(x, y), ImVec2(iw, S(40)), Btn::Primary, sp.actionIcon ? sp.actionIcon : ICON_PACKAGE,
+               sel && sp.action && allowed))
+        act(*sel, amount);
 
-    float by = rp.y + H - S(16) - S(36) * 2 - S(8);
+    int extras = (sp.addAll ? 1 : 0) + (sp.duplicate ? 1 : 0);
+    if (extras == 0) return;
+    float by = rp.y + H - S(16) - S(36) * extras - S(8) * (extras - 1);
     dl->AddLine(ImVec2(x, by - S(16)), ImVec2(x + iw, by - S(16)), White(0.06f));
-    if (Button("allres", "Add all resources", ImVec2(x, by), ImVec2(iw, S(36)), Btn::Ghost, ICON_LAYERS, m.addAllResources && allowed)) {
-        m.addAllResources();
-        Notify("Added all resources", ICON_LAYERS);
+    if (sp.addAll) {
+        if (Button("allres", "Add all resources", ImVec2(x, by), ImVec2(iw, S(36)), Btn::Ghost, ICON_LAYERS, m.addAllResources && allowed)) {
+            auto run = [this] {
+                if (m.addAllResources) m.addAllResources();
+                Notify("Added all resources", ICON_LAYERS);
+            };
+            if (sp.guarded) GuardedSpawn(run);
+            else run();
+        }
+        by += S(44);
     }
-    if (Button("dupe", "Duplicate held item", ImVec2(x, by + S(44)), ImVec2(iw, S(36)), Btn::Ghost, ICON_COPY,
-               m.duplicateHeld && allowed)) {
-        m.duplicateHeld();
-        Notify("Duplicated held item", ICON_COPY);
+    if (sp.duplicate &&
+        Button("dupe", "Duplicate held item", ImVec2(x, by), ImVec2(iw, S(36)), Btn::Ghost, ICON_COPY, m.duplicateHeld && allowed)) {
+        auto run = [this] {
+            if (m.duplicateHeld) m.duplicateHeld();
+            Notify("Duplicated held item", ICON_COPY);
+        };
+        if (sp.guarded) GuardedSpawn(run);
+        else run();
     }
+}
+
+void Menu::SubPage() {
+    ImVec2 o = ImGui::GetCursorScreenPos();
+    ImVec2 av = ImGui::GetContentRegionAvail();
+    const Feature* f = nullptr;
+    for (const Feature& x : m.features)
+        if (x.page == page) {
+            f = &x;
+            break;
+        }
+    if (!f) {
+        page.clear();
+        FeaturePage(tab);
+        return;
+    }
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (Button("back", "Back", o, ImVec2(S(96), S(36)), Btn::Ghost, ICON_UNDO_2)) {
+        page.clear();
+        ImGui::SetCursorScreenPos(o);
+        ImGui::Dummy(av);
+        return;
+    }
+    Text(dl, T().semibold, 16, ImVec2(o.x + S(112), o.y + S(8)), White(0.95f), f->label.c_str());
+    float fade = Ease(ImGui::GetID("pagefade"), 1.0f, 14.0f, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * fade);
+    ImVec2 b(o.x, o.y + S(52));
+    float W = av.x, H = av.y - S(52);
+    BrowserSpec sp;
+    sp.guarded = true;
+    if (page == "add_items") {
+        sp.items = &m.items;
+        sp.categories = &m.categories;
+        sp.key = "add_items";
+        sp.hiddenChip = "Show unused";
+        sp.actionLabel = "Add";
+        sp.actionIcon = ICON_PLUS;
+        sp.doneVerb = "Added";
+        sp.action = m.spawn;
+        sp.duplicate = true;
+        Browser(b, W, H, sp);
+    } else if (page == "spawner") {
+        sp.items = &m.worldItems;
+        sp.categories = &m.worldCategories;
+        sp.key = "spawner_world";
+        sp.hiddenChip = "Show unused";
+        sp.maxAmount = 50;
+        sp.actionIcon = ICON_PACKAGE;
+        sp.action = m.spawnWorld;
+        Browser(b, W, H, sp);
+    } else if (page == "creature_spawner") {
+        sp.items = &m.creatureItems;
+        sp.categories = &m.creatureCategories;
+        sp.key = "creatures";
+        sp.maxAmount = 20;
+        sp.actionIcon = ICON_WAVES;
+        sp.action = m.spawnCreature;
+        Browser(b, W, H, sp);
+    } else if (page == "instant_loadout") {
+        LoadoutView(b, W, H);
+    } else if (page == "map") {
+        MapView(b, W, H);
+    }
+    ImGui::PopStyleVar();
+    ImGui::SetCursorScreenPos(o);
+    ImGui::Dummy(av);
+}
+
+void Menu::LoadoutView(ImVec2 b, float W, float H) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    bool allowed = m.cheatsAllowed();
+    std::string count = "Your loadout (" + std::to_string(m.loadout.size()) + ")";
+    const char* seg[] = {"Pick items", count.c_str()};
+    if (Segmented("lseg", seg, 2, &loadoutSub, b, S(300))) SetAnim(ImGui::GetID("lfade"), 0.0f);
+    float fade = Ease(ImGui::GetID("lfade"), 1.0f, 14.0f, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * fade);
+    ImVec2 c(b.x, b.y + S(52));
+    float h = H - S(52);
+    if (loadoutSub == 0) {
+        BrowserSpec sp;
+        sp.items = &m.items;
+        sp.categories = &m.categories;
+        sp.key = "loadout";
+        sp.hiddenChip = "Show unused";
+        sp.actionLabel = "Add to loadout";
+        sp.actionIcon = ICON_PLUS;
+        sp.doneVerb = "Loadout +";
+        sp.action = [this](const core::Item& it, int n) {
+            for (auto& e : m.loadout)
+                if (e.first == it.id) {
+                    e.second = std::min(e.second + n, 999);
+                    return;
+                }
+            m.loadout.push_back({it.id, n});
+        };
+        Browser(c, W, h, sp);
+        ImGui::PopStyleVar();
+        return;
+    }
+    float barH = S(44);
+    ImVec2 lp = c, ls(W, h - barH - S(12));
+    Panel(dl, lp, ls);
+    int remove = -1;
+    if (m.loadout.empty()) {
+        Empty(dl, lp, ls, ICON_PACKAGE, "Pick items to build your loadout");
+    } else {
+        ImGui::SetCursorScreenPos(ImVec2(lp.x + S(6), lp.y + S(6)));
+        ImGui::BeginChild("loadoutlist", ImVec2(ls.x - S(12), ls.y - S(12)), 0, ImGuiWindowFlags_NoBackground);
+        ImDrawList* cl = ImGui::GetWindowDrawList();
+        float rwid = ImGui::GetContentRegionAvail().x, rh = S(40);
+        for (int i = 0; i < (int)m.loadout.size(); ++i) {
+            auto& e = m.loadout[i];
+            const core::Item* it = nullptr;
+            for (const core::Item& x : m.items)
+                if (x.id == e.first) {
+                    it = &x;
+                    break;
+                }
+            ImVec2 rp = ImGui::GetCursorScreenPos();
+            ImGui::PushID(i);
+            auto ic = m.icons.find(e.first);
+            if (m.iconTexture && ic != m.icons.end()) {
+                const auto& u = ic->second;
+                cl->AddImage((ImTextureID)m.iconTexture, ImVec2(rp.x + S(8), rp.y + S(6)), ImVec2(rp.x + S(36), rp.y + S(34)),
+                             ImVec2(u[0], u[1]), ImVec2(u[2], u[3]));
+            } else {
+                cl->AddRectFilled(ImVec2(rp.x + S(9), rp.y + S(7)), ImVec2(rp.x + S(35), rp.y + S(33)), Accent(0.10f), S(7));
+                Icon(cl, ImVec2(rp.x + S(22), rp.y + S(20)), S(14), Accent(0.85f), CategoryIcon(it ? it->category : ""));
+            }
+            TextFit(cl, T().medium, 13, ImVec2(rp.x + S(46), rp.y + S(12)), rwid - S(46) - S(200), White(0.9f),
+                    it ? it->name.c_str() : e.first.c_str());
+            float bx = rp.x + rwid - S(196);
+            int step = ImGui::GetIO().KeyShift ? 10 : 1;
+            if (IconButton("m", ICON_MINUS, ImVec2(bx, rp.y + S(4)), S(32))) e.second = std::max(1, e.second - step);
+            char buf[16];
+            std::snprintf(buf, sizeof(buf), "%d", e.second);
+            ImVec2 ts = Measure(T().semibold, 13, buf);
+            cl->AddRectFilled(ImVec2(bx + S(38), rp.y + S(4)), ImVec2(bx + S(98), rp.y + S(36)), White(0.05f), S(8));
+            Text(cl, T().semibold, 13, ImVec2(bx + S(68) - ts.x * 0.5f, rp.y + S(20) - ts.y * 0.5f), White(0.95f), buf);
+            if (IconButton("p", ICON_PLUS, ImVec2(bx + S(104), rp.y + S(4)), S(32))) e.second = std::min(999, e.second + step);
+            if (IconButton("d", ICON_TRASH_2, ImVec2(bx + S(156), rp.y + S(4)), S(32), true, true)) remove = i;
+            ImGui::PopID();
+            ImGui::SetCursorScreenPos(ImVec2(rp.x, rp.y + rh));
+        }
+        ImGui::Dummy(ImVec2(1, 1));
+        ImGui::EndChild();
+    }
+    if (remove >= 0) m.loadout.erase(m.loadout.begin() + remove);
+    float by = c.y + h - barH;
+    Text(dl, T().medium, 12.5f, ImVec2(c.x + S(4), by + S(12)), White(0.6f), "Hotkey");
+    KeyChip("loadoutkey", ImVec2(c.x + S(200), by + S(20)), &m.loadoutKey);
+    if (Button("lclear", "Clear", ImVec2(c.x + W - S(360), by), ImVec2(S(110), S(40)), Btn::Ghost, ICON_TRASH_2, !m.loadout.empty()))
+        m.loadout.clear();
+    if (Button("lgive", "Get loadout", ImVec2(c.x + W - S(240), by), ImVec2(S(240), S(40)), Btn::Primary, ICON_PACKAGE,
+               !m.loadout.empty() && m.giveLoadout && allowed))
+        GuardedSpawn([this] {
+            if (m.giveLoadout) m.giveLoadout();
+            Notify("Loadout given", ICON_PACKAGE);
+        });
+    ImGui::PopStyleVar();
 }
 
 void Menu::MapView(ImVec2 b, float W, float H) {
@@ -274,9 +497,12 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     auto toScreen = [&](float wx, float wy) { return ImVec2(c.x + (wx - mapCx) * zoom, c.y + (wy - mapCy) * zoom); };
 
     using cf = std::complex<float>;
+    bool drawn = m.mapDrawn;
+    const float world = 2048.0f;
     cf ca(2.0f, 0.0f), cb(0.0f, 0.0f);
     bool hasImage = m.mapImageTexture && m.mapImageW > 0 && m.mapImageH > 0;
     if (hasImage) {
+        if (drawn) ca = cf(world * 2.0f / (float)std::max(1, m.mapImageW), 0.0f);
         cf z0(m.calibU[0], m.calibV[0]), z1(m.calibU[1], m.calibV[1]);
         cf w0(m.calibX[0], m.calibY[0]), w1(m.calibX[1], m.calibY[1]);
         if (m.calibPoints >= 2 && std::abs(z1 - z0) > 1.0f) {
@@ -284,6 +510,8 @@ void Menu::MapView(ImVec2 b, float W, float H) {
             cb = w0 - ca * z0;
         } else if (m.calibPoints == 1) {
             cb = w0 - ca * z0;
+        } else if (drawn) {
+            cb = cf(-world, -world);
         } else {
             cf center = me ? cf(me->x, me->y) : cf(0, 0);
             cb = center - ca * cf(m.mapImageW * 0.5f, m.mapImageH * 0.5f);
@@ -295,7 +523,16 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     };
 
     dl->PushClipRect(a, q, true);
-    if (m.mapTexture && m.mapMaxX > m.mapMinX) {
+    if (drawn && !(m.mapTexture && m.mapMaxX > m.mapMinX)) {
+        ImVec2 w0 = toScreen(-world, -world), w1 = toScreen(world, world);
+        dl->AddRectFilled(w0, w1, White(0.025f));
+        if (hasImage && m.mapShowImage) {
+            float iw0 = (float)m.mapImageW, ih0 = (float)m.mapImageH;
+            dl->AddImageQuad((ImTextureID)m.mapImageTexture, imgToScreen(0, 0), imgToScreen(iw0, 0), imgToScreen(iw0, ih0),
+                             imgToScreen(0, ih0));
+        }
+        dl->AddRect(w0, w1, White(0.12f));
+    } else if (m.mapTexture && m.mapMaxX > m.mapMinX) {
         dl->AddImage((ImTextureID)m.mapTexture, toScreen(m.mapMinX, m.mapMinY), toScreen(m.mapMaxX, m.mapMaxY));
     } else {
         ImVec2 ts = Measure(T().regular, 12, "The map fills in as you explore");
@@ -370,7 +607,23 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     }
     if (ImGui::IsItemDeactivated() && !mapDragged && hov) {
         float wx = mapCx + (io.MousePos.x - c.x) / zoom, wy = mapCy + (io.MousePos.y - c.y) / zoom;
-        if (hot) {
+        if (calibPick && hasImage && me) {
+            cf z = (cf(wx, wy) - cb) / ca;
+            if (m.calibPoints >= 2) {
+                m.calibU[0] = m.calibU[1];
+                m.calibV[0] = m.calibV[1];
+                m.calibX[0] = m.calibX[1];
+                m.calibY[0] = m.calibY[1];
+            }
+            int i = std::min(m.calibPoints, 1);
+            m.calibU[i] = z.real();
+            m.calibV[i] = z.imag();
+            m.calibX[i] = me->x;
+            m.calibY[i] = me->y;
+            m.calibPoints = std::min(2, i + 1);
+            calibPick = false;
+            Notify(m.calibPoints >= 2 ? "Picture lined up" : "Point set. Swim far away and line it up once more", ICON_CROSSHAIR);
+        } else if (hot) {
             Teleport(hot->x, hot->y, hot->z, true, hot->name);
         } else {
             Teleport(wx, wy, 0, false, "map point");
@@ -382,23 +635,56 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     float x = rp.x + S(16), y = rp.y + S(16), iw = rw - S(32);
     Label(dl, ImVec2(x, y), "SHOW");
     y += S(22);
-    static const char* names[] = {"", "Vehicles", "Bases", "Signals", "Data boxes"};
+    static const char* names[] = {"", "Vehicles", "Bases", "Signals", "Data boxes", "Beacons", "Places"};
+    static const int sn2Types[] = {1, 2, 3, 4};
+    static const int sn1Types[] = {1, 2, 5, 6};
+    const int* types = drawn ? sn1Types : sn2Types;
     float cw = (iw - S(8)) * 0.5f;
-    for (int i = 1; i <= 4; ++i) {
-        ImVec2 cp(x + ((i - 1) % 2) * (cw + S(8)), y + ((i - 1) / 2) * S(36));
+    for (int k = 0; k < 4; ++k) {
+        int i = types[k];
+        ImVec2 cp(x + (k % 2) * (cw + S(8)), y + (k / 2) * S(36));
         if (Chip(names[i], names[i], cp, showType[i], cw)) showType[i] = !showType[i];
     }
     y += S(84);
-    Label(dl, ImVec2(x, y), "SAVED LOCATIONS");
-    y += S(22);
+    bool placesTab = drawn && !m.places.empty();
+    if (placesTab) {
+        static const char* lseg[] = {"Places", "Saved"};
+        Segmented("mlist", lseg, 2, &mapListSub, ImVec2(x, y), iw);
+        y += S(46);
+    } else {
+        Label(dl, ImVec2(x, y), "SAVED LOCATIONS");
+        y += S(22);
+    }
 
     float bottom = rp.y + H - S(16);
     bool scanning = m.mapScanning;
-    float scanH = scanning ? S(36) + S(34) : S(36);
+    bool showScan = !drawn || (bool)m.mapScan;
+    bool lineUp = !showScan && hasImage;
+    float scanH = showScan ? (scanning ? S(36) + S(34) : S(36)) : (lineUp ? S(36) : -S(8));
     float undoY = bottom - scanH - S(8) - S(36);
     float ny = undoY - S(8) - S(36);
     float listH = ny - S(12) - y;
-    if (m.locations.empty()) {
+    if (placesTab && mapListSub == 0) {
+        ImGui::SetCursorScreenPos(ImVec2(x - S(8), y));
+        ImGui::BeginChild("places", ImVec2(iw + S(16), listH), 0, ImGuiWindowFlags_NoBackground);
+        ImDrawList* cl = ImGui::GetWindowDrawList();
+        float rwid = ImGui::GetContentRegionAvail().x;
+        for (int i = 0; i < (int)m.places.size(); ++i) {
+            const core::Location& l = m.places[i];
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            ImGui::PushID(i);
+            bool go = ImGui::InvisibleButton("pl", ImVec2(rwid, S(36)));
+            float hv = Ease(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
+            if (hv > 0.01f) cl->AddRectFilled(p, ImVec2(p.x + rwid, p.y + S(34)), White(0.04f * hv), S(8));
+            Icon(cl, ImVec2(p.x + S(16), p.y + S(17)), S(14), Accent(0.9f), ICON_NAVIGATION);
+            TextFit(cl, T().medium, 12.5f, ImVec2(p.x + S(30), p.y + S(9)), rwid - S(40), White(0.9f), l.name.c_str());
+            ImGui::PopID();
+            ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + S(36)));
+            if (go) Teleport(l.x, l.y, l.z, true, l.name);
+        }
+        ImGui::Dummy(ImVec2(1, 1));
+        ImGui::EndChild();
+    } else if (m.locations.empty()) {
         Empty(dl, ImVec2(x, y), ImVec2(iw, listH), ICON_MAP_PIN, "No saved locations yet");
     } else {
         ImGui::SetCursorScreenPos(ImVec2(x - S(8), y));
@@ -445,6 +731,15 @@ void Menu::MapView(ImVec2 b, float W, float H) {
         m.undoTeleport();
         Notify("Back where you were", ICON_UNDO_2);
     }
+    if (lineUp) {
+        if (Button("lineup", calibPick ? "Click where you are" : "Line up picture", ImVec2(x, bottom - S(36)), ImVec2(iw, S(36)),
+                   calibPick ? Btn::Primary : Btn::Tint, ICON_CROSSHAIR, me != nullptr)) {
+            calibPick = !calibPick;
+            if (calibPick) Notify("Click where you are on the picture", ICON_CROSSHAIR);
+        }
+        return;
+    }
+    if (!showScan) return;
     if (scanning) {
         float sy = bottom - scanH;
         TextFit(dl, T().regular, 11.5f, ImVec2(x, sy), iw, White(0.62f), m.mapScanText.c_str());

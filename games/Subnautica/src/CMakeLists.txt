@@ -9,6 +9,7 @@ add_library(fathom_sn1 SHARED
   ${SN1_SRC}/ingame/mono.cpp
   ${SN1_SRC}/ingame/unity.cpp
   ${SN1_SRC}/ingame/game.cpp
+  ${SN1_SRC}/ingame/spawn.cpp
   ${SN1_SRC}/ingame/esp.cpp
   ${SN1_SRC}/ingame/overlay.cpp
   ${SN1_SRC}/ingame/log.cpp

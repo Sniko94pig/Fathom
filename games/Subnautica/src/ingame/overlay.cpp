@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cfloat>
+#include <chrono>
+#include <future>
 #include <mutex>
 #include <vector>
 
@@ -52,6 +54,12 @@ bool failed = false;
 LARGE_INTEGER freq{}, last{};
 ID3D11ShaderResourceView* logoSrv = nullptr;
 bool logoTried = false;
+ID3D11ShaderResourceView* mapSrv = nullptr;
+bool mapTried = false;
+std::mutex atlasLock;
+std::wstring atlasRequest;
+std::future<ui::Atlas> atlasJob;
+ID3D11ShaderResourceView* atlasSrv = nullptr;
 
 enum class EvType { Key, Char, Button, Wheel };
 struct Ev {
@@ -320,6 +328,42 @@ ID3D11ShaderResourceView* MakeTexture(const uint8_t* rgba, int w, int h) {
     return srv;
 }
 
+void PumpAtlas() {
+    {
+        std::lock_guard<std::mutex> g(atlasLock);
+        if (!atlasRequest.empty() && !atlasJob.valid()) {
+            std::wstring dir = atlasRequest;
+            atlasRequest.clear();
+            atlasJob = std::async(std::launch::async, [dir] { return ui::BuildAtlas(dir, 64); });
+        }
+    }
+    if (!atlasJob.valid() || atlasJob.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    ui::Atlas a = atlasJob.get();
+    if (a.width <= 0 || a.height <= 0 || a.rects.empty()) return;
+    ID3D11ShaderResourceView* srv = MakeTexture(a.rgba.data(), a.width, a.height);
+    if (!srv) {
+        LOG("item icons could not be loaded");
+        return;
+    }
+    if (cbs.atlasReady) cbs.atlasReady(a, (uint64_t)srv);
+    if (atlasSrv) atlasSrv->Release();
+    atlasSrv = srv;
+    LOG("item icons loaded: %d", (int)a.rects.size());
+}
+
+void LoadMapPicture() {
+    mapTried = true;
+    if (cbs.folder.empty()) return;
+    std::vector<uint8_t> px;
+    int w = 0, h = 0;
+    for (const wchar_t* name : {L"\\map.png", L"\\map.jpg", L"\\map.jpeg"})
+        if (ui::LoadImageFile(cbs.folder + name, px, w, h)) break;
+    if (px.empty()) return;
+    mapSrv = MakeTexture(px.data(), w, h);
+    if (mapSrv && cbs.mapImageReady) cbs.mapImageReady((uint64_t)mapSrv, w, h);
+    LOG("map picture %s: %dx%d", mapSrv ? "loaded" : "failed", w, h);
+}
+
 bool Init(IDXGISwapChain* sc) {
     if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), (void**)&device)) || !device) {
         LOG("the game is not using DirectX 11, the menu cannot be shown");
@@ -365,6 +409,8 @@ void Render(IDXGISwapChain* sc) {
         if (ui::LogoPixels(px, w, h)) logoSrv = MakeTexture(px.data(), w, h);
         if (logoSrv && cbs.logoReady) cbs.logoReady((uint64_t)logoSrv);
     }
+    if (!mapTried) LoadMapPicture();
+    PumpAtlas();
     FeedInput();
     ImGui_ImplDX11_NewFrame();
     ImGui::NewFrame();
@@ -483,11 +529,16 @@ void Stop() {
     if (tResize) MH_DisableHook(tResize);
     for (int i = 0; i < 200 && inflight.load() > 0; ++i) Sleep(10);
     Sleep(100);
+    if (atlasJob.valid()) atlasJob.wait();
     if (ready) {
         ImGui_ImplDX11_Shutdown();
         ReleaseTarget();
         if (logoSrv) logoSrv->Release();
         logoSrv = nullptr;
+        if (mapSrv) mapSrv->Release();
+        mapSrv = nullptr;
+        if (atlasSrv) atlasSrv->Release();
+        atlasSrv = nullptr;
         if (context) context->Release();
         if (device) device->Release();
         context = nullptr;
@@ -503,6 +554,11 @@ int VirtualKeyFor(int imguiKey) {
     for (int vk = 1; vk < 256; ++vk)
         if (ToKey(vk) == (ImGuiKey)imguiKey) return vk;
     return 0;
+}
+
+void LoadAtlas(const std::wstring& folder) {
+    std::lock_guard<std::mutex> g(atlasLock);
+    atlasRequest = folder;
 }
 
 }

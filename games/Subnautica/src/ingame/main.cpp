@@ -5,6 +5,7 @@
 #include "ingame/log.h"
 #include "ingame/mono.h"
 #include "ingame/overlay.h"
+#include "ingame/spawn.h"
 #include "ui/icons.h"
 #include "ui/menu.h"
 #include "ui/ui.h"
@@ -176,6 +177,7 @@ DWORD WINAPI MainThread(void*) {
         };
         sn1game::SetFolder(dir);
         sn1game::Wire(model, modelLock);
+        sn1spawn::Wire(model, modelLock, dir, [](const std::wstring& f) { overlay::LoadAtlas(f); });
         core::LoadSettings(model);
         menu = std::make_unique<ui::Menu>(model);
         menu->SyncFromModel();
@@ -192,10 +194,26 @@ DWORD WINAPI MainThread(void*) {
         model.logoTexture = tex;
     };
     cb.window = [](void* h) { sn1game::SetGameWindow(h); };
+    cb.atlasReady = [](const ui::Atlas& a, uint64_t tex) {
+        std::lock_guard<std::mutex> g(modelLock);
+        model.iconTexture = tex;
+        model.icons.clear();
+        for (const auto& [id, r] : a.rects) model.icons[id] = {r.u0, r.v0, r.u1, r.v1};
+    };
+    cb.mapImageReady = [](uint64_t tex, int w, int h) {
+        std::lock_guard<std::mutex> g(modelLock);
+        model.mapImageTexture = tex;
+        model.mapImageW = w;
+        model.mapImageH = h;
+    };
+    cb.folder = dir;
     bool overlayOk = overlay::Start(cb);
     if (!overlayOk) {
         LOG("overlay failed to start");
         unloadRequested = true;
+    } else {
+        std::error_code ec;
+        if (fs::is_directory(fs::path(dir) / L"icons", ec)) overlay::LoadAtlas(dir + L"\\icons");
     }
     std::string err;
     if (overlayOk && !sn1game::Start(err)) {

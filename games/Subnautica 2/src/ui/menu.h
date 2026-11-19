@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "core/model.h"
 #include "ui/loader.h"
 #include "ui/ui.h"
@@ -23,6 +23,7 @@ public:
     core::Tab tab = core::Tab::Survival;
     int spawnSub = 0;
     int hubSub = 0;
+    std::string page;
     ImVec2 windowPos{0, 0};
     ImVec2 windowSize{0, 0};
     float openAnim = 0.0f;
@@ -55,6 +56,20 @@ private:
         ImVec2 Place(float h);
         void End();
     };
+    struct BrowserSpec {
+        const std::vector<core::Item>* items = nullptr;
+        const std::vector<std::string>* categories = nullptr;
+        const char* key = "";
+        const char* hiddenChip = nullptr;
+        int maxAmount = 999;
+        const char* actionLabel = "Spawn";
+        const char* actionIcon = nullptr;
+        const char* doneVerb = "Spawned";
+        std::function<void(const core::Item&, int)> action;
+        bool guarded = false;
+        bool addAll = false;
+        bool duplicate = false;
+    };
 
     void HandleKeys();
     void Unfocus();
@@ -80,6 +95,10 @@ private:
 
     void SpawnerPage();
     void SpawnerView(ImVec2 b, float W, float H);
+    void Browser(ImVec2 b, float W, float H, const BrowserSpec& spec);
+    void SubPage();
+    void LoadoutView(ImVec2 b, float W, float H);
+    void GuardedSpawn(std::function<void()> fn);
     void MapView(ImVec2 b, float W, float H);
     void HubPage();
     void LegitPage();
@@ -119,10 +138,14 @@ private:
     bool mapDragged = false;
     bool calibPick = false;
     bool showHidden = false;
+    std::string browserKey;
+    bool sessionBackup = false;
+    int loadoutSub = 0;
+    int mapListSub = 0;
     int progSub = 0;
     std::string progSearch;
     bool progHideDone = false;
-    bool showType[5] = {true, true, true, true, true};
+    bool showType[7] = {true, true, true, true, true, true, true};
     std::string locName;
     std::string baseName;
     float scaleEdit = 1.0f;

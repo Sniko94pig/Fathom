@@ -110,6 +110,22 @@ struct Refs {
     Method *ktAll, *ktNotifyAdd, *ktNotifyRemove, *ktNotifyChanged, *slMain, *slSlot;
     Class *gameModeOption, *damageType, *behaviourType;
     Enums E;
+
+    Class *monoBehaviour, *invCommands, *utilsCls, *lwe, *inventory, *pickupable, *itemsContainer, *inventoryItem, *equipment,
+        *techData, *ingredient, *spriteManager, *sprite, *texture, *texture2d, *renderTexture, *graphics, *imageConversion, *fileCls,
+        *enumCls, *gotoCmd, *teleportData, *teleportPos, *beacon, *equipmentType, *itemAction, *quickSlotType, *backgroundType,
+        *harvestType;
+    Method *startCoroutine, *itemSpawn, *prefabAsync, *isAllowed, *createPrefab, *lweRegister, *craftEnd, *sendMessage;
+    Fld invMain, iiItem, ingTech, spReady, gotoMain, gotoData, gotoMoving, tdLocations, tpName, tpPosition, bcLabel, srIsBase;
+    Method *invHeld, *invContainer, *invEquipment, *invAction, *pkTech, *icGetItems, *eqFreeSlot;
+    Method *tdEquip, *tdSlot, *tdBuildable, *tdBackground, *tdProcessed, *tdIngredients, *tdHarvest;
+    Method *spGet, *spDefault, *sprTexture, *sprUv, *texW, *texH, *rtGet, *rtRelease, *rtActiveGet, *rtActiveSet, *blit,
+        *tex2dCtor, *readPixels, *encodePng, *writeBytes, *enumValues;
+    Method *gotoPos, *vhTeleport, *trRotation, *raycast;
+    Class* respawnPoint;
+    Method *rpSpawnPos, *vhDocked, *plSetSub, *plGetPod, *plSetPod;
+    Fld plPodFlag;
+    int equipAction = -1, sendDontRequire = -1;
 };
 
 extern Refs R;

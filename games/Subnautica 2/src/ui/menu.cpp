@@ -97,6 +97,15 @@ void Menu::HandleKeys() {
     }
     if (open && focused && !confirmOpen && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Unfocus();
     if (m.keyUnload && ImGui::IsKeyPressed((ImGuiKey)m.keyUnload, false)) m.requestUnload = true;
+    if (m.loadoutKey && m.giveLoadout && ImGui::IsKeyPressed((ImGuiKey)m.loadoutKey, false)) {
+        if (m.loadout.empty()) Notify("Your loadout is empty", ICON_INFO);
+        else if (!m.cheatsAllowed()) Notify("Cheats are off: you are not the host", ICON_USERS);
+        else
+            GuardedSpawn([this] {
+                if (m.giveLoadout) m.giveLoadout();
+                Notify("Loadout given", ICON_PACKAGE);
+            });
+    }
     for (Feature& f : m.features) {
         if (!f.key || f.kind != Kind::Toggle || !ImGui::IsKeyPressed((ImGuiKey)f.key, false)) continue;
         if (f.building) {
@@ -319,8 +328,12 @@ void Menu::Content(ImVec2 p, ImVec2 size) {
         Banner();
         switch (tab) {
         case Tab::Spawner:
-            if (std::find(m.plainTabs.begin(), m.plainTabs.end(), tab) != m.plainTabs.end()) FeaturePage(tab);
-            else SpawnerPage();
+            if (std::find(m.plainTabs.begin(), m.plainTabs.end(), tab) != m.plainTabs.end()) {
+                if (page.empty()) FeaturePage(tab);
+                else SubPage();
+            } else {
+                SpawnerPage();
+            }
             break;
         case Tab::BaseHub: HubPage(); break;
         case Tab::Legit: LegitPage(); break;
@@ -566,8 +579,11 @@ void Menu::FeatureRow(Feature& f, ImVec2 pos, float w) {
         RowBase(f.id.c_str(), pos, w, h, f.label.c_str(), f.hint.c_str(), enabled, tip, bw + S(8));
         std::string bid = "act_" + f.id;
         if (Button(bid.c_str(), f.actionLabel.c_str(), ImVec2(pos.x + w - S(8) - bw, pos.y + (h - S(30)) * 0.5f), ImVec2(bw, S(30)),
-                   Btn::Tint, nullptr, enabled)) {
-            if (f.confirm) {
+                   Btn::Tint, nullptr, enabled || !f.page.empty())) {
+            if (!f.page.empty()) {
+                page = f.page;
+                SetAnim(ImGui::GetID("pagefade"), 0.0f);
+            } else if (f.confirm) {
                 RunPermanent(f);
             } else {
                 if (f.apply) f.apply(f);

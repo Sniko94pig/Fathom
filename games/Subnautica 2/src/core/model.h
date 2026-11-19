@@ -11,7 +11,7 @@ namespace core {
 enum class Tab { Survival, Biomods, Crafting, World, Spawner, BaseHub, Legit, Settings, Count };
 enum class Kind { Toggle, Slider, Action };
 enum class Session { Solo, Host, Client };
-enum class MarkerType { Player, Vehicle, Base, Wreck, DataBox };
+enum class MarkerType { Player, Vehicle, Base, Wreck, DataBox, Beacon, Place };
 
 struct Feature {
     std::string id, label, hint, group;
@@ -21,6 +21,7 @@ struct Feature {
     float caps[4] = {0, 0, 0, 0};
     std::string fmt = "%.1fx";
     std::string actionLabel;
+    std::string page;
     bool confirm = false;
     bool counts = true;
     bool available = false;
@@ -120,6 +121,16 @@ struct Model {
     std::function<void()> addAllResources;
     std::function<void()> duplicateHeld;
 
+    std::vector<Item> worldItems;
+    std::vector<std::string> worldCategories;
+    std::function<void(const Item&, int)> spawnWorld;
+    std::vector<Item> creatureItems;
+    std::vector<std::string> creatureCategories;
+    std::function<void(const Item&, int)> spawnCreature;
+    std::vector<std::pair<std::string, int>> loadout;
+    int loadoutKey = 0;
+    std::function<void()> giveLoadout;
+
     std::vector<Adaptation> adaptations;
     std::function<void(int, bool)> setAdaptation;
 
@@ -141,6 +152,8 @@ struct Model {
     float mapScanProgress = 0;
     std::string mapScanText;
     std::vector<Location> locations;
+    std::vector<Location> places;
+    bool mapDrawn = false;
     std::function<void(float, float, float, bool)> teleport;
     std::function<void()> undoTeleport;
     bool canUndoTeleport = false;
