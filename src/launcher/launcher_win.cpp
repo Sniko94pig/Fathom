@@ -254,7 +254,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->uiScale = loader.s.scale;
     }
     ui::T().accent = ui::AccentColor(loader.s.accent);
-    bool artRefresh = false, artWipe = false, downloading = false;
+    bool artRefresh = false, artWipe = false, downloading = false, updateAsked = false;
     ULONGLONG runningSince = 0, closeAt = 0;
     bool autoTried = false;
     auto openPath = [](const std::wstring& path) {
@@ -404,6 +404,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             home.installedFirst = loader.s.installedFirst;
             ui::T().accent = ui::AccentColor(loader.s.accent);
             launcher::update::Status us = launcher::update::Get();
+            if (us.checked && us.newer && !updateAsked && !downloading)
+            {
+                updateAsked = true;
+                menu.Ask("Update available",
+                    "Fathom " + us.latest + " is out. You have " + loader.version + ". Update now? Fathom closes and the installer opens.",
+                    "Update", [&] { downloading = true; launcher::update::Download(); });
+            }
             loader.updateBusy = us.busy;
             loader.updateReady = us.checked && us.newer;
             if (downloading)
