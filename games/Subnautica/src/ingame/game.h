@@ -16,5 +16,6 @@ bool Ticking();
 std::vector<std::string> TakeNotes();
 void SetMenu(bool open, bool focused);
 void SetGameWindow(void* hwnd);
+void SetFolder(const std::wstring& dir);
 
 }

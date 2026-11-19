@@ -111,7 +111,7 @@ void BuildFeatures(Model& m) {
     Action(m, Tab::Spawner, "Map", "map", "Map with teleport", "See the whole map and teleport anywhere", "Open");
 
     for (Feature& f : m.features)
-        if (f.tab != Tab::Spawner && f.id != "unlock_blueprints") f.building = false;
+        if (f.tab != Tab::Spawner) f.building = false;
 
     for (const char* id : {"esp_hostile", "esp_passive", "esp_leviathan", "esp_name", "esp_distance", "esp_health", "esp_box",
                            "itemesp_resources", "itemesp_fragments", "itemesp_data", "itemesp_crates", "itemesp_name",

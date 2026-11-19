@@ -59,6 +59,7 @@ void Unpin(uint32_t h);
 size_t Length(Object* array);
 Object* At(Object* array, size_t i);
 void* Data(Object* array, int elemSize);
+Object* NewArray(Class* elem, size_t n);
 
 template <class T>
 T Get(Object* o, int off) {

@@ -174,6 +174,7 @@ DWORD WINAPI MainThread(void*) {
             std::wstring w(url.begin(), url.end());
             ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         };
+        sn1game::SetFolder(dir);
         sn1game::Wire(model, modelLock);
         core::LoadSettings(model);
         menu = std::make_unique<ui::Menu>(model);

@@ -5,8 +5,10 @@
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -631,6 +633,113 @@ void Bases(const Snap& s, double now, bool inGame) {
     Power(s, now, inGame);
 }
 
+std::wstring folder;
+std::string bpSlot;
+bool bpApplied = false;
+std::vector<int> bpAdded;
+
+std::vector<int> CollectionItems(Object* coll) {
+    std::vector<int> out;
+    if (!coll || !R.techType) return out;
+    Class* c = mono::ClassOf(coll);
+    Method* count = mono::FindMethod(c, "get_Count", 0);
+    Method* copy = mono::FindMethod(c, "CopyTo", 1);
+    if (!count || !copy) return out;
+    int n = CallInt(count, coll, {}, 0);
+    if (n <= 0) return out;
+    Object* arr = mono::NewArray(R.techType, (size_t)n);
+    if (!arr) return out;
+    bool ok = false;
+    Call(copy, coll, {arr}, &ok);
+    if (!ok) return out;
+    const int* d = (const int*)mono::Data(arr, 4);
+    size_t len = std::min(mono::Length(arr), (size_t)n);
+    if (d) out.assign(d, d + len);
+    return out;
+}
+
+std::string CurrentSlot() {
+    if (!R.slMain || !R.slSlot) return {};
+    Object* slm = Call(R.slMain, nullptr);
+    if (!Alive(slm)) return {};
+    std::string raw = mono::Str(Call(R.slSlot, slm)), out;
+    for (char ch : raw)
+        if (std::isalnum((unsigned char)ch) || ch == '-' || ch == '_') out += ch;
+    return out;
+}
+
+std::wstring BlueprintFile(const std::string& slot) { return folder + L"\\sn1-blueprints-" + std::wstring(slot.begin(), slot.end()) + L".txt"; }
+
+std::vector<int> ReadInts(const std::wstring& path) {
+    std::vector<int> out;
+    std::ifstream in(path);
+    int v;
+    while (in >> v) out.push_back(v);
+    return out;
+}
+
+void WriteInts(const std::wstring& path, const std::vector<int>& v) {
+    std::ofstream out(path, std::ios::trunc);
+    for (int x : v) out << x << '\n';
+}
+
+void Blueprints(const Snap& s, bool inGame) {
+    if (!inGame || !R.ktSet || folder.empty()) {
+        bpSlot.clear();
+        bpApplied = false;
+        bpAdded.clear();
+        return;
+    }
+    uint8_t ready = 0;
+    if (R.ktReady) mono::StaticGet(R.ktReady.cls, R.ktReady.f, &ready);
+    if (!ready) return;
+    std::string slot = CurrentSlot();
+    if (slot.empty()) return;
+    if (slot != bpSlot) {
+        bpSlot = slot;
+        bpApplied = false;
+        bpAdded = ReadInts(BlueprintFile(slot));
+    }
+    Object* known = Static(R.ktSet);
+    if (!known) return;
+    if (s.on[T_PRINTS]) {
+        if (bpApplied) return;
+        bpApplied = true;
+        Method* add = mono::FindMethod(mono::ClassOf(known), "Add", 1);
+        if (!add || !R.ktAll) return;
+        int yes = 1;
+        std::vector<int> all = CollectionItems(Call(R.ktAll, nullptr, {&yes}));
+        std::vector<int> have = CollectionItems(known);
+        std::unordered_set<int> haveSet(have.begin(), have.end()), pending(bpAdded.begin(), bpAdded.end());
+        int n = 0;
+        for (int tt : all) {
+            if (tt <= 0 || haveSet.count(tt)) continue;
+            int v = tt;
+            if (!CallBool(add, known, {&v})) continue;
+            haveSet.insert(tt);
+            if (pending.insert(tt).second) bpAdded.push_back(tt);
+            ++n;
+        }
+        if (n && R.ktNotifyChanged) Call(R.ktNotifyChanged, nullptr);
+        if (!bpAdded.empty()) WriteInts(BlueprintFile(slot), bpAdded);
+        LOG("blueprints unlocked: %d added", n);
+    } else {
+        bpApplied = false;
+        if (bpAdded.empty()) return;
+        Method* rem = mono::FindMethod(mono::ClassOf(known), "Remove", 1);
+        if (!rem) return;
+        for (int tt : bpAdded) {
+            int v = tt;
+            CallBool(rem, known, {&v});
+        }
+        if (R.ktNotifyChanged) Call(R.ktNotifyChanged, nullptr);
+        LOG("blueprints restored: %d removed", (int)bpAdded.size());
+        bpAdded.clear();
+        DeleteFileW(BlueprintFile(slot).c_str());
+        Note("Blueprints are back to the ones you had");
+    }
+}
+
 bool speedOwned = false;
 
 void GameSpeed(const Snap& s, bool inGame) {
@@ -1050,6 +1159,7 @@ void Tick() {
         Object* player = Static(R.playerMain);
         bool inGame = Alive(player) && !Loading();
         GameModes(s, inGame);
+        Blueprints(s, inGame);
         GameSpeed(s, inGame);
         Crafting(s, now, inGame);
         Bases(s, now, inGame);
@@ -1100,6 +1210,7 @@ void StopFrame() {
             cyc = Alive(sub) && Val<uint8_t>(sub, R.srCyclops) ? sub : nullptr;
         });
     Step([&] { MenuInput(true); });
+    Step([&] { Blueprints(off, player && !Loading()); });
     Step([&] { GameModes(off, false); });
     Step([&] { GameSpeed(off, false); });
     Step([&] { Crafting(off, now, false); });
@@ -1286,5 +1397,7 @@ void SetMenu(bool open, bool focused) {
 }
 
 void SetGameWindow(void* hwnd) { gameWnd = hwnd; }
+
+void SetFolder(const std::wstring& dir) { folder = dir; }
 
 }

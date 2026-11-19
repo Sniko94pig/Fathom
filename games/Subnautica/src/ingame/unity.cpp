@@ -267,6 +267,17 @@ bool Resolve(std::string& err) {
     R.ttAsString = M(R.techTypeExt, "AsString", 2);
     R.wsWaiting = M(R.waitScreen, "get_IsWaiting", 0);
 
+    R.knownTech = C(game, "", "KnownTech");
+    R.saveLoad = C(game, "", "SaveLoadManager");
+    R.ktSet = F(R.knownTech, "knownTech");
+    R.ktReady = F(R.knownTech, "initialized");
+    R.ktAll = M(R.knownTech, "GetAllUnlockables", 1);
+    R.ktNotifyAdd = M(R.knownTech, "NotifyAdd", 2);
+    R.ktNotifyRemove = M(R.knownTech, "NotifyRemove", 1);
+    R.ktNotifyChanged = M(R.knownTech, "NotifyChanged", 0);
+    R.slMain = M(R.saveLoad, "get_main", 0);
+    R.slSlot = M(R.saveLoad, "GetCurrentSlot", 0);
+
     R.gameModeOption = C(game, "", "GameModeOption");
     R.damageType = C(game, "", "DamageType");
     R.behaviourType = C(game, "", "BehaviourType");

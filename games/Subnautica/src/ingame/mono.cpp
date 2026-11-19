@@ -53,6 +53,7 @@ struct Api {
     void (*gchandle_free)(uint32_t);
     uintptr_t (*array_length)(Object*);
     char* (*array_addr_with_size)(Object*, int, uintptr_t);
+    Object* (*array_new)(Domain*, Class*, uintptr_t);
 };
 
 Api api{};
@@ -133,7 +134,8 @@ bool Load(std::string& err) {
               Bind(m, api.field_set_value, "mono_field_set_value", err) && Bind(m, api.gchandle_new, "mono_gchandle_new", err) &&
               Bind(m, api.gchandle_get_target, "mono_gchandle_get_target", err) &&
               Bind(m, api.gchandle_free, "mono_gchandle_free", err) && Bind(m, api.array_length, "mono_array_length", err) &&
-              Bind(m, api.array_addr_with_size, "mono_array_addr_with_size", err);
+              Bind(m, api.array_addr_with_size, "mono_array_addr_with_size", err) &&
+              Bind(m, api.array_new, "mono_array_new", err);
     if (!ok) return false;
     if (!api.get_root_domain()) {
         err = "the game's script runtime is still starting";
@@ -320,5 +322,7 @@ void* Data(Object* array, int elemSize) {
     if (!array) return nullptr;
     return api.array_addr_with_size(array, elemSize, 0);
 }
+
+Object* NewArray(Class* elem, size_t n) { return elem ? api.array_new(Dom(), elem, (uintptr_t)n) : nullptr; }
 
 }

@@ -105,6 +105,9 @@ struct Refs {
     Fld bpUsed, scOpen;
     Method *lgMain, *lgGet, *ttAsString;
     Method *wsWaiting;
+    Class *knownTech, *saveLoad;
+    Fld ktSet, ktReady;
+    Method *ktAll, *ktNotifyAdd, *ktNotifyRemove, *ktNotifyChanged, *slMain, *slSlot;
     Class *gameModeOption, *damageType, *behaviourType;
     Enums E;
 };
