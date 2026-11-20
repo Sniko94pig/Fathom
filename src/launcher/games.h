@@ -11,6 +11,7 @@ struct GameDef {
     const char* tag;
     bool ready;
     bool building = false;
+    const char* site = nullptr;
 };
 
 const std::vector<GameDef>& Games();
@@ -19,5 +20,6 @@ int FindGame(const char* id);
 std::wstring SteamPath();
 std::vector<std::wstring> SteamLibraries();
 bool SteamInstalled(int appId);
+const char* InstalledWith(const GameDef& g);
 
 }

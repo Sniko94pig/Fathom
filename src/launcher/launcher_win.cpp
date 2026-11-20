@@ -317,14 +317,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         launcher::update::Check();
     const auto& games = launcher::Games();
     home.installed.resize(games.size());
+    home.installedWith.resize(games.size());
     std::vector<std::pair<int, int>> wantedArt;
     for (size_t i = 0; i < games.size(); ++i)
     {
-        home.installed[i] = launcher::SteamInstalled(games[i].appId);
-        wantedArt.push_back({ games[i].appId, launcher::art::Capsule });
+        home.installedWith[i] = launcher::InstalledWith(games[i]);
+        home.installed[i] = home.installedWith[i] != nullptr;
+        if (games[i].appId > 0)
+            wantedArt.push_back({ games[i].appId, launcher::art::Capsule });
     }
     for (const auto& g : games)
-        wantedArt.push_back({ g.appId, launcher::art::Hero });
+        if (g.appId > 0)
+            wantedArt.push_back({ g.appId, launcher::art::Hero });
     const std::wstring artDir = (std::filesystem::path(ExeDir()) / L"art").wstring();
     launcher::art::Start(wantedArt, artDir, loader.s.webArt);
     struct ArtTex { ID3D12Resource* tex; D3D12_CPU_DESCRIPTOR_HANDLE cpu; D3D12_GPU_DESCRIPTOR_HANDLE gpu; };

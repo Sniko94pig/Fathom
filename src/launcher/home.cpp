@@ -338,9 +338,11 @@ void Home::DrawGame() {
                     : "Fathom will get a menu for this game in a later update. Updates come through the installer.",
          w - S(32));
     bool inst = game < (int)installed.size() && installed[game];
-    Row(dl, ImVec2(o.x + S(16), y + S(86)), w - S(32) - S(140) - S(24), "On this PC", inst ? "Installed with Steam" : "Not installed", inst);
-    std::string store = "https://store.steampowered.com/app/" + std::to_string(g.appId);
-    if (Button("store", "Steam page", ImVec2(o.x + w - S(16) - S(140), y + ch - S(50)), ImVec2(S(140), S(34)), Btn::Ghost, ICON_GLOBE, true)) {
+    Row(dl, ImVec2(o.x + S(16), y + S(86)), w - S(32) - S(140) - S(24), "On this PC",
+        inst ? (game < (int)installedWith.size() && installedWith[game] ? installedWith[game] : "Installed on this PC") : "Not installed", inst);
+    std::string store = g.appId > 0 ? "https://store.steampowered.com/app/" + std::to_string(g.appId) : g.site ? g.site : "";
+    if (!store.empty() &&
+        Button("store", g.appId > 0 ? "Steam page" : "Website", ImVec2(o.x + w - S(16) - S(140), y + ch - S(50)), ImVec2(S(140), S(34)), Btn::Ghost, ICON_GLOBE, true)) {
         std::wstring url(store.begin(), store.end());
         ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }

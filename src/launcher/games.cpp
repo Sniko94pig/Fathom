@@ -1,6 +1,7 @@
 #include "launcher/games.h"
 #include <windows.h>
 #include <cstring>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -17,16 +18,28 @@ const std::vector<GameDef>& Games() {
         {"borderlands3", "Borderlands 3", 397540, "BL3", false},
         {"borderlands4", "Borderlands 4", 1285190, "BL4", false},
         {"cyberpunk2077", "Cyberpunk 2077", 1091500, "CP", false},
+        {"doom", "DOOM + DOOM II", 2280, "DOOM", false},
+        {"dunea", "Dune: Awakening", 1172710, "DUNE", false},
+        {"dyinglight", "Dying Light", 239140, "DL", false},
+        {"backrooms", "Escape the Backrooms", 1943950, "ETB", false},
         {"fallout4", "Fallout 4", 377160, "FO4", false},
         {"falloutnv", "Fallout: New Vegas", 22380, "FNV", false},
+        {"geometrydash", "Geometry Dash", 322170, "GD", false},
+        {"helloneighbor", "Hello Neighbor", 521890, "HN", false},
+        {"icarus", "Icarus", 1149460, "ICA", false},
+        {"minecraft", "Minecraft: Java Edition", 0, "MC", false, false, "https://www.minecraft.net/"},
         {"outlast", "Outlast", 238320, "OL", false},
+        {"poppyplaytime", "Poppy Playtime", 1721470, "PP", false},
+        {"raft", "Raft", 648800, "RAFT", false},
         {"satisfactory", "Satisfactory", 526870, "SAT", false},
+        {"schedule1", "Schedule I", 3164500, "S1", false},
         {"sonsoftheforest", "Sons of the Forest", 1326470, "SOF", true},
         {"subnautica", "Subnautica", 264710, "SN", true},
         {"belowzero", "Subnautica: Below Zero", 848450, "BZ", false},
         {"theforest", "The Forest", 242760, "TF", false},
         {"tlou1", "The Last of Us Part I", 1888930, "TLOU", false},
         {"tlou2", "The Last of Us Part II", 2531310, "TLOU2", false},
+        {"ultrakill", "ULTRAKILL", 1229490, "UK", false},
     };
     return list;
 }
@@ -71,6 +84,49 @@ std::vector<std::wstring> SteamLibraries() {
         libs.push_back(w);
     }
     return libs;
+}
+
+namespace {
+
+std::string Squash(const std::wstring& s) {
+    std::string out;
+    for (wchar_t c : s)
+        if (c < 128 && std::iswalnum(c)) out.push_back((char)std::towlower(c));
+    return out;
+}
+
+std::vector<std::string> XboxFolders() {
+    std::vector<std::string> out;
+    DWORD mask = GetLogicalDrives();
+    for (int d = 0; d < 26; ++d) {
+        if (!(mask & (1u << d))) continue;
+        wchar_t root[] = {wchar_t(L'A' + d), L':', L'\\', 0};
+        if (GetDriveTypeW(root) != DRIVE_FIXED) continue;
+        std::error_code ec;
+        fs::path dir = fs::path(root) / L"XboxGames";
+        if (!fs::is_directory(dir, ec)) continue;
+        for (const auto& e : fs::directory_iterator(dir, ec))
+            if (e.is_directory(ec)) out.push_back(Squash(e.path().filename().wstring()));
+    }
+    return out;
+}
+
+}
+
+const char* InstalledWith(const GameDef& g) {
+    if (g.appId > 0 && SteamInstalled(g.appId)) return "Installed with Steam";
+    if (std::strcmp(g.id, "minecraft") == 0) {
+        wchar_t buf[MAX_PATH];
+        DWORD n = GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
+        std::error_code ec;
+        if (n && n < MAX_PATH && fs::is_directory(fs::path(buf) / L".minecraft" / L"versions", ec)) return "Installed on this PC";
+        return nullptr;
+    }
+    static const std::vector<std::string> xbox = XboxFolders();
+    std::string name = Squash(std::wstring(g.name, g.name + std::strlen(g.name)));
+    for (const std::string& f : xbox)
+        if (f == name) return "Installed with the Xbox app";
+    return nullptr;
 }
 
 bool SteamInstalled(int appId) {

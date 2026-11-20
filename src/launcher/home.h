@@ -30,6 +30,7 @@ struct Home {
     std::string openKey = "Right Shift";
     std::string unloadKey = "End";
     std::vector<bool> installed;
+    std::vector<const char*> installedWith;
     bool showSoon = true;
     bool installedFirst = false;
     int featStart = 0;
