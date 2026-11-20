@@ -21,5 +21,7 @@ std::wstring SteamPath();
 std::vector<std::wstring> SteamLibraries();
 bool SteamInstalled(int appId);
 const char* InstalledWith(const GameDef& g);
+std::wstring LocalArt(int appId);
+void StartGame(const GameDef& g);
 
 }

@@ -7,6 +7,7 @@
 #include "launcher/game_inject.h"
 #include "core/sn1_features.h"
 #include "core/sotf_features.h"
+#include "core/mc_features.h"
 #include "launcher/prefs.h"
 #include "ui/icons.h"
 #include "ui/atlas.h"
@@ -232,6 +233,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::LoadSettings(sotfModel);
     std::string sotfLastText = core::SettingsText(sotfModel);
     auto sotfKnownTime = FileTime(sotfSettingsPath);
+    core::Model mcModel;
+    mc::BuildFeatures(mcModel);
+    mcModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"minecraft-settings.json").wstring());
+    mcModel.openUrl = model.openUrl;
+    core::LoadSettings(mcModel);
+    std::string mcLastText = core::SettingsText(mcModel);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -276,7 +283,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ui::Menu mainMenu(model);
     ui::Menu sn1Menu(sn1Model);
     ui::Menu sotfMenu(sotfModel);
-    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu })
+    ui::Menu mcMenu(mcModel);
+    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu })
     {
         mm->embedded = true;
         mm->homePage = [&home, mm] {
@@ -287,7 +295,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->homeIcon = ICON_LAYERS;
         mm->onHome = true;
         mm->showGameTabs = false;
-        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; };
+        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; };
         mm->loader = &loader;
         mm->uiScale = loader.s.scale;
     }
@@ -323,11 +331,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     {
         home.installedWith[i] = launcher::InstalledWith(games[i]);
         home.installed[i] = home.installedWith[i] != nullptr;
-        if (games[i].appId > 0)
+        if (games[i].appId > 0 || !launcher::LocalArt(games[i].appId).empty())
             wantedArt.push_back({ games[i].appId, launcher::art::Capsule });
     }
     for (const auto& g : games)
-        if (g.appId > 0)
+        if (g.appId > 0 || !launcher::LocalArt(g.appId).empty())
             wantedArt.push_back({ g.appId, launcher::art::Hero });
     const std::wstring artDir = (std::filesystem::path(ExeDir()) / L"art").wstring();
     launcher::art::Start(wantedArt, artDir, loader.s.webArt);
@@ -392,6 +400,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
 
     sn1Model.logoTexture = model.logoTexture;
     sotfModel.logoTexture = model.logoTexture;
+    mcModel.logoTexture = model.logoTexture;
 
     std::thread worker;
     std::atomic<bool> workerDone{ false };
@@ -416,7 +425,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
 
         bool sn1Open = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "subnautica") == 0;
         bool sotfOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "sonsoftheforest") == 0;
-        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mainMenu;
+        bool mcOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "minecraft") == 0;
+        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : mainMenu;
         ULONGLONG now = GetTickCount64();
         if (now - lastPoll >= 1000)
         {
@@ -453,7 +463,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
             bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
-            menu.showGameTabs = sn2 || sn1Open || sotfOpen;
+            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? (mainMenu.homeIndex == 1 ? "My games" : "All games") : nullptr;
@@ -461,7 +471,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 mainMenu.homeTabs.clear();
             else if (mainMenu.homeTabs.empty())
                 mainMenu.homeTabs.push_back({ "My games", ICON_GAMEPAD_2 });
-            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : model;
+            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : model;
             home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;
             home.installedFirst = loader.s.installedFirst;
@@ -508,6 +518,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 menu.status = home.sotfState == inject::GameState::Injected ? "Menu active in game" : home.sotfState == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.sotfState != inject::GameState::NotRunning;
+            }
+            else if (mcOpen)
+            {
+                menu.status = "Being built";
+                menu.statusGood = false;
             }
             else
             {
@@ -678,6 +693,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         model.requestUnload = false;
         sn1Model.requestUnload = false;
         sotfModel.requestUnload = false;
+        mcModel.requestUnload = false;
         ImGui::Render();
 
         FrameContext* frameCtx = WaitForNextFrameContext();
@@ -721,6 +737,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(sn1Model);
     if (core::SettingsText(sotfModel) != sotfLastText)
         core::SaveSettings(sotfModel);
+    if (core::SettingsText(mcModel) != mcLastText)
+        core::SaveSettings(mcModel);
 
     launcher::art::Stop();
     launcher::update::Wait();

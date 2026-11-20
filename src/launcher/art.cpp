@@ -62,6 +62,12 @@ bool FromSteam(int appId, int kind, const fs::path& to) {
     return false;
 }
 
+bool FromLocal(int appId, const fs::path& to) {
+    std::wstring file = LocalArt(appId);
+    std::error_code ec;
+    return !file.empty() && fs::copy_file(file, to, fs::copy_options::overwrite_existing, ec);
+}
+
 bool FromWeb(int appId, int kind, const fs::path& to) {
     std::wstring url = L"https://cdn.cloudflare.steamstatic.com/steam/apps/" + std::to_wstring(appId) + L"/" + SteamName(kind);
     fs::path part = to;
@@ -126,7 +132,9 @@ void Run(std::vector<std::pair<int, int>> wanted, std::wstring cacheDir, bool we
     for (const auto& [appId, kind] : wanted) {
         if (stopping) break;
         fs::path file = fs::path(cacheDir) / (std::to_wstring(appId) + (kind == Hero ? L"_hero.jpg" : L"_capsule.jpg"));
-        if (!fs::exists(file, ec) && !FromSteam(appId, kind, file) && !(web && FromWeb(appId, kind, file))) continue;
+        bool have = fs::exists(file, ec);
+        if (!have) have = appId < 0 ? FromLocal(appId, file) : FromSteam(appId, kind, file) || (web && FromWeb(appId, kind, file));
+        if (!have) continue;
         Image img;
         img.appId = appId;
         img.kind = kind;

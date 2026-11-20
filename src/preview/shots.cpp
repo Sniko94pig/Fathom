@@ -12,6 +12,7 @@
 #include "ui/menu.h"
 #include "core/sn1_features.h"
 #include "core/sotf_features.h"
+#include "core/mc_features.h"
 #include "ui/ui.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -407,7 +408,31 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"30-launcher-minecraft", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             m = core::Model();
+             mc::BuildFeatures(m);
+             home.game = launcher::FindGame("minecraft");
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Minecraft: Java Edition";
+             u.homePage = [] { home.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
 #endif
+        {"31-mc-combat", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             mc::BuildFeatures(m);
+             u.tab = core::Tab::Biomods;
+         }, ImVec2(0, 0), nullptr},
+        {"32-mc-render", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             mc::BuildFeatures(m);
+             u.tab = core::Tab::World;
+         }, ImVec2(0, 0), nullptr},
         {"23-sotf-player", [](core::Model& m, ui::Menu& u) {
              m = core::Model();
              sotf::BuildFeatures(m);

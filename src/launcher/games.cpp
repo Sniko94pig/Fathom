@@ -1,5 +1,6 @@
 #include "launcher/games.h"
 #include <windows.h>
+#include <shellapi.h>
 #include <cstring>
 #include <cwctype>
 #include <filesystem>
@@ -27,7 +28,7 @@ const std::vector<GameDef>& Games() {
         {"geometrydash", "Geometry Dash", 322170, "GD", false},
         {"helloneighbor", "Hello Neighbor", 521890, "HN", false},
         {"icarus", "Icarus", 1149460, "ICA", false},
-        {"minecraft", "Minecraft: Java Edition", 0, "MC", false, false, "https://www.minecraft.net/"},
+        {"minecraft", "Minecraft: Java Edition", -1, "MC", false, true, "https://www.minecraft.net/"},
         {"outlast", "Outlast", 238320, "OL", false},
         {"poppyplaytime", "Poppy Playtime", 1721470, "PP", false},
         {"raft", "Raft", 648800, "RAFT", false},
@@ -95,8 +96,8 @@ std::string Squash(const std::wstring& s) {
     return out;
 }
 
-std::vector<std::string> XboxFolders() {
-    std::vector<std::string> out;
+std::vector<fs::path> XboxRoots() {
+    std::vector<fs::path> out;
     DWORD mask = GetLogicalDrives();
     for (int d = 0; d < 26; ++d) {
         if (!(mask & (1u << d))) continue;
@@ -104,13 +105,41 @@ std::vector<std::string> XboxFolders() {
         if (GetDriveTypeW(root) != DRIVE_FIXED) continue;
         std::error_code ec;
         fs::path dir = fs::path(root) / L"XboxGames";
-        if (!fs::is_directory(dir, ec)) continue;
+        if (fs::is_directory(dir, ec)) out.push_back(dir);
+    }
+    return out;
+}
+
+std::vector<std::string> XboxFolders() {
+    std::vector<std::string> out;
+    for (const fs::path& dir : XboxRoots()) {
+        std::error_code ec;
         for (const auto& e : fs::directory_iterator(dir, ec))
             if (e.is_directory(ec)) out.push_back(Squash(e.path().filename().wstring()));
     }
     return out;
 }
 
+const char* kMinecraftApp = "shell:AppsFolder\\Microsoft.4297127D64EC6_8wekyb3d8bbwe!Minecraft";
+
+}
+
+std::wstring LocalArt(int appId) {
+    if (appId != -1) return {};
+    std::error_code ec;
+    for (const fs::path& dir : XboxRoots()) {
+        fs::path file = dir / L"Minecraft Launcher" / L"Content" / L"SplashScreen.png";
+        if (fs::exists(file, ec)) return file.wstring();
+    }
+    return {};
+}
+
+void StartGame(const GameDef& g) {
+    std::wstring url;
+    if (g.appId > 0) url = L"steam://rungameid/" + std::to_wstring(g.appId);
+    else if (std::strcmp(g.id, "minecraft") == 0) url = std::wstring(kMinecraftApp, kMinecraftApp + std::strlen(kMinecraftApp));
+    else if (g.site) url = std::wstring(g.site, g.site + std::strlen(g.site));
+    if (!url.empty()) ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 const char* InstalledWith(const GameDef& g) {

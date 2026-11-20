@@ -305,10 +305,7 @@ void Home::DrawGame() {
     ImVec2 bs(S(196), S(50));
     ImVec2 bp(b.x - S(28) - bs.x, b.y - S(28) - bs.y);
     if (g.building) {
-        if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) {
-            std::wstring url = L"steam://rungameid/" + std::to_wstring(g.appId);
-            ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        }
+        if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) StartGame(g);
     } else if (!g.ready) {
         Button("main", "Coming soon", bp, bs, Btn::Ghost, ICON_LOCK, false);
     } else if (busy) {
