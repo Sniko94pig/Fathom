@@ -25,7 +25,6 @@ Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* l
     f.id = id;
     f.label = label;
     f.hint = hint;
-    f.building = true;
     m.features.push_back(std::move(f));
     return m.features.back();
 }
@@ -97,7 +96,7 @@ void BuildFeatures(Model& m) {
 
     Toggle(m, Combat, "Weapons", "unlimited_ammo", "Unlimited ammo", "Ammo never runs out");
     Toggle(m, Combat, "Weapons", "no_reload", "No reload", "Keep shooting without reloading, shots still use ammo");
-    Toggle(m, Combat, "Weapons", "no_recoil", "No weapon recoil", "Guns stay steady when you shoot");
+    Toggle(m, Combat, "Weapons", "no_recoil", "No weapon recoil", "Every bullet goes exactly where you aim");
     Slider(m, Combat, "Weapons", "weapon_damage", "Weapon damage", "", 1.0f, 10.0f, 1.0f);
     Toggle(m, Combat, "Weapons", "silent_aim", "Silent aim", "Every shot hits an enemy or animal in the head");
     Toggle(m, Combat, "Enemies", "one_hit_kill", "One hit enemies", "Enemies die from one hit");
@@ -112,7 +111,7 @@ void BuildFeatures(Model& m) {
     Toggle(m, Building, "Building", "build_anywhere", "Build anywhere", "Place structures where the game normally says no");
     Action(m, Building, "Blueprints", "finish_blueprints", "Instant blueprints", "Finishes every blueprint you have placed", "Apply");
     Toggle(m, Building, "Blueprints", "always_fill_blueprints", "Always fill blueprints", "New blueprints finish as soon as you place them");
-    Toggle(m, Building, "Crafting", "no_craft_requirements", "No crafting requirements", "Craft without the materials");
+    Toggle(m, Building, "Crafting", "no_craft_requirements", "No crafting requirements", "Your materials come back after every craft");
     Toggle(m, Building, "Crafting", "no_item_limit", "No item limit", "Carry as many of each item as you want");
     Toggle(m, Building, "3D printer", "unlimited_resin", "Unlimited printer resin", "The 3D printer never runs out of resin");
     Toggle(m, Building, "3D printer", "fast_printing", "Fast printing", "The 3D printer finishes at once");
@@ -122,7 +121,7 @@ void BuildFeatures(Model& m) {
     Toggle(m, World, "Time", "stop_time", "Stop time", "The time of day stays where it is");
     Slider(m, World, "Screen", "brightness", "Brightness", "", 0.5f, 3.0f, 1.0f);
     Slider(m, World, "Screen", "fov", "Field of view", "", 60.0f, 120.0f, 75.0f, "%.0f");
-    Toggle(m, World, "Game", "enable_console", "Enable console", "Turns on the game's own developer console");
+    Toggle(m, World, "Game", "enable_console", "Enable console", "Turns on the game's own developer console, press F1 to open it");
     Action(m, World, "Game", "instant_save", "Instant save", "Saves the game wherever you are", "Save");
 
     Action(m, Companions, "Kelvin", "kelvin_heal", "Heal Kelvin", "Kelvin back to full health", "Apply");
@@ -148,6 +147,8 @@ void BuildFeatures(Model& m) {
     for (const char* id : {"add_items", "spawner", "creature_spawner", "instant_loadout", "map"})
         if (Feature* f = m.find(id)) f->page = id;
     if (Feature* f = m.find("vehicle_spawner")) f->page = "spawner";
+    for (const char* id : {"strength_levels", "enemy_range"})
+        if (Feature* f = m.find(id)) f->counts = false;
     m.mapDrawn = true;
 
     m.gameName = "Sons of the Forest";
