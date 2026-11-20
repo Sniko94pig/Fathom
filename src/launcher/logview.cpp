@@ -215,7 +215,7 @@ void LogView::Body(float x0, float y0, float x1, float y1) {
     } else if (!follow) {
         ImVec2 bs(S(150), S(32));
         ImVec2 bp((x0 + x1) * 0.5f - bs.x * 0.5f, y1 - bs.y - S(16));
-        Glow(fg, bp, ImVec2(bp.x + bs.x, bp.y + bs.y), S(16), ImVec4(0, 0, 0, 1), 0.5f, S(14));
+        Glow(fg, bp, ImVec2(bp.x + bs.x, bp.y + bs.y), 0.0f, ImVec4(0, 0, 0, 1), 0.5f, S(14));
         if (Button("latest", "Jump to latest", bp, bs, Btn::Primary, ICON_DOWNLOAD)) jump = true;
     }
 }
@@ -245,51 +245,42 @@ void LogView::Draw() {
     float h = vp->Size.y - S(72);
     ImVec2 a(vp->Pos.x + std::floor((vp->Size.x - w) * 0.5f), vp->Pos.y + std::floor((vp->Size.y - h) * 0.5f + (1.0f - anim) * S(14)));
     ImVec2 b(a.x + w, a.y + h);
-    float r = S(14), bar = S(48), foot = S(36);
-    Glow(dl, a, b, r, ImVec4(0, 0, 0, 1), 0.65f, S(30));
-    dl->AddRectFilled(a, b, Rgb(0.024f, 0.035f, 0.050f, 0.995f), r);
-    dl->AddRectFilled(a, ImVec2(b.x, a.y + bar), White(0.03f), r, ImDrawFlags_RoundCornersTop);
+    float bar = S(52), foot = S(38);
+    Glow(dl, a, b, 0.0f, ImVec4(0, 0, 0, 1), 0.65f, S(30));
+    dl->AddRectFilled(a, b, Rgb(0.035f, 0.035f, 0.047f, 0.995f));
+    dl->AddRectFilled(a, ImVec2(b.x, a.y + bar), White(0.03f));
     dl->AddLine(ImVec2(a.x, a.y + bar), ImVec2(b.x, a.y + bar), White(0.07f));
-    dl->AddRectFilled(ImVec2(a.x, b.y - foot), b, White(0.025f), r, ImDrawFlags_RoundCornersBottom);
+    dl->AddRectFilled(ImVec2(a.x, b.y - foot), b, White(0.025f));
     dl->AddLine(ImVec2(a.x, b.y - foot), ImVec2(b.x, b.y - foot), White(0.06f));
-    dl->AddRect(a, b, White(0.10f), r);
+    dl->AddRect(a, b, White(0.09f));
+    dl->AddRectFilled(a, ImVec2(b.x, a.y + S(3)), Accent());
 
-    float cy = a.y + bar * 0.5f;
-    const ImU32 dots[3] = {Rgb(1.0f, 0.37f, 0.34f), Rgb(1.0f, 0.74f, 0.18f), Rgb(0.16f, 0.79f, 0.25f)};
+    float cy = a.y + S(3) + (bar - S(3)) * 0.5f;
     ImVec2 mouse = ImGui::GetMousePos();
-    bool dotsHover = open && mouse.x >= a.x + S(12) && mouse.x <= a.x + S(70) && mouse.y >= cy - S(10) && mouse.y <= cy + S(10);
-    for (int i = 0; i < 3; ++i) {
-        ImVec2 c(a.x + S(24) + i * S(19), cy);
-        dl->AddCircleFilled(c, S(6), dots[i]);
-        if (dotsHover && i == 0) {
-            dl->AddLine(ImVec2(c.x - S(2.5f), c.y - S(2.5f)), ImVec2(c.x + S(2.5f), c.y + S(2.5f)), Black(0.6f), S(1.3f));
-            dl->AddLine(ImVec2(c.x - S(2.5f), c.y + S(2.5f)), ImVec2(c.x + S(2.5f), c.y - S(2.5f)), Black(0.6f), S(1.3f));
-        }
-    }
     bool close = false;
-    if (dotsHover && ImGui::IsMouseClicked(0)) close = true;
 
     ImFont* mono = T().mono ? T().mono : T().regular;
-    float tx = a.x + S(92);
-    Text(dl, mono, 13, ImVec2(tx, cy - Measure(mono, 13, ">_").y * 0.5f), Accent(), ">_");
-    tx += Measure(mono, 13, ">_").x + S(10);
-    Text(dl, T().semibold, 13.5f, ImVec2(tx, cy - Measure(T().semibold, 13.5f, file.c_str()).y * 0.5f), White(0.92f), file.c_str());
-    tx += Measure(T().semibold, 13.5f, file.c_str()).x + S(8);
-    std::string sub = "\xc2\xb7  " + title;
-    Text(dl, T().regular, 13, ImVec2(tx, cy - Measure(T().regular, 13, sub.c_str()).y * 0.5f), White(0.42f), sub.c_str());
-    tx += Measure(T().regular, 13, sub.c_str()).x + S(14);
+    float tx = a.x + S(18);
+    Para(dl, ImVec2(tx, cy - S(13)), ImVec2(tx + S(34), cy + S(13)), Accent());
+    ImVec2 ps = Measure(mono, 12.5f, ">_");
+    Text(dl, mono, 12.5f, ImVec2(tx + S(17) - ps.x * 0.5f, cy - ps.y * 0.5f), White(), ">_");
+    tx += S(34) + S(12);
+    Text(dl, T().semibold, 13.5f, ImVec2(tx, cy - Measure(T().semibold, 13.5f, file.c_str()).y * 0.5f), White(0.95f), file.c_str());
+    tx += Measure(T().semibold, 13.5f, file.c_str()).x + S(10);
+    Text(dl, T().regular, 13, ImVec2(tx, cy - Measure(T().regular, 13, title.c_str()).y * 0.5f), White(0.45f), title.c_str());
+    tx += Measure(T().regular, 13, title.c_str()).x + S(14);
 
     double t = ImGui::GetTime();
     bool fresh = !missing && t - changedAt < 2.5;
     const char* chip = missing ? "NO FILE" : "LIVE";
     ImVec2 cs = Measure(T().semibold, 10, chip);
-    ImVec2 ca(tx, cy - S(10)), cb(tx + cs.x + S(26), cy + S(10));
-    ImU32 chipCol = missing ? White(0.5f) : Rgb(0.45f, 0.88f, 0.62f);
-    dl->AddRectFilled(ca, cb, missing ? White(0.06f) : Rgb(0.45f, 0.88f, 0.62f, 0.12f), S(10));
+    ImVec2 ca(tx, cy - S(10)), cb(tx + cs.x + S(32), cy + S(10));
+    ImU32 chipCol = missing ? White(0.5f) : Accent();
+    Para(dl, ca, cb, missing ? White(0.06f) : Accent(0.14f));
     float pulse = missing ? 0.0f : 0.5f + 0.5f * (float)std::sin(t * (fresh ? 9.0 : 3.0));
-    if (!missing) dl->AddCircleFilled(ImVec2(ca.x + S(10), cy), S(3.5f) + S(2.5f) * pulse, Rgb(0.45f, 0.88f, 0.62f, 0.25f * pulse));
-    dl->AddCircleFilled(ImVec2(ca.x + S(10), cy), S(3), chipCol);
-    Text(dl, T().semibold, 10, ImVec2(ca.x + S(18), cy - cs.y * 0.5f), chipCol, chip);
+    if (!missing) Diamond(dl, ImVec2(ca.x + S(13), cy), S(4) + S(2.5f) * pulse, Accent(0.25f * pulse));
+    Diamond(dl, ImVec2(ca.x + S(13), cy), S(3.5f), chipCol);
+    Text(dl, T().semibold, 10, ImVec2(ca.x + S(22), cy - cs.y * 0.5f), chipCol, chip);
 
     float ib = S(32);
     float bx = b.x - S(10) - ib;
@@ -318,7 +309,7 @@ void LogView::Draw() {
     if (!missing) {
         float lx = a.x + S(18) + Measure(mono, 11.5f, left.c_str()).x + S(14);
         const char* state = follow ? "following new lines" : "paused, scroll to the end to follow";
-        dl->AddCircleFilled(ImVec2(lx, fy), S(2.5f), follow ? Accent(0.9f) : White(0.35f));
+        Diamond(dl, ImVec2(lx, fy), S(3), follow ? Accent(0.9f) : White(0.35f));
         Text(dl, mono, 11.5f, ImVec2(lx + S(9), fy - Measure(mono, 11.5f, state).y * 0.5f), White(0.42f), state);
     }
     const char* hint = "Esc to close";

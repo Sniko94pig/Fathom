@@ -130,7 +130,7 @@ struct Saved {
     bool active = false;
     float a = 0, b = 0, c = 0, d = 0;
 };
-Saved speedSave, jumpSave, radSave, tempSave;
+Saved speedSave, jumpSave, tempSave;
 
 void Note(const std::string& s) {
     std::lock_guard<std::mutex> g(noteLock);
@@ -384,20 +384,6 @@ void EnforceJump(bool allowed) {
 
 void EnforceAttrs(bool allowed) {
     void* set = st.healthSet;
-    bool rad = allowed && set && On("no_radiation");
-    if (radSave.active && (radSave.owner != set || !rad)) {
-        if (ue::Valid(radSave.owner)) WriteAttr(radSave.owner, "DamageMultiplierRadiation", Attr{radSave.a, radSave.b});
-        radSave.active = false;
-    }
-    if (rad) {
-        if (!radSave.active) {
-            Attr a = ReadAttr(set, "DamageMultiplierRadiation");
-            radSave = {set, true, a.base, a.cur};
-        }
-        WriteAttr(set, "DamageMultiplierRadiation", 0.0f);
-        WriteAttr(set, "Radiation", 0.0f);
-        WriteAttr(set, "RadiationAbsorbed", 0.0f);
-    }
     bool temp = allowed && set && On("stable_temperature");
     if (tempSave.active && (tempSave.owner != set || !temp)) {
         if (ue::Valid(tempSave.owner)) {
@@ -5179,7 +5165,7 @@ void OnWorldChanged() {
     crafterSaves.clear();
     lastBuildComp = nullptr;
     EnforceAbilityCooldowns(false);
-    for (Saved* s : {&speedSave, &jumpSave, &radSave, &tempSave, &scanSave, &vSpeedSave, &subSpeedSave}) s->active = false;
+    for (Saved* s : {&speedSave, &jumpSave, &tempSave, &scanSave, &vSpeedSave, &subSpeedSave}) s->active = false;
     for (LooseTag& t : looseTags) t.appliedTo = t.appliedState = nullptr;
     for (CfgField& f : cfgFields) f.active = f.byScan = false;
     timeActive = false;
@@ -5307,7 +5293,6 @@ void Wire(core::Model& m, std::mutex& lock, unsigned long thread) {
     gameThread = thread;
     auto none = [](Feature&) {};
     for (const TagCheat& t : tagCheats) Implement(t.id, none);
-    Implement("no_radiation", none);
     Implement("stable_temperature", none);
     Implement("player_speed", none);
     Implement("jump_height", none);
@@ -5429,7 +5414,6 @@ void Wire(core::Model& m, std::mutex& lock, unsigned long thread) {
         Enqueue([index, on] { SetAdaptation(index, on); });
     };
     if (Feature* f = m.find("stable_temperature")) f->hint = "No heat or cold damage";
-    if (Feature* f = m.find("no_radiation")) f->hint = "No radiation build-up or damage";
     for (Feature& f : m.features)
         if (!f.available) f.missing = core::NotYetReason(f.id);
 }

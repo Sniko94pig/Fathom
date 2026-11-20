@@ -73,15 +73,15 @@ void ApplyStyle() {
     ImGuiStyle& st = ImGui::GetStyle();
     st.FontSizeBase = S(14);
     st.FontScaleMain = 1.0f;
-    st.WindowRounding = S(16);
-    st.ChildRounding = S(12);
-    st.FrameRounding = S(8);
+    st.WindowRounding = 0;
+    st.ChildRounding = 0;
+    st.FrameRounding = S(2);
     st.WindowBorderSize = 0;
     st.ChildBorderSize = 0;
     st.FrameBorderSize = 0;
     st.ItemSpacing = ImVec2(0, 0);
-    st.ScrollbarSize = S(6);
-    st.ScrollbarRounding = S(3);
+    st.ScrollbarSize = S(5);
+    st.ScrollbarRounding = 0;
     st.DisabledAlpha = 1.0f;
     st.AntiAliasedLines = true;
     st.AntiAliasedFill = true;
@@ -130,6 +130,10 @@ ImU32 Bg(float a) {
 
 ImU32 Danger(float a) {
     return Mul(g_theme.danger, a);
+}
+
+ImU32 Good(float a) {
+    return Mul(g_theme.good, a);
 }
 
 ImU32 Mix(const ImVec4& a, const ImVec4& b, float t, float alpha) {
@@ -203,18 +207,70 @@ void Glow(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, const ImVec4& col,
     }
 }
 
+float Slant(float h) {
+    return std::floor(h * 0.18f + 0.5f);
+}
+
+void Para(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col) {
+    float dx = Slant(b.y - a.y);
+    ImVec2 pts[4] = {ImVec2(a.x + dx, a.y), ImVec2(b.x, a.y), ImVec2(b.x - dx, b.y), ImVec2(a.x, b.y)};
+    dl->AddConvexPolyFilled(pts, 4, col);
+}
+
+void ParaLine(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, float thickness) {
+    float dx = Slant(b.y - a.y);
+    float o = thickness * 0.5f;
+    dl->PathLineTo(ImVec2(a.x + dx + o, a.y + o));
+    dl->PathLineTo(ImVec2(b.x - o, a.y + o));
+    dl->PathLineTo(ImVec2(b.x - dx - o, b.y - o));
+    dl->PathLineTo(ImVec2(a.x + o, b.y - o));
+    dl->PathStroke(col, thickness, ImDrawFlags_Closed);
+}
+
+void Diamond(ImDrawList* dl, ImVec2 c, float r, ImU32 col) {
+    ImVec2 pts[4] = {ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y), ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y)};
+    dl->AddConvexPolyFilled(pts, 4, col);
+}
+
+namespace {
+std::string Caps(const char* text) {
+    std::string s = text ? text : "";
+    for (char& c : s)
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    return s;
+}
+}
+
+void Upper(ImDrawList* dl, ImFont* font, float size, ImVec2 pos, ImU32 col, const char* text) {
+    Text(dl, font, size, pos, col, Caps(text).c_str());
+}
+
+ImVec2 MeasureUpper(ImFont* font, float size, const char* text) {
+    return Measure(font, size, Caps(text).c_str());
+}
+
+void Title(ImDrawList* dl, ImVec2 pos, const char* text) {
+    Para(dl, ImVec2(pos.x, pos.y + S(1)), ImVec2(pos.x + S(6), pos.y + S(12)), Accent());
+    Upper(dl, g_theme.semibold, 11.5f, ImVec2(pos.x + S(13), pos.y), White(0.92f), text);
+}
+
 ImVec2 SwitchSize() {
-    return ImVec2(S(36), S(20));
+    return ImVec2(S(62), S(22));
 }
 
 void Switch(ImDrawList* dl, ImVec2 pos, float t, float dim) {
     ImVec2 sz = SwitchSize();
-    float r = sz.y * 0.5f;
     ImVec2 b(pos.x + sz.x, pos.y + sz.y);
-    if (t > 0.01f) Glow(dl, pos, b, r, g_theme.accent, t * dim, S(9));
-    dl->AddRectFilled(pos, b, Mix(ImVec4(1, 1, 1, 0.14f), g_theme.accent, t, dim), r);
-    float kx = pos.x + r + (sz.x - sz.y) * t;
-    dl->AddCircleFilled(ImVec2(kx, pos.y + r), r - S(3), Mix(ImVec4(1, 1, 1, 0.85f), ImVec4(1, 1, 1, 1), t, dim), 24);
+    float half = std::floor(sz.x * 0.5f);
+    Para(dl, pos, b, White(0.05f * dim));
+    ParaLine(dl, pos, b, White(0.09f * dim));
+    float hx = pos.x + half * t;
+    Para(dl, ImVec2(hx, pos.y), ImVec2(hx + (sz.x - half), b.y), Mix(ImVec4(1, 1, 1, 0.13f), g_theme.accent, t, dim));
+    ImVec2 fs = Measure(g_theme.semibold, 9.5f, "OFF");
+    ImVec2 ns = Measure(g_theme.semibold, 9.5f, "ON");
+    float ty = pos.y + (sz.y - fs.y) * 0.5f;
+    Text(dl, g_theme.semibold, 9.5f, ImVec2(pos.x + (half - fs.x) * 0.5f, ty), White((0.3f + 0.62f * (1.0f - t)) * dim), "OFF");
+    Text(dl, g_theme.semibold, 9.5f, ImVec2(pos.x + half + (sz.x - half - ns.x) * 0.5f, ty), White((0.3f + 0.68f * t) * dim), "ON");
 }
 
 bool Button(const char* id, const char* label, ImVec2 pos, ImVec2 size, Btn style, const char* icon, bool enabled) {
@@ -228,31 +284,39 @@ bool Button(const char* id, const char* label, ImVec2 pos, ImVec2 size, Btn styl
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float dim = enabled ? 1.0f : 0.38f;
     float press = held ? 0.85f : 1.0f;
-    ImU32 bg, fg;
+    ImU32 bg, fg, line = 0;
     switch (style) {
     case Btn::Primary:
-        bg = Accent((0.86f + 0.14f * h) * dim * press);
-        fg = Bg(dim);
+        bg = Mix(g_theme.accent, ImVec4(1, 0.45f, 0.5f, 1), 0.25f * h, dim * press);
+        fg = White(dim);
         break;
     case Btn::Tint:
-        bg = Accent((0.12f + 0.10f * h) * dim * press);
+        bg = Accent((0.13f + 0.09f * h) * dim * press);
+        line = Accent(0.42f * dim);
         fg = Accent(dim);
         break;
     case Btn::Danger:
-        bg = Danger((0.14f + 0.12f * h) * dim * press);
+        bg = Danger((0.10f + 0.10f * h) * dim * press);
+        line = Danger(0.42f * dim);
         fg = Danger(dim);
         break;
     default:
-        bg = White((0.06f + 0.05f * h) * dim * press);
-        fg = White(0.9f * dim);
+        bg = White((0.055f + 0.05f * h) * dim * press);
+        line = White(0.08f * dim);
+        fg = White(0.92f * dim);
         break;
     }
-    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), bg, S(8));
-    ImVec2 ts = Measure(g_theme.medium, 13, label);
+    ImVec2 b(pos.x + size.x, pos.y + size.y);
+    Para(dl, pos, b, bg);
+    if (line) ParaLine(dl, pos, b, line);
+    bool caps = style == Btn::Primary;
+    ImFont* font = caps ? g_theme.semibold : g_theme.medium;
+    std::string text = caps ? Caps(label) : std::string(label);
+    ImVec2 ts = Measure(font, 13, text.c_str());
     float iw = icon ? S(22) : 0.0f;
     float x = pos.x + (size.x - ts.x - iw) * 0.5f;
     if (icon) Icon(dl, ImVec2(x + S(8), pos.y + size.y * 0.5f), S(15), fg, icon);
-    Text(dl, g_theme.medium, 13, ImVec2(x + iw, pos.y + (size.y - ts.y) * 0.5f), fg, label);
+    Text(dl, font, 13, ImVec2(x + iw, pos.y + (size.y - ts.y) * 0.5f), fg, text.c_str());
     return pressed;
 }
 
@@ -265,14 +329,16 @@ bool IconButton(const char* id, const char* icon, ImVec2 pos, float size, bool e
     ImGui::PopID();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float dim = enabled ? 1.0f : 0.38f;
-    dl->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size), danger ? Danger(0.16f * h) : White((0.05f + 0.06f * h) * dim), S(8));
+    ImVec2 b(pos.x + size, pos.y + size);
+    dl->AddRectFilled(pos, b, danger ? Danger(0.06f + 0.12f * h) : White((0.05f + 0.06f * h) * dim));
+    dl->AddRect(pos, b, danger ? Danger(0.2f + 0.3f * h) : White(0.08f * dim));
     ImU32 fg = danger ? Mix(ImVec4(1, 1, 1, 0.6f), g_theme.danger, h, dim) : White((0.65f + 0.3f * h) * dim);
     Icon(dl, ImVec2(pos.x + size * 0.5f, pos.y + size * 0.5f), S(15), fg, icon);
     return pressed;
 }
 
 float ChipWidth(const char* label) {
-    return Measure(g_theme.medium, 12, label).x + S(24);
+    return Measure(g_theme.medium, 12, label).x + S(28);
 }
 
 bool Chip(const char* id, const char* label, ImVec2 pos, bool selected, float width) {
@@ -285,12 +351,12 @@ bool Chip(const char* id, const char* label, ImVec2 pos, bool selected, float wi
     float s = Ease(ImGui::GetID("s"), selected ? 1.0f : 0.0f, 18.0f, selected ? 1.0f : 0.0f);
     ImGui::PopID();
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImVec4 off(1, 1, 1, 0.05f + 0.04f * h);
-    ImVec4 on(g_theme.accent.x, g_theme.accent.y, g_theme.accent.z, 0.16f);
-    dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + hgt), Mix(off, on, s), hgt * 0.5f);
+    ImVec2 b(pos.x + w, pos.y + hgt);
+    Para(dl, pos, b, Mix(ImVec4(1, 1, 1, 0.05f + 0.04f * h), g_theme.accent, s));
+    if (s < 0.99f) ParaLine(dl, pos, b, White(0.08f * (1.0f - s)));
     ImVec2 ts = Measure(g_theme.medium, 12, label);
     Text(dl, g_theme.medium, 12, ImVec2(pos.x + (w - ts.x) * 0.5f, pos.y + (hgt - ts.y) * 0.5f),
-         Mix(ImVec4(1, 1, 1, 0.62f + 0.3f * h), g_theme.accent, s), label);
+         Mix(ImVec4(1, 1, 1, 0.62f + 0.3f * h), ImVec4(1, 1, 1, 1), s), label);
     return pressed;
 }
 
@@ -299,11 +365,12 @@ bool Segmented(const char* id, const char* const* labels, int count, int* index,
     float pad = S(4);
     float cell = (width - pad * 2) / (float)count;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + hgt), White(0.05f), S(10));
+    dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + hgt), White(0.04f));
+    dl->AddRect(pos, ImVec2(pos.x + width, pos.y + hgt), White(0.07f));
     ImGui::PushID(id);
     float fi = Ease(ImGui::GetID("sel"), (float)*index, 18.0f, (float)*index);
     ImVec2 sp(pos.x + pad + cell * fi, pos.y + pad);
-    dl->AddRectFilled(sp, ImVec2(sp.x + cell, sp.y + hgt - pad * 2), White(0.10f), S(7));
+    Para(dl, sp, ImVec2(sp.x + cell, sp.y + hgt - pad * 2), Accent());
     bool changed = false;
     for (int i = 0; i < count; ++i) {
         ImVec2 cp(pos.x + pad + cell * i, pos.y + pad);
@@ -316,10 +383,10 @@ bool Segmented(const char* id, const char* const* labels, int count, int* index,
         float h = Ease(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
         float a = Ease(ImGui::GetID("a"), *index == i ? 1.0f : 0.0f, 18.0f, *index == i ? 1.0f : 0.0f);
         ImGui::PopID();
-        ImVec2 ts = Measure(g_theme.medium, 13, labels[i]);
-        float al = 0.55f + 0.2f * h + 0.4f * a;
-        Text(dl, g_theme.medium, 13, ImVec2(cp.x + (cell - ts.x) * 0.5f, cp.y + (hgt - pad * 2 - ts.y) * 0.5f),
-             White(al > 0.96f ? 0.96f : al), labels[i]);
+        ImVec2 ts = MeasureUpper(g_theme.semibold, 12, labels[i]);
+        float al = 0.55f + 0.2f * h + 0.45f * a;
+        Upper(dl, g_theme.semibold, 12, ImVec2(cp.x + (cell - ts.x) * 0.5f, cp.y + (hgt - pad * 2 - ts.y) * 0.5f),
+              White(al > 1.0f ? 1.0f : al), labels[i]);
     }
     ImGui::PopID();
     return changed;
@@ -346,8 +413,10 @@ bool Input(const char* id, std::string* value, const char* hint, ImVec2 pos, flo
     ImGui::PopFont();
     float f = Ease(fid, active ? 1.0f : 0.0f, 18.0f);
     split.SetCurrentChannel(dl, 0);
-    dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + hgt), White(0.05f + (hov ? 0.02f : 0.0f)), S(8));
-    if (f > 0.01f) dl->AddRect(pos, ImVec2(pos.x + width, pos.y + hgt), Accent(0.55f * f), S(8), 1.0f);
+    ImVec2 b(pos.x + width, pos.y + hgt);
+    dl->AddRectFilled(pos, b, White(0.05f + (hov ? 0.02f : 0.0f)));
+    dl->AddRect(pos, b, f > 0.01f ? Mix(ImVec4(1, 1, 1, 0.08f), g_theme.accent, f, 0.9f) : White(0.08f));
+    if (f > 0.01f) dl->AddRectFilled(ImVec2(pos.x, b.y - S(2)), b, Accent(f));
     if (icon) Icon(dl, ImVec2(pos.x + S(18), pos.y + hgt * 0.5f), S(15), White(0.45f + 0.3f * f), icon);
     split.Merge(dl);
     ImGui::PopID();
@@ -355,19 +424,19 @@ bool Input(const char* id, std::string* value, const char* hint, ImVec2 pos, flo
 }
 
 float BuildingWidth() {
-    return Measure(g_theme.medium, 11.5f, "Being built").x + S(36);
+    return MeasureUpper(g_theme.semibold, 10.5f, "Being built").x + S(40);
 }
 
 void Building(ImDrawList* dl, ImVec2 rightCenter) {
     float w = BuildingWidth();
-    float h = S(24);
+    float h = S(22);
     ImVec2 a(rightCenter.x - w, rightCenter.y - h * 0.5f);
     ImVec2 b(rightCenter.x, rightCenter.y + h * 0.5f);
-    dl->AddRectFilled(a, b, ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.13f)), h * 0.5f);
+    Para(dl, a, b, ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.14f)));
     ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(0.98f, 0.74f, 0.30f, 0.95f));
-    Icon(dl, ImVec2(a.x + S(15), rightCenter.y), S(12), col, ICON_HAMMER);
-    ImVec2 ts = Measure(g_theme.medium, 11.5f, "Being built");
-    Text(dl, g_theme.medium, 11.5f, ImVec2(a.x + S(26), rightCenter.y - ts.y * 0.5f), col, "Being built");
+    Icon(dl, ImVec2(a.x + S(16), rightCenter.y), S(12), col, ICON_HAMMER);
+    ImVec2 ts = MeasureUpper(g_theme.semibold, 10.5f, "Being built");
+    Upper(dl, g_theme.semibold, 10.5f, ImVec2(a.x + S(27), rightCenter.y - ts.y * 0.5f), col, "Being built");
 }
 
 void Tip(const char* text) {
@@ -387,13 +456,16 @@ void DrawTip() {
     ImVec2 m = ImGui::GetIO().MousePos;
     ImVec2 vp = ImGui::GetMainViewport()->Size;
     ImVec2 p(m.x + S(14), m.y + S(18));
-    ImVec2 sz(ts.x + S(20), ts.y + S(14));
+    ImVec2 sz(ts.x + S(22), ts.y + S(14));
     if (p.x + sz.x > vp.x - S(8)) p.x = vp.x - S(8) - sz.x;
     if (p.y + sz.y > vp.y - S(8)) p.y = m.y - S(10) - sz.y;
-    dl->AddRectFilled(p, ImVec2(p.x + sz.x, p.y + sz.y), Bg(0.96f), S(8));
-    dl->AddRect(p, ImVec2(p.x + sz.x, p.y + sz.y), White(0.10f), S(8));
-    Text(dl, g_theme.regular, 12, ImVec2(p.x + S(10), p.y + S(7)), White(0.9f), g_tipShown.c_str());
+    ImVec2 q(p.x + sz.x, p.y + sz.y);
+    dl->AddRectFilled(p, q, Bg(0.97f));
+    dl->AddRect(p, q, White(0.10f));
+    dl->AddRectFilled(p, ImVec2(p.x + S(2), q.y), Accent());
+    Text(dl, g_theme.regular, 12, ImVec2(p.x + S(12), p.y + S(7)), White(0.9f), g_tipShown.c_str());
     ImGui::PopStyleVar();
 }
 
 }
+

@@ -14,9 +14,9 @@ struct Swatch {
 };
 
 const Swatch kSwatches[] = {
-    {"Teal", ImVec4(0.247f, 0.847f, 0.816f, 1.0f)},   {"Blue", ImVec4(0.376f, 0.647f, 0.980f, 1.0f)},
-    {"Violet", ImVec4(0.655f, 0.545f, 0.980f, 1.0f)}, {"Pink", ImVec4(0.957f, 0.447f, 0.714f, 1.0f)},
-    {"Orange", ImVec4(0.984f, 0.573f, 0.235f, 1.0f)}, {"Green", ImVec4(0.290f, 0.871f, 0.502f, 1.0f)},
+    {"Red", ImVec4(1.000f, 0.275f, 0.333f, 1.0f)},    {"Ember", ImVec4(1.000f, 0.478f, 0.271f, 1.0f)},
+    {"Gold", ImVec4(1.000f, 0.769f, 0.000f, 1.0f)},   {"Green", ImVec4(0.239f, 0.863f, 0.518f, 1.0f)},
+    {"Blue", ImVec4(0.184f, 0.722f, 1.000f, 1.0f)},   {"Violet", ImVec4(0.706f, 0.420f, 1.000f, 1.0f)},
 };
 
 }
@@ -70,9 +70,10 @@ void Menu::LoaderPage() {
             ImGui::PopID();
             if (hov) Tip(AccentName(i));
             ImVec4 col = AccentColor(i);
-            if (i == s.accent) dl->AddCircle(c, r + S(4), ImGui::GetColorU32(col), 32, S(2));
-            else if (hov) dl->AddCircle(c, r + S(4), White(0.25f), 32, S(1.5f));
-            dl->AddCircleFilled(c, r, ImGui::GetColorU32(col), 32);
+            ImVec2 a(c.x - r - S(1), c.y - r - S(1)), b(c.x + r + S(1), c.y + r + S(1));
+            if (i == s.accent) ParaLine(dl, ImVec2(a.x - S(4), a.y - S(4)), ImVec2(b.x + S(4), b.y + S(4)), White(0.95f), S(2));
+            else if (hov) ParaLine(dl, ImVec2(a.x - S(4), a.y - S(4)), ImVec2(b.x + S(4), b.y + S(4)), White(0.3f), S(1.5f));
+            Para(dl, a, b, ImGui::GetColorU32(col));
         }
     }
     {

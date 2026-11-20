@@ -6,6 +6,12 @@
 #include <tlhelp32.h>
 #include <urlmon.h>
 #include <wininet.h>
+#include <algorithm>
+namespace Gdiplus {
+using std::max;
+using std::min;
+}
+#include <gdiplus.h>
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -23,6 +29,7 @@ const wchar_t* kBase = L"https://github.com/Sniko94pig/Fathom/releases/latest/do
 const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll"};
 const wchar_t* kKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fathom";
 const wchar_t* kUninstaller = L"Uninstall Fathom.exe";
+const wchar_t* kSetup = L"FathomSetup.exe";
 const wchar_t* kGameExe = L"Subnautica2-Win64-Shipping.exe";
 const UINT WM_REFRESH = WM_APP + 1;
 const int ID_MAIN = 101, ID_SECOND = 102, ID_CHECK = 103;
@@ -47,8 +54,8 @@ bool removeGameData = false;
 bool alreadyInstalled = false;
 std::thread worker;
 
-const COLORREF cBg = RGB(12, 18, 24), cText = RGB(240, 244, 246), cDim = RGB(140, 152, 160), cAccent = RGB(63, 216, 208),
-               cAccentText = RGB(6, 22, 24), cGhost = RGB(30, 40, 48), cTrack = RGB(32, 44, 52);
+const COLORREF cBg = RGB(12, 12, 15), cText = RGB(246, 246, 248), cDim = RGB(143, 143, 156), cAccent = RGB(255, 70, 85),
+               cAccentText = RGB(255, 255, 255), cGhost = RGB(29, 29, 36), cTrack = RGB(42, 42, 51), cLine = RGB(48, 48, 58);
 
 int S(int v) { return (int)(v * scale + 0.5f); }
 
@@ -205,6 +212,13 @@ bool MakeShortcut(const fs::path& target, const fs::path& link) {
     return ok;
 }
 
+void RefreshIcons(const fs::path& dir, const fs::path& link) {
+    for (const fs::path& p : {dir / L"Fathom.exe", dir / kUninstaller, dir / kSetup, link})
+        if (!p.empty()) SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, p.c_str(), nullptr);
+    SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir.c_str(), nullptr);
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, nullptr, nullptr);
+}
+
 std::wstring ShortcutTarget(const fs::path& link) {
     IShellLinkW* sl = nullptr;
     if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, (void**)&sl)) || !sl) return {};
@@ -292,12 +306,16 @@ bool Install() {
         }
     fs::path self = SelfPath(), uninstaller = dir / kUninstaller;
     if (!fs::equivalent(self, uninstaller, ec)) CopyFileW(self.c_str(), uninstaller.c_str(), FALSE);
+    fs::path setupCopy = dir / kSetup;
+    if (!fs::equivalent(self, setupCopy, ec)) CopyFileW(self.c_str(), setupCopy.c_str(), FALSE);
+    fs::path link;
     if (opt.shortcut) {
         std::wstring desktop = Known(FOLDERID_Desktop);
-        if (desktop.empty() || !MakeShortcut(dir / L"Fathom.exe", fs::path(desktop) / L"Fathom.lnk"))
-            Log(L"could not make the desktop shortcut");
+        if (!desktop.empty()) link = fs::path(desktop) / L"Fathom.lnk";
+        if (link.empty() || !MakeShortcut(dir / L"Fathom.exe", link)) Log(L"could not make the desktop shortcut");
     }
     if (opt.registry) Register(dir);
+    RefreshIcons(dir, link);
     Show(Done, L"Fathom is installed",
          L"Open it with the Fathom shortcut on your desktop. To remove it later, use Uninstall Fathom in the Fathom folder or in Windows Settings > Apps.");
     return true;
@@ -316,6 +334,8 @@ bool Uninstall() {
     for (const wchar_t* f : {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"Fathom.exe.download", L"fathom.dll.download", L"fathom_sn1.dll.download"}) ok = RemoveFile(dir / f) && ok;
     fs::path uninstaller = dir / kUninstaller;
     if (!fs::equivalent(SelfPath(), uninstaller, ec)) ok = RemoveFile(uninstaller) && ok;
+    fs::path setupCopy = dir / kSetup;
+    if (fs::exists(setupCopy, ec) && !fs::equivalent(SelfPath(), setupCopy, ec)) ok = RemoveFile(setupCopy) && ok;
     fs::remove_all(dir / L"old-builds", ec);
     fs::remove_all(dir / L"art", ec);
     fs::remove(dir / L"launcher.json", ec);
@@ -374,15 +394,27 @@ void Start() {
     });
 }
 
-void FillRound(HDC dc, RECT r, int radius, COLORREF c) {
+void Fill(HDC dc, RECT r, COLORREF c) {
     HBRUSH b = CreateSolidBrush(c);
-    HPEN p = CreatePen(PS_SOLID, 1, c);
-    HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, p);
-    RoundRect(dc, r.left, r.top, r.right, r.bottom, radius, radius);
-    SelectObject(dc, ob);
-    SelectObject(dc, op);
+    FillRect(dc, &r, b);
     DeleteObject(b);
-    DeleteObject(p);
+}
+
+void Para(HDC dc, RECT r, COLORREF fill, COLORREF line) {
+    Gdiplus::Graphics g(dc);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+    float dx = (float)(r.bottom - r.top) * 0.18f;
+    Gdiplus::PointF pts[4] = {Gdiplus::PointF(r.left + dx, (float)r.top), Gdiplus::PointF((float)r.right, (float)r.top),
+                              Gdiplus::PointF(r.right - dx, (float)r.bottom), Gdiplus::PointF((float)r.left, (float)r.bottom)};
+    Gdiplus::SolidBrush brush(Gdiplus::Color(255, GetRValue(fill), GetGValue(fill), GetBValue(fill)));
+    g.FillPolygon(&brush, pts, 4);
+    if (line != fill) {
+        Gdiplus::PointF in[4] = {Gdiplus::PointF(r.left + dx + 0.5f, r.top + 0.5f), Gdiplus::PointF(r.right - 0.5f, r.top + 0.5f),
+                                 Gdiplus::PointF(r.right - dx - 0.5f, r.bottom - 0.5f), Gdiplus::PointF(r.left + 0.5f, r.bottom - 0.5f)};
+        Gdiplus::Pen pen(Gdiplus::Color(255, GetRValue(line), GetGValue(line), GetBValue(line)), 1.0f);
+        g.DrawPolygon(&pen, in, 4);
+    }
 }
 
 void Layout() {
@@ -419,18 +451,21 @@ void Paint(HDC target, RECT rc) {
     FillRect(dc, &rc, bg);
     DeleteObject(bg);
     SetBkMode(dc, TRANSPARENT);
-    RECT logo{S(32), S(30), S(32) + S(40), S(30) + S(40)};
-    FillRound(dc, logo, S(12), RGB(20, 52, 56));
+    RECT top{0, 0, rc.right, S(3)};
+    Fill(dc, top, cAccent);
+    RECT logo{S(32), S(30), S(32) + S(44), S(30) + S(44)};
+    if (HICON ico = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, S(44), S(44), 0)) {
+        DrawIconEx(dc, logo.left, logo.top, ico, S(44), S(44), 0, nullptr, DI_NORMAL);
+        DestroyIcon(ico);
+    }
     SelectObject(dc, fTitle);
-    SetTextColor(dc, cAccent);
-    DrawTextW(dc, L"F", -1, &logo, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SetTextColor(dc, cText);
-    RECT title{S(84), S(28), rc.right - S(32), S(56)};
-    DrawTextW(dc, L"Fathom", -1, &title, DT_LEFT | DT_SINGLELINE);
+    RECT title{S(90), S(30), rc.right - S(32), S(58)};
+    DrawTextW(dc, L"FATHOM", -1, &title, DT_LEFT | DT_SINGLELINE);
     SelectObject(dc, fBody);
     SetTextColor(dc, cDim);
-    RECT sub{S(84), S(56), rc.right - S(32), S(76)};
-    DrawTextW(dc, L"Mod menu for Subnautica 2", -1, &sub, DT_LEFT | DT_SINGLELINE);
+    RECT sub{S(90), S(58), rc.right - S(32), S(78)};
+    DrawTextW(dc, L"Mod loader for your games", -1, &sub, DT_LEFT | DT_SINGLELINE);
     std::wstring s, d;
     {
         std::lock_guard<std::mutex> g(textLock);
@@ -447,11 +482,11 @@ void Paint(HDC target, RECT rc) {
     DrawTextW(dc, d.c_str(), -1, &dr, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
     if (stage == Working) {
         RECT track{S(32), S(222), rc.right - S(32), S(222) + S(6)};
-        FillRound(dc, track, S(6), cTrack);
+        Fill(dc, track, cTrack);
         float p = std::min(1.0f, std::max(0.0f, progress.load()));
         RECT fill = track;
         fill.right = track.left + (LONG)((track.right - track.left) * p);
-        if (fill.right - fill.left > S(6)) FillRound(dc, fill, S(6), cAccent);
+        if (fill.right > fill.left) Fill(dc, fill, cAccent);
     }
     BitBlt(target, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY);
     SelectObject(dc, old);
@@ -471,7 +506,12 @@ void DrawButton(const DRAWITEMSTRUCT* di) {
     GetWindowTextW(di->hwndItem, text, 128);
     if (di->CtlID == ID_CHECK) {
         RECT box{r.left, r.top + (r.bottom - r.top - S(18)) / 2, r.left + S(18), r.top + (r.bottom - r.top + S(18)) / 2};
-        FillRound(dc, box, S(6), removeGameData ? cAccent : cGhost);
+        Fill(dc, box, removeGameData ? cAccent : cGhost);
+        if (!removeGameData) {
+            HBRUSH lb = CreateSolidBrush(cLine);
+            FrameRect(dc, &box, lb);
+            DeleteObject(lb);
+        }
         if (removeGameData) {
             HPEN pen = CreatePen(PS_SOLID, std::max(1, S(2)), cAccentText);
             HGDIOBJ op = SelectObject(dc, pen);
@@ -489,8 +529,9 @@ void DrawButton(const DRAWITEMSTRUCT* di) {
     }
     bool primary = di->CtlID == ID_MAIN;
     COLORREF fill = primary ? cAccent : cGhost;
-    if (pressed) fill = primary ? RGB(48, 180, 172) : RGB(40, 52, 60);
-    FillRound(dc, r, S(14), fill);
+    if (pressed) fill = primary ? RGB(214, 56, 70) : RGB(40, 40, 50);
+    Para(dc, r, fill, primary ? fill : cLine);
+    if (primary) CharUpperW(text);
     SelectObject(dc, fButton);
     SetTextColor(dc, primary ? cAccentText : cText);
     DrawTextW(dc, text, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -646,6 +687,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         return ok ? 0 : 1;
     }
 
+    Gdiplus::GdiplusStartupInput gdipInput;
+    ULONG_PTR gdipToken = 0;
+    Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);
     using DpiFn = BOOL(WINAPI*)(HANDLE);
     if (auto set = (DpiFn)GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetProcessDpiAwarenessContext")) set((HANDLE)-4);
     HDC screen = GetDC(nullptr);
@@ -695,6 +739,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     if (!opt.snapshot.empty()) {
         Snapshot(opt.snapshot);
         DestroyWindow(wnd);
+        Gdiplus::GdiplusShutdown(gdipToken);
         CoUninitialize();
         return 0;
     }
@@ -707,6 +752,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     }
     if (worker.joinable()) worker.join();
     if (opt.mode == Mode::Uninstall) CleanupSelf();
+    Gdiplus::GdiplusShutdown(gdipToken);
     CoUninitialize();
     return 0;
 }
