@@ -117,6 +117,7 @@ struct Model {
     std::vector<Tab> plainTabs;
     std::vector<TabLabel> tabLabels;
     Session session = Session::Solo;
+    bool guestCheats = false;
     bool inWorld = false;
 
     std::vector<Item> items;
@@ -203,7 +204,7 @@ struct Model {
 
     Feature* find(const std::string& id);
     int activeCount() const;
-    bool cheatsAllowed() const { return session != Session::Client; }
+    bool cheatsAllowed() const { return session != Session::Client || guestCheats; }
     float sliderMax(const Feature& f) const;
     const Marker* player() const;
 };

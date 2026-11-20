@@ -308,7 +308,7 @@ void Menu::TopBar(ImVec2 p, ImVec2 size) {
 }
 
 void Menu::Banner() {
-    bool client = m.session == core::Session::Client && tab != Tab::Settings;
+    bool client = m.session == core::Session::Client && !m.cheatsAllowed() && tab != Tab::Settings;
     bool legit = m.legit && (int)tab <= (int)Tab::World;
     if (!client && !legit) return;
     ImDrawList* dl = ImGui::GetWindowDrawList();
