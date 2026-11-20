@@ -54,7 +54,6 @@ void BuildFeatures(Model& m) {
     Toggle(m, Tab::Survival, "Vitals", "infinite_oxygen", "Infinite oxygen", "Oxygen never runs out");
     Toggle(m, Tab::Survival, "Vitals", "unlimited_food", "Unlimited food", "Hunger stays full");
     Toggle(m, Tab::Survival, "Vitals", "unlimited_water", "Unlimited water", "Thirst stays full");
-    Toggle(m, Tab::Survival, "Vitals", "no_radiation", "No radiation", "Ignore radiation zones");
     Toggle(m, Tab::Survival, "Vitals", "stable_temperature", "Stable body temperature", "Never too hot or too cold");
     Action(m, Tab::Survival, "Vitals", "refill_health", "Refill health", "Back to full health once", "Refill", false);
     Action(m, Tab::Survival, "Vitals", "refill_food", "Refill hunger", "Food bar back to full", "Refill", false);

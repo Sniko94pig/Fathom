@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
              on(m, "infinite_oxygen");
              on(m, "unlimited_battery");
              core::SetValue(m, *m.find("player_speed"), 2.0f);
-             m.find("no_radiation")->available = false;
+             m.find("stable_temperature")->available = false;
          },
          ImVec2(520, 220),
          [](core::Model&, ui::Menu& u, int f) {
