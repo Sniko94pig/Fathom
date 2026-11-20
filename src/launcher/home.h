@@ -12,6 +12,13 @@ struct Art {
     float w = 0, h = 0;
 };
 
+struct McInstall {
+    std::string name;
+    std::wstring mods;
+    bool night = false;
+    bool fathom = false;
+};
+
 struct Home {
     inject::Paths paths;
     inject::GameState state = inject::GameState::NotRunning;
@@ -35,6 +42,12 @@ struct Home {
     bool installedFirst = false;
     int featStart = 0;
     bool mine = false;
+    bool mcOpen = false;
+    bool mcLinked = false;
+    bool mcWorld = false;
+    std::string mcVersion;
+    std::vector<McInstall> mcInstalls;
+    std::wstring mcLog;
     std::unordered_map<long long, Art> art;
     void Draw();
 
@@ -42,6 +55,7 @@ private:
     void DrawLibrary();
     void DrawGame();
     void DrawGameCards(float top, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName);
+    void DrawMinecraftCards(float top, float w, ImVec2 o);
     const Art* Find(int appId, int kind) const;
 };
 

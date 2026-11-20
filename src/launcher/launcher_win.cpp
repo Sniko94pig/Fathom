@@ -5,6 +5,7 @@
 #include "launcher/logview.h"
 #include "launcher/inject.h"
 #include "launcher/game_inject.h"
+#include "launcher/mc_link.h"
 #include "core/sn1_features.h"
 #include "core/sotf_features.h"
 #include "core/mc_features.h"
@@ -30,6 +31,7 @@
 #include <filesystem>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -151,6 +153,43 @@ static SIZE ClientSize(float scale)
 
 static float g_uiScale = 1.0f;
 
+static std::string McGoal(const std::string& goal)
+{
+    auto num = [&](const char* key, std::string& out) {
+        size_t at = goal.find(key);
+        if (at == std::string::npos)
+            return false;
+        size_t s = at + strlen(key), e = s;
+        while (e < goal.size() && (isdigit((unsigned char)goal[e]) || goal[e] == '-'))
+            ++e;
+        out = goal.substr(s, e - s);
+        return e > s;
+    };
+    std::string x, y, z;
+    bool hx = num("x=", x), hy = num("y=", y), hz = num("z=", z);
+    if (hx && hz)
+        return hy ? x + " " + y + " " + z : x + " " + z;
+    if (hy)
+        return "height " + y;
+    return goal;
+}
+
+static std::string McTask(bool linked, const launcher::mclink::State& st)
+{
+    if (!linked)
+        return "Start Minecraft from Fathom to use Baritone";
+    if (!st.baritone)
+        return "Baritone is not in this Minecraft install";
+    std::string task = st.task;
+    if (task.empty() || task == "INACTIVE")
+        task = st.pathing && !st.goal.empty() ? "Walking to " + McGoal(st.goal) : "Baritone is idle";
+    else if (task.rfind("Custom Goal", 0) == 0)
+        task = "Walking to " + McGoal(st.goal.empty() ? task : st.goal);
+    if (st.eta > 0 && task != "Baritone is idle")
+        task += ", about " + std::to_string((st.eta + 19) / 20) + " s left";
+    return task;
+}
+
 static void FitWindow(HWND hwnd, float from, float to)
 {
     if (IsZoomed(hwnd) || from <= 0.0f)
@@ -240,6 +279,39 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     mcModel.openUrl = model.openUrl;
     core::LoadSettings(mcModel);
     std::string mcLastText = core::SettingsText(mcModel);
+    std::unordered_map<std::string, std::pair<long long, ULONGLONG>> mcPending;
+    std::unordered_map<std::string, ULONGLONG> mcSliders;
+    for (core::Feature& f : mcModel.features)
+    {
+        f.available = false;
+        f.apply = [&mcPending, &mcSliders](core::Feature& f) {
+            ULONGLONG t = GetTickCount64();
+            if (mc::IsHack(f))
+                mcPending[f.id] = { launcher::mclink::Send({ { "op", "hack" }, { "name", f.id }, { "on", f.on } }), t };
+            else if (const char* name = mc::BaritoneSetting(f))
+            {
+                if (f.kind == core::Kind::Slider)
+                    mcSliders[f.id] = t;
+                else
+                    mcPending[f.id] = { launcher::mclink::Send({ { "op", "bset" }, { "name", name }, { "value", f.on ? "true" : "false" } }), t };
+            }
+            else
+            {
+                std::string error;
+                std::string cmd = mc::BaritoneCommand(f, error);
+                if (cmd.empty())
+                {
+                    f.result = error;
+                    return;
+                }
+                launcher::mclink::Send({ { "op", "baritone" }, { "text", cmd } });
+                f.result = "Sent to Baritone: " + cmd;
+            }
+        };
+    }
+    const std::string gotoHint = mcModel.find("b_goto") ? mcModel.find("b_goto")->hint : std::string();
+    const std::filesystem::path mcJar = std::filesystem::path(ExeDir()) / L"fathom_mc.jar";
+    launcher::mclink::AddMod(mcJar, true);
     core::Model ukModel;
     uk::BuildFeatures(ukModel);
     ukModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"ultrakill-settings.json").wstring());
@@ -339,11 +411,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     {
         home.installedWith[i] = launcher::InstalledWith(games[i]);
         home.installed[i] = home.installedWith[i] != nullptr;
-        if (games[i].appId > 0 || !launcher::LocalArt(games[i].appId).empty())
+        if (games[i].appId > 0 || games[i].appId == -1)
             wantedArt.push_back({ games[i].appId, launcher::art::Capsule });
     }
     for (const auto& g : games)
-        if (g.appId > 0 || !launcher::LocalArt(g.appId).empty())
+        if (g.appId > 0 || g.appId == -1)
             wantedArt.push_back({ g.appId, launcher::art::Hero });
     const std::wstring artDir = (std::filesystem::path(ExeDir()) / L"art").wstring();
     launcher::art::Start(wantedArt, artDir, loader.s.webArt);
@@ -416,6 +488,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     std::string workerResult;
     bool workerOk = false;
     ULONGLONG lastPoll = 0, lastSync = 0;
+    launcher::mclink::State mcState;
+    bool mcLinked = false, mcWindow = false;
+    ULONGLONG lastMc = 0, lastMcWindow = 0, lastMcInstalls = 0;
+    auto refreshMc = [&home] {
+        home.mcInstalls.clear();
+        for (const launcher::mclink::Install& in : launcher::mclink::FabricInstalls())
+            home.mcInstalls.push_back({ in.name, in.mods.wstring(), in.night, in.fathom });
+    };
+    refreshMc();
+    home.mcLog = launcher::mclink::LogFile().wstring();
     float shownScale = loader.s.scale;
 
     bool done = false;
@@ -468,6 +550,103 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     home.injectGame = gi;
                     menu.Notify("Injecting the menu automatically", ICON_ZAP);
                 }
+            }
+        }
+        if (now - lastMc >= 250)
+        {
+            lastMc = now;
+            mcLinked = launcher::mclink::Read(mcState);
+            if (mcLinked)
+                mcWindow = true;
+            else if (now - lastMcWindow >= 1000)
+            {
+                lastMcWindow = now;
+                mcWindow = launcher::mclink::GameOpen();
+            }
+            for (auto it = mcSliders.begin(); it != mcSliders.end();)
+            {
+                core::Feature* f = mcModel.find(it->first);
+                if (f && now - it->second < 300)
+                {
+                    ++it;
+                    continue;
+                }
+                if (f && f->available)
+                {
+                    char buf[32];
+                    std::snprintf(buf, sizeof(buf), f->step >= 1.0f ? "%.0f" : "%.2f", f->value);
+                    mcPending[f->id] = { launcher::mclink::Send({ { "op", "bset" }, { "name", mc::BaritoneSetting(*f) }, { "value", buf } }), now };
+                }
+                it = mcSliders.erase(it);
+            }
+            bool sameSession = mcLinked && mcState.session == launcher::mclink::Session();
+            auto waiting = [&](const std::string& id) {
+                auto it = mcPending.find(id);
+                if (it == mcPending.end())
+                    return false;
+                if ((sameSession && mcState.ack >= it->second.first) || now - it->second.second > 3000)
+                {
+                    mcPending.erase(it);
+                    return false;
+                }
+                return true;
+            };
+            const char* offline = "Start Minecraft from Fathom to use this";
+            for (core::Feature& f : mcModel.features)
+            {
+                if (mc::IsHack(f))
+                {
+                    auto it = mcState.hacks.find(f.id);
+                    bool exists = mcLinked && it != mcState.hacks.end();
+                    f.available = exists && mcState.world && mcState.nightOn;
+                    f.missing = !mcLinked ? offline
+                              : !mcState.night ? "Night Client is not in this Minecraft install"
+                              : !exists ? "Not in this version of Night Client"
+                              : !mcState.nightOn ? "Night Client is switched off in the game"
+                                                 : "Join a world first";
+                    if (!mcLinked)
+                        f.on = false;
+                    else if (exists && !waiting(f.id))
+                        f.on = it->second;
+                }
+                else if (const char* name = mc::BaritoneSetting(f))
+                {
+                    f.available = mcLinked && mcState.baritone;
+                    f.missing = !mcLinked ? offline : "Baritone is not in this Minecraft install";
+                    if (mcLinked && !waiting(f.id) && !mcSliders.count(f.id))
+                    {
+                        if (f.kind == core::Kind::Toggle)
+                        {
+                            auto b = mcState.flags.find(name);
+                            if (b != mcState.flags.end())
+                                f.on = b->second;
+                        }
+                        else
+                        {
+                            auto v = mcState.numbers.find(name);
+                            if (v != mcState.numbers.end())
+                                f.value = (float)v->second;
+                        }
+                    }
+                }
+                else
+                {
+                    f.available = mcLinked && mcState.baritone && mcState.world;
+                    f.missing = !mcLinked ? offline : !mcState.baritone ? "Baritone is not in this Minecraft install" : "Join a world first";
+                }
+            }
+            if (core::Feature* f = mcModel.find("b_stop"))
+                f->hint = McTask(mcLinked, mcState);
+            if (core::Feature* f = mcModel.find("b_goto"))
+                f->hint = mcLinked && mcState.hasPos ? "You are at " + std::to_string(mcState.pos[0]) + " " + std::to_string(mcState.pos[1]) + " " + std::to_string(mcState.pos[2]) : gotoHint;
+            home.mcOpen = mcWindow;
+            home.mcLinked = mcLinked;
+            home.mcWorld = mcLinked && mcState.world;
+            home.mcVersion = mcState.mc;
+            if (mcOpen && now - lastMcInstalls >= 5000)
+            {
+                lastMcInstalls = now;
+                refreshMc();
             }
         }
         {
@@ -529,7 +708,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 menu.status = home.sotfState == inject::GameState::Injected ? "Menu active in game" : home.sotfState == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.sotfState != inject::GameState::NotRunning;
             }
-            else if (mcOpen || ukOpen)
+            else if (mcOpen)
+            {
+                menu.status = mcLinked ? (mcState.world ? "In a world" : "In the menus") : mcWindow ? "Running without Fathom" : "Game not running";
+                menu.statusGood = mcLinked;
+            }
+            else if (ukOpen)
             {
                 menu.status = "Being built";
                 menu.statusGood = false;
@@ -563,13 +747,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         if (home.startNow)
         {
             home.startNow = false;
-            if (sn1Open)
-                gameinject::StartGame(gameinject::kSubnautica);
-            else if (sotfOpen)
-                gameinject::StartGame(gameinject::kSonsOfTheForest);
+            if (mcOpen)
+            {
+                int n = launcher::mclink::AddMod(mcJar, false);
+                refreshMc();
+                launcher::StartGame(games[home.game]);
+                if (n < 0)
+                    menu.Notify("fathom_mc.jar is missing, update Fathom with the installer", ICON_TRIANGLE_ALERT);
+                else if (n == 0)
+                    menu.Notify("No Fabric install found, opening the launcher", ICON_TRIANGLE_ALERT);
+                else
+                    menu.Notify("Fathom mod is in " + std::to_string(n) + (n == 1 ? " Fabric install" : " Fabric installs"), ICON_CHECK);
+            }
             else
-                inject::StartGame();
-            menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6" : sotfOpen ? "Starting Sons of the Forest\xe2\x80\xa6" : "Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
+            {
+                if (sn1Open)
+                    gameinject::StartGame(gameinject::kSubnautica);
+                else if (sotfOpen)
+                    gameinject::StartGame(gameinject::kSonsOfTheForest);
+                else
+                    inject::StartGame();
+                menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6" : sotfOpen ? "Starting Sons of the Forest\xe2\x80\xa6" : "Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
+            }
         }
         if (home.injectNow && !home.busy)
         {

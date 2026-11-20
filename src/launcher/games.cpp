@@ -28,7 +28,7 @@ const std::vector<GameDef>& Games() {
         {"geometrydash", "Geometry Dash", 322170, "GD", false},
         {"helloneighbor", "Hello Neighbor", 521890, "HN", false},
         {"icarus", "Icarus", 1149460, "ICA", false},
-        {"minecraft", "Minecraft: Java Edition", -1, "MC", false, true, "https://www.minecraft.net/"},
+        {"minecraft", "Minecraft: Java Edition", -1, "MC", true, false, "https://www.minecraft.net/"},
         {"outlast", "Outlast", 238320, "OL", false},
         {"poppyplaytime", "Poppy Playtime", 1721470, "PP", false},
         {"raft", "Raft", 648800, "RAFT", false},

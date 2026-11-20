@@ -54,6 +54,8 @@ std::string SettingsText(const Model& m) {
         json e;
         if (f.kind == Kind::Toggle) e["on"] = f.on;
         if (f.kind == Kind::Slider) e["value"] = f.value;
+        if (f.kind == Kind::Input && std::any_of(f.inputs.begin(), f.inputs.end(), [](const std::string& s) { return !s.empty(); }))
+            e["inputs"] = f.inputs;
         if (f.key) e["key"] = KeyName(f.key);
         if (!e.empty()) feats[f.id] = e;
     }
@@ -145,6 +147,10 @@ bool LoadSettings(Model& m) {
             if (it == j["features"].end() || !it->is_object()) continue;
             f.key = KeyFromName(it->value("key", std::string()));
             if (f.kind == Kind::Toggle && !f.counts) f.on = it->value("on", f.on);
+            auto in = it->find("inputs");
+            if (f.kind == Kind::Input && in != it->end() && in->is_array())
+                for (size_t i = 0; i < f.inputs.size() && i < in->size(); ++i)
+                    if ((*in)[i].is_string()) f.inputs[i] = (*in)[i].get<std::string>();
         }
     }
     return true;

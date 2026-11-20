@@ -1,8 +1,10 @@
 #include "launcher/art.h"
 #include "launcher/games.h"
 #include "stb_image.h"
+#include <nlohmann/json.hpp>
 #include <windows.h>
 #include <urlmon.h>
+#include <wininet.h>
 #include <algorithm>
 #include <atomic>
 #include <deque>
@@ -68,19 +70,74 @@ bool FromLocal(int appId, const fs::path& to) {
     return !file.empty() && fs::copy_file(file, to, fs::copy_options::overwrite_existing, ec);
 }
 
-bool FromWeb(int appId, int kind, const fs::path& to) {
-    std::wstring url = L"https://cdn.cloudflare.steamstatic.com/steam/apps/" + std::to_wstring(appId) + L"/" + SteamName(kind);
+bool Fetch(const std::wstring& url, const fs::path& to, uintmax_t minSize, bool fresh) {
     fs::path part = to;
     part += L".part";
+    if (fresh) DeleteUrlCacheEntryW(url.c_str());
     Abort cb;
     if (FAILED(URLDownloadToFileW(nullptr, url.c_str(), part.c_str(), 0, &cb))) return false;
     std::error_code ec;
-    if (fs::file_size(part, ec) < 1000 || ec) {
+    if (fs::file_size(part, ec) < minSize || ec) {
         fs::remove(part, ec);
         return false;
     }
     fs::rename(part, to, ec);
     return !ec;
+}
+
+bool FromWeb(int appId, int kind, const fs::path& to) {
+    return Fetch(L"https://cdn.cloudflare.steamstatic.com/steam/apps/" + std::to_wstring(appId) + L"/" + SteamName(kind), to, 1000, false);
+}
+
+std::string MojangHero(const fs::path& dir) {
+    fs::path list = dir / L"mc_games.json";
+    if (!Fetch(L"https://launchercontent.mojang.com/v2/games.json", list, 2, true)) return {};
+    nlohmann::json j;
+    {
+        std::ifstream in(list, std::ios::binary);
+        j = nlohmann::json::parse(in, nullptr, false);
+    }
+    std::error_code ec;
+    fs::remove(list, ec);
+    if (!j.is_object()) return {};
+    auto entries = j.find("entries");
+    if (entries == j.end() || !entries->is_array()) return {};
+    for (const auto& e : *entries) {
+        if (!e.is_object()) continue;
+        auto product = e.find("productId");
+        auto hero = e.find("heroImage");
+        if (product == e.end() || !product->is_string() || product->get<std::string>() != "java") continue;
+        if (hero == e.end() || !hero->is_object()) continue;
+        auto url = hero->find("url");
+        if (url == hero->end() || !url->is_string()) continue;
+        std::string path = url->get<std::string>();
+        if (!path.empty() && path[0] == '/' && path.find_first_of("\"<> ") == std::string::npos) return "https://launchercontent.mojang.com" + path;
+    }
+    return {};
+}
+
+bool MinecraftArt(const fs::path& to, bool web) {
+    std::error_code ec;
+    fs::path src = to;
+    src += L".src";
+    if (web) {
+        std::string url = MojangHero(to.parent_path());
+        if (!url.empty()) {
+            std::string old;
+            {
+                std::ifstream in(src, std::ios::binary);
+                std::getline(in, old);
+            }
+            if (old == url && fs::exists(to, ec)) return true;
+            if (Fetch(std::wstring(url.begin(), url.end()), to, 1000, false)) {
+                std::ofstream out(src, std::ios::binary | std::ios::trunc);
+                out << url;
+                return true;
+            }
+        }
+    }
+    if (fs::exists(to, ec)) return true;
+    return FromLocal(-1, to);
 }
 
 bool Load(const fs::path& file, Image& img) {
@@ -129,11 +186,24 @@ void Run(std::vector<std::pair<int, int>> wanted, std::wstring cacheDir, bool we
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     std::error_code ec;
     fs::create_directories(cacheDir, ec);
+    fs::remove(fs::path(cacheDir) / L"-1_hero.jpg", ec);
+    fs::remove(fs::path(cacheDir) / L"-1_capsule.jpg", ec);
+    bool mcChecked = false, mcHave = false;
     for (const auto& [appId, kind] : wanted) {
         if (stopping) break;
-        fs::path file = fs::path(cacheDir) / (std::to_wstring(appId) + (kind == Hero ? L"_hero.jpg" : L"_capsule.jpg"));
-        bool have = fs::exists(file, ec);
-        if (!have) have = appId < 0 ? FromLocal(appId, file) : FromSteam(appId, kind, file) || (web && FromWeb(appId, kind, file));
+        fs::path file = appId < 0 ? fs::path(cacheDir) / L"mc_java_art.img"
+                                  : fs::path(cacheDir) / (std::to_wstring(appId) + (kind == Hero ? L"_hero.jpg" : L"_capsule.jpg"));
+        bool have;
+        if (appId < 0) {
+            if (!mcChecked) {
+                mcChecked = true;
+                mcHave = MinecraftArt(file, web);
+            }
+            have = mcHave;
+        } else {
+            have = fs::exists(file, ec);
+            if (!have) have = FromSteam(appId, kind, file) || (web && FromWeb(appId, kind, file));
+        }
         if (!have) continue;
         Image img;
         img.appId = appId;
@@ -142,7 +212,7 @@ void Run(std::vector<std::pair<int, int>> wanted, std::wstring cacheDir, bool we
             fs::remove(file, ec);
             continue;
         }
-        Shrink(img, kind == Hero ? 1280 : 360);
+        Shrink(img, kind == Hero || appId < 0 ? 1280 : 360);
         std::lock_guard<std::mutex> g(lock);
         ready.push_back(std::move(img));
     }

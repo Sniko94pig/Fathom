@@ -423,6 +423,28 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"37-launcher-minecraft-live", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             m = core::Model();
+             mc::BuildFeatures(m);
+             home.game = launcher::FindGame("minecraft");
+             home.mcOpen = true;
+             home.mcLinked = true;
+             home.mcWorld = true;
+             home.mcInstalls = {{"Fabric 1.26.2 (Mod Menu)", L"C:/mods/1.26.2", true, true},
+                                {"Fabric 1.20.1 (Mod Menu)", L"C:/mods/1.20.1", true, false},
+                                {"Fabric 1.21.4 (Mod Menu)", L"C:/mods/1.21.4", false, false}};
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Minecraft: Java Edition";
+             u.homePage = [] { home.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+             u.status = "In a world";
+             u.statusGood = true;
+         }, ImVec2(0, 0), nullptr},
 #endif
         {"31-mc-combat", [](core::Model& m, ui::Menu& u) {
              m = core::Model();
@@ -433,6 +455,25 @@ int main(int argc, char** argv) {
              m = core::Model();
              mc::BuildFeatures(m);
              u.tab = core::Tab::World;
+         }, ImVec2(0, 0), nullptr},
+        {"36-mc-baritone", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             mc::BuildFeatures(m);
+             for (core::Feature& f : m.features) f.available = true;
+             if (core::Feature* f = m.find("b_stop")) f->hint = "Mine diamond_ore, about 12 s left";
+             if (core::Feature* f = m.find("b_goto")) {
+                 f->hint = "You are at 120 64 -300";
+                 f->inputs = {"250", "", "-1200"};
+             }
+             if (core::Feature* f = m.find("b_mine")) f->inputs = {"diamond_ore iron_ore", "64"};
+             u.tab = core::Tab::BaseHub;
+         }, ImVec2(0, 0), nullptr},
+        {"38-mc-other", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             mc::BuildFeatures(m);
+             for (core::Feature& f : m.features) f.available = true;
+             if (core::Feature* f = m.find("autofish")) f->on = true;
+             u.tab = core::Tab::Legit;
          }, ImVec2(0, 0), nullptr},
         {"33-uk-player", [](core::Model& m, ui::Menu& u) {
              m = core::Model();

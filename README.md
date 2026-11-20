@@ -10,8 +10,8 @@ Every game has its own folder in [games](games).
 
 | Game | Status |
 |---|---|
-| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>) | Ready |
-| [Minecraft: Java Edition](<games/Minecraft Java>), [ULTRAKILL](<games/ULTRAKILL>) | Being built |
+| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>) | Ready |
+| [ULTRAKILL](<games/ULTRAKILL>) | Being built |
 | [Borderlands](<games/Borderlands>), [Borderlands 2](<games/Borderlands 2>), [Borderlands 3](<games/Borderlands 3>), [Borderlands 4](<games/Borderlands 4>) | Coming soon |
 | [Cyberpunk 2077](<games/Cyberpunk 2077>) | Coming soon |
 | [Fallout 4](<games/Fallout 4>), [Fallout: New Vegas](<games/Fallout New Vegas>) | Coming soon |
@@ -28,6 +28,8 @@ Every game has its own folder in [games](games).
 | [Schedule I](<games/Schedule I>) | Coming soon |
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
+
+Minecraft: Java Edition works with a Fabric install that has Night Client. Press **Start game** on its page and Fathom adds its small mod, `fathom_mc.jar`, to your Fabric installs. While you play, the buttons in Fathom turn Night Client hacks on and off, and the Baritone page sends Baritone commands and changes its settings.
 
 ![Survival page](<games/Subnautica 2/shots/1-survival.png>)
 

@@ -288,12 +288,18 @@ void Home::DrawGame() {
     bool sn2 = std::strcmp(g.id, "subnautica2") == 0;
     bool sn1 = std::strcmp(g.id, "subnautica") == 0;
     bool sotf = std::strcmp(g.id, "sonsoftheforest") == 0;
+    bool mc = std::strcmp(g.id, "minecraft") == 0;
     const inject::Paths& gp = sn1 ? sn1Paths : sotf ? sotfPaths : paths;
     inject::GameState gs = sn1 ? sn1State : sotf ? sotfState : state;
     bool running = gs != inject::GameState::NotRunning;
     bool injected = gs == inject::GameState::Injected;
     std::string line;
-    if (g.building) line = "The menu for this game is being built. Look at the modules on the left.";
+    if (mc)
+        line = mcLinked ? (mcWorld ? "Connected. The buttons on the left change the game right away."
+                                   : "Connected. Join a world, then use the buttons on the left.")
+               : mcOpen ? "Minecraft is open without the Fathom mod. Close it, press Start game and play a Fabric install."
+                        : "Press Start game, then play a Fabric install that has Night Client.";
+    else if (g.building) line = "The menu for this game is being built. Look at the modules on the left.";
     else if (!g.ready) line = "Coming soon. Fathom does not support this game yet.";
     else if (injected) line = "The menu is running. Press " + openKey + " in the game to open it, " + unloadKey + " to unload it.";
     else if (running) line = "The game is open. Press Inject to load the menu into it.";
@@ -304,7 +310,11 @@ void Home::DrawGame() {
 
     ImVec2 bs(S(196), S(50));
     ImVec2 bp(b.x - S(28) - bs.x, b.y - S(28) - bs.y);
-    if (g.building) {
+    if (mc) {
+        if (mcLinked) Button("main", "Connected", bp, bs, Btn::Tint, ICON_CHECK, false);
+        else if (mcOpen) Button("main", "Running", bp, bs, Btn::Tint, ICON_PLAY, false);
+        else if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) startNow = true;
+    } else if (g.building) {
         if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) StartGame(g);
     } else if (!g.ready) {
         Button("main", "Coming soon", bp, bs, Btn::Ghost, ICON_LOCK, false);
@@ -322,6 +332,10 @@ void Home::DrawGame() {
     }
 
     float y = b.y + S(16);
+    if (mc) {
+        DrawMinecraftCards(y, w, o);
+        return;
+    }
     if ((sn2 || sn1 || sotf) && g.ready) {
         DrawGameCards(y, w, o, gp, gs, sn1 ? "Subnautica (Steam)" : sotf ? "Sons Of The Forest (Steam)" : "Subnautica2 (Steam)",
                       sn1 ? "fathom_sn1.dll" : sotf ? "fathom_sotf.dll" : "fathom.dll");
@@ -342,6 +356,56 @@ void Home::DrawGame() {
         Button("store", g.appId > 0 ? "Steam page" : "Website", ImVec2(o.x + w - S(16) - S(140), y + ch - S(50)), ImVec2(S(140), S(34)), Btn::Ghost, ICON_GLOBE, true)) {
         std::wstring url(store.begin(), store.end());
         ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    ImGui::SetCursorScreenPos(o);
+    ImGui::Dummy(ImVec2(w, y + ch - o.y));
+}
+
+void Home::DrawMinecraftCards(float y, float w, ImVec2 o) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float colW = std::floor((w - S(16)) * 0.5f);
+    size_t shown = std::min<size_t>(mcInstalls.size(), 4);
+    float ch = std::max(S(220), S(46) + (float)std::max<size_t>(shown, 1) * S(44) + S(64));
+    ImVec2 c1(o.x, y), c2(o.x + colW + S(16), y);
+    bool added = std::any_of(mcInstalls.begin(), mcInstalls.end(), [](const McInstall& i) { return i.fathom; });
+    Card(dl, c1, ImVec2(c1.x + colW, y + ch), true);
+    Caption(dl, ImVec2(c1.x + S(16), y + S(15)), "How it works");
+    Step(dl, ImVec2(c1.x + S(16), y + S(44)), colW - S(32), 1, "Press Start game", "Fathom adds its mod to your Fabric installs.", added);
+    Step(dl, ImVec2(c1.x + S(16), y + S(98)), colW - S(32), 2, "Play a Fabric install", "Pick one with Night Client in the launcher.", mcLinked);
+    Step(dl, ImVec2(c1.x + S(16), y + S(152)), colW - S(32), 3, "Join a world", "Then use the pages on the left.", mcLinked && mcWorld);
+
+    Card(dl, c2, ImVec2(c2.x + colW, y + ch));
+    Caption(dl, ImVec2(c2.x + S(16), y + S(15)), "Fabric installs");
+    float ry = y + S(46), rw = colW - S(32);
+    if (mcInstalls.empty())
+        Text(dl, T().regular, 12.5f, ImVec2(c2.x + S(16), ry), White(0.55f), "No Fabric install found. Add one with the Fabric installer first.", rw);
+    for (size_t i = 0; i < shown; ++i) {
+        const McInstall& in = mcInstalls[i];
+        bool good = in.night && in.fathom;
+        const char* status = good ? "Night Client and Fathom are in" : in.night ? "Night Client is in, Start game adds Fathom" : "No Night Client in this install";
+        TextFit(dl, T().medium, 13, ImVec2(c2.x + S(16), ry), rw - S(28), White(0.92f), in.name.c_str());
+        TextFit(dl, T().regular, 11.5f, ImVec2(c2.x + S(16), ry + S(18)), rw - S(28), White(0.48f), status);
+        Icon(dl, ImVec2(c2.x + S(16) + rw - S(8), ry + S(13)), S(14), good ? Good() : in.night ? Accent() : White(0.3f),
+             good ? ICON_CIRCLE_CHECK : in.night ? ICON_CIRCLE : ICON_X);
+        if (ImGui::IsMouseHoveringRect(ImVec2(c2.x, ry - S(4)), ImVec2(c2.x + colW, ry + S(38)))) Tip(Narrow(in.mods).c_str());
+        dl->AddLine(ImVec2(c2.x + S(16), ry + S(38)), ImVec2(c2.x + S(16) + rw, ry + S(38)), White(0.06f));
+        ry += S(44);
+    }
+    float bw = std::floor((colW - S(40)) * 0.5f);
+    std::wstring folder;
+    for (const McInstall& in : mcInstalls)
+        if (in.night) {
+            folder = in.mods;
+            break;
+        }
+    if (folder.empty() && !mcInstalls.empty()) folder = mcInstalls[0].mods;
+    if (Button("mcmods", "Open mods folder", ImVec2(c2.x + S(16), y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_FOLDER_OPEN, !folder.empty()))
+        ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    std::error_code ec;
+    bool hasLog = !mcLog.empty() && std::filesystem::exists(mcLog, ec);
+    if (Button("mclog", "Open log", ImVec2(c2.x + S(24) + bw, y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_INFO, hasLog)) {
+        logPath = mcLog;
+        logTitle = "Minecraft";
     }
     ImGui::SetCursorScreenPos(o);
     ImGui::Dummy(ImVec2(w, y + ch - o.y));

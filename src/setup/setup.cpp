@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 namespace {
 
 const wchar_t* kBase = L"https://github.com/Sniko94pig/Fathom/releases/latest/download/";
-const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll"};
+const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll", L"fathom_mc.jar"};
 const wchar_t* kKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fathom";
 const wchar_t* kUninstaller = L"Uninstall Fathom.exe";
 const wchar_t* kSetup = L"FathomSetup.exe";

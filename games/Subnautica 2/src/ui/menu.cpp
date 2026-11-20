@@ -540,6 +540,7 @@ bool Menu::KeyChip(const char* id, ImVec2 rightCenter, int* key) {
 
 float Menu::FeatureRowHeight(const Feature& f) const {
     if (f.kind == Kind::Slider && !f.building) return S(60);
+    if (f.kind == Kind::Input && !f.building) return (f.hint.empty() ? S(40) : S(52)) + S(44);
     return f.hint.empty() ? S(40) : S(52);
 }
 
@@ -614,6 +615,28 @@ void Menu::FeatureRow(Feature& f, ImVec2 pos, float w) {
         if (SliderRow(f.id.c_str(), pos, w, f.label.c_str(), &v, f.min, f.max, f.def, f.step, f.fmt.c_str(), 1.0f, enabled, cap))
             core::SetValue(m, f, v);
         if (tip && ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + w, pos.y + S(60)))) Tip(tip);
+    } else if (f.kind == Kind::Input) {
+        float top = f.hint.empty() ? S(40) : S(52);
+        RowBase(f.id.c_str(), pos, w, top, f.label.c_str(), f.hint.c_str(), enabled, tip, 0.0f);
+        float bw = S(84), gap = S(8), y = pos.y + top;
+        size_t n = f.inputs.size();
+        auto weight = [&](size_t i) { return i < f.inputSizes.size() && f.inputSizes[i] > 0 ? f.inputSizes[i] : 1.0f; };
+        float total = 0.0f;
+        for (size_t i = 0; i < n; ++i) total += weight(i);
+        float room = w - S(16) - bw - gap - gap * (n > 0 ? (float)(n - 1) : 0.0f);
+        float x = pos.x + S(8);
+        for (size_t i = 0; i < n; ++i) {
+            float iw = std::floor(room * weight(i) / std::max(total, 1.0f));
+            std::string iid = f.id + "_in" + std::to_string(i);
+            Input(iid.c_str(), &f.inputs[i], i < f.inputHints.size() ? f.inputHints[i].c_str() : "", ImVec2(x, y), iw);
+            x += iw + gap;
+        }
+        std::string bid = "act_" + f.id;
+        if (Button(bid.c_str(), f.actionLabel.c_str(), ImVec2(pos.x + w - S(8) - bw, y), ImVec2(bw, S(36)), Btn::Tint, nullptr, enabled)) {
+            f.result.clear();
+            if (f.apply) f.apply(f);
+            Notify(f.result.empty() ? f.label + " sent" : f.result, f.result.empty() ? ICON_CHECK : ICON_INFO);
+        }
     } else {
         float h = FeatureRowHeight(f);
         float bw = S(84);
@@ -627,8 +650,9 @@ void Menu::FeatureRow(Feature& f, ImVec2 pos, float w) {
             } else if (f.confirm) {
                 RunPermanent(f);
             } else {
+                f.result.clear();
                 if (f.apply) f.apply(f);
-                Notify(f.label + " done", ICON_CHECK);
+                Notify(f.result.empty() ? f.label + " done" : f.result, f.result.empty() ? ICON_CHECK : ICON_INFO);
             }
         }
     }

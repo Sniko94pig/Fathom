@@ -9,7 +9,7 @@
 namespace core {
 
 enum class Tab { Survival, Biomods, Crafting, World, Spawner, BaseHub, Legit, Settings, Count };
-enum class Kind { Toggle, Slider, Action };
+enum class Kind { Toggle, Slider, Action, Input };
 enum class Session { Solo, Host, Client };
 enum class MarkerType { Player, Vehicle, Base, Wreck, DataBox, Beacon, Place };
 
@@ -22,6 +22,10 @@ struct Feature {
     std::string fmt = "%.1fx";
     std::string actionLabel;
     std::string page;
+    std::vector<std::string> inputs;
+    std::vector<std::string> inputHints;
+    std::vector<float> inputSizes;
+    std::string result;
     bool confirm = false;
     bool counts = true;
     bool available = false;

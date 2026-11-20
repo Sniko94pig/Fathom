@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.7.7)
+set(FATHOM_VERSION 1.8.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,7 +75,7 @@ target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF}
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
   target_sources(fathom_shots PRIVATE src/launcher/logview.cpp src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
-  target_link_libraries(fathom_shots PRIVATE urlmon ole32)
+  target_link_libraries(fathom_shots PRIVATE urlmon ole32 wininet)
   target_compile_definitions(fathom_shots PRIVATE FATHOM_VERSION="${FATHOM_VERSION}" FATHOM_LAUNCHER_SHOTS NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
@@ -97,6 +97,7 @@ if(WIN32)
     src/launcher/logview.cpp
     src/launcher/games.cpp
     src/launcher/art.cpp
+    src/launcher/mc_link.cpp
     src/launcher/prefs.cpp
     ${SN1}/core/sn1_features.cpp
     ${SOTF}/core/sotf_features.cpp
@@ -161,5 +162,27 @@ if(WIN32)
   endif()
   if(EXISTS "${UK}/CMakeLists.txt")
     add_subdirectory("${UK}")
+  endif()
+
+  find_package(Java 17 COMPONENTS Development)
+  if(Java_JAVAC_EXECUTABLE AND Java_JAR_EXECUTABLE)
+    set(MCMOD "${CMAKE_SOURCE_DIR}/games/Minecraft Java/mod")
+    set(MCOUT ${GEN}/mcmod)
+    file(GLOB_RECURSE MCMOD_SRC CONFIGURE_DEPENDS "${MCMOD}/src/*.java")
+    configure_file("${MCMOD}/fabric.mod.json.in" ${MCOUT}/fabric.mod.json @ONLY)
+    add_custom_command(
+      OUTPUT ${MCOUT}/fathom_mc.jar
+      COMMAND ${CMAKE_COMMAND} -E rm -rf ${MCOUT}/stub ${MCOUT}/classes
+      COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -nowarn -d ${MCOUT}/stub "${MCMOD}/stub/net/fabricmc/api/ClientModInitializer.java"
+      COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -Xlint:all -Werror -cp ${MCOUT}/stub -d ${MCOUT}/classes ${MCMOD_SRC}
+      COMMAND ${CMAKE_COMMAND} -E copy ${MCOUT}/fabric.mod.json ${MCOUT}/classes/fabric.mod.json
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/logo.png ${MCOUT}/classes/assets/fathom/icon.png
+      COMMAND ${Java_JAR_EXECUTABLE} --create --file ${MCOUT}/fathom_mc.jar --date=2024-01-01T00:00:00Z -C ${MCOUT}/classes .
+      DEPENDS ${MCMOD_SRC} "${MCMOD}/stub/net/fabricmc/api/ClientModInitializer.java" ${MCOUT}/fabric.mod.json ${CMAKE_SOURCE_DIR}/assets/logo.png
+      VERBATIM)
+    add_custom_target(fathom_mc ALL
+      DEPENDS ${MCOUT}/fathom_mc.jar
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MCOUT}/fathom_mc.jar $<TARGET_FILE_DIR:fathom_launcher>/fathom_mc.jar
+      VERBATIM)
   endif()
 endif()

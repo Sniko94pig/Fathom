@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "fathom",
+  "version": "@FATHOM_VERSION@",
+  "name": "Fathom",
+  "description": "Lets the Fathom app turn Night Client hacks on and off and give Baritone commands while you play.",
+  "authors": ["Sniko94pig"],
+  "contact": {
+    "homepage": "https://github.com/Sniko94pig/Fathom",
+    "sources": "https://github.com/Sniko94pig/Fathom"
+  },
+  "icon": "assets/fathom/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["fathom.mc.FathomMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.14.0",
+    "java": ">=17"
+  }
+}
