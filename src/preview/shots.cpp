@@ -13,6 +13,7 @@
 #include "core/sn1_features.h"
 #include "core/sotf_features.h"
 #include "core/mc_features.h"
+#include "core/ultrakill_features.h"
 #include "ui/ui.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -431,6 +432,21 @@ int main(int argc, char** argv) {
         {"32-mc-render", [](core::Model& m, ui::Menu& u) {
              m = core::Model();
              mc::BuildFeatures(m);
+             u.tab = core::Tab::World;
+         }, ImVec2(0, 0), nullptr},
+        {"33-uk-player", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             uk::BuildFeatures(m);
+             u.tab = core::Tab::Survival;
+         }, ImVec2(0, 0), nullptr},
+        {"34-uk-movement", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             uk::BuildFeatures(m);
+             u.tab = core::Tab::Crafting;
+         }, ImVec2(0, 0), nullptr},
+        {"35-uk-weapons", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             uk::BuildFeatures(m);
              u.tab = core::Tab::World;
          }, ImVec2(0, 0), nullptr},
         {"23-sotf-player", [](core::Model& m, ui::Menu& u) {

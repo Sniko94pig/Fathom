@@ -40,7 +40,7 @@ const std::vector<GameDef>& Games() {
         {"theforest", "The Forest", 242760, "TF", false},
         {"tlou1", "The Last of Us Part I", 1888930, "TLOU", false},
         {"tlou2", "The Last of Us Part II", 2531310, "TLOU2", false},
-        {"ultrakill", "ULTRAKILL", 1229490, "UK", false},
+        {"ultrakill", "ULTRAKILL", 1229490, "UK", false, true},
     };
     return list;
 }
