@@ -94,7 +94,7 @@ void ForceFlag(Object* o, const Fld& f, bool want, Flag& s) {
     if (cur != 1) un::SetVal<uint8_t>(o, f, 1);
 }
 
-bool Live(const Ctx& c) { return c.inWorld && c.player && c.session != core::Session::Client; }
+bool Live(const Ctx& c) { return c.inWorld && c.player && c.cheats; }
 
 bool Find(const Ctx& c, Body& b) {
     b = Body{};

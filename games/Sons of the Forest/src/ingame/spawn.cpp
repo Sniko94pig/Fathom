@@ -311,7 +311,7 @@ Object* CameraTr(const Ctx& c) {
 
 const char* Blocked(const Ctx& c) {
     if (!c.inWorld || !c.player) return "Load a save first";
-    if (c.session == core::Session::Client) return "Cheats are off when you join someone else's game";
+    if (c.session == core::Session::Client && !c.cheats) return "The host has cheats switched off";
     Object* st = un::Ref(c.player, R.lpStats);
     if (un::Alive(st)) {
         if (R.statsDead && un::CallBool(R.statsDead, st)) return "Not while you are dead";
@@ -780,6 +780,10 @@ bool ActorsAboard(Object* cart) {
 }
 
 void BringCart(const Ctx& c) {
+    if (c.session == core::Session::Client) {
+        Note("Only the host can move golf carts");
+        return;
+    }
     if (!canCart) {
         Note("Golf carts are not available");
         return;
@@ -853,9 +857,10 @@ bool SpawnUnit(const Ctx& c, Object* d, const SpawnJob& j) {
     bool no = false, yes = true;
     int one = 1;
     NullableVec3 noVelocity, noSpin;
+    bool ok = false;
     Object* go = un::Call(R.spawnPickup, nullptr,
-                          {d, &pos, &rot, &zero, &no, &yes, &yes, &no, nullptr, nullptr, &one, &noVelocity, &noSpin, &yes, &no});
-    return go != nullptr;
+                          {d, &pos, &rot, &zero, &no, &yes, &yes, &no, nullptr, nullptr, &one, &noVelocity, &noSpin, &yes, &no}, &ok);
+    return go != nullptr || (ok && c.session == core::Session::Client);
 }
 
 void QueueWorld(const Ctx& c, const std::string& sid, int amount) {
@@ -979,6 +984,10 @@ void StepClaims(double now) {
 }
 
 void SpawnCreature(const Ctx& c, const std::string& id, int amount) {
+    if (c.session == core::Session::Client) {
+        Note("Only the host can spawn creatures");
+        return;
+    }
     if (!canCreature) {
         Note("Spawning creatures is not available");
         return;

@@ -34,6 +34,7 @@ struct Ctx {
     core::Session session = core::Session::Solo;
     double now = 0;
     float dt = 0;
+    bool cheats = true;
 };
 
 struct Group {

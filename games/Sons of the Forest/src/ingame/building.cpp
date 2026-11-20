@@ -379,7 +379,7 @@ void KeepCaps() {
 }
 
 void ItemCaps(const Ctx& c, bool on) {
-    bool want = on && c.session != core::Session::Client && (c.inWorld || LoadingSave());
+    bool want = on && c.cheats && (c.inWorld || LoadingSave());
     if (!want) {
         if (!caps.empty() || capScan != 0) RestoreCaps();
         return;
@@ -463,7 +463,7 @@ void FastPrint(bool unlimited) {
 
 void Printers(const Ctx& c, bool live) {
     bool resin = S.resin && live && c.s.On("unlimited_resin");
-    bool fast = S.fastPrint && live && c.s.On("fast_printing");
+    bool fast = S.fastPrint && live && c.session != core::Session::Client && c.s.On("fast_printing");
     if (!resin && !fast) {
         if (!printers.empty() || printerScan != 0) DropPrinters();
         return;
@@ -608,10 +608,11 @@ bool Resolve(std::string& err) {
 }
 
 void Tick(const Ctx& c) {
-    bool live = c.inWorld && c.player && c.session != core::Session::Client;
+    bool live = c.inWorld && c.player && c.cheats;
+    bool host = c.session != core::Session::Client;
     Object* player = live ? c.player : nullptr;
     bool noReq = S.noReq && live && c.s.On("no_build_requirements");
-    bool autoFill = S.autoFill && live && c.s.On("always_fill_blueprints");
+    bool autoFill = S.autoFill && live && host && c.s.On("always_fill_blueprints");
     Object* scs = noReq || autoFill ? Scs(player) : nullptr;
     if (S.noReq) {
         if (noReq) WarnAchievementsOnce();

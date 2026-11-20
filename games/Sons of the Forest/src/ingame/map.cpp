@@ -274,7 +274,7 @@ bool KnightVRiding() {
 
 const char* Blocked(const Ctx& c) {
     if (!c.inWorld || !c.player) return "Load a save first";
-    if (c.session == core::Session::Client) return "Teleport is off when you join someone else's game";
+    if (c.session == core::Session::Client && !c.cheats) return "The host has cheats switched off";
     Object* st = R.lpStats ? un::Call(R.lpStats, nullptr) : nullptr;
     if (un::Alive(st)) {
         if (R.statsDead && un::CallBool(R.statsDead, st)) return "Not while you are dead";
@@ -1033,9 +1033,8 @@ void Tick(const Ctx& c) {
         std::lock_guard<std::mutex> g(qLock);
         todo.swap(requests);
     }
-    if (!c.inWorld || !c.player || c.session == core::Session::Client) {
-        if (!todo.empty())
-            Note(c.session == core::Session::Client ? "Teleport is off when you join someone else's game" : "Load a save first");
+    if (!c.inWorld || !c.player || !c.cheats) {
+        if (!todo.empty()) Note(!c.cheats ? "The host has cheats switched off" : "Load a save first");
         Publish();
         return;
     }

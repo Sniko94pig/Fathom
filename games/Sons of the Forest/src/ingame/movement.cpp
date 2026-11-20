@@ -112,7 +112,7 @@ bool Flag(Object* o, const Fld& f) { return o && Inst(f) && un::Val<uint8_t>(o, 
 
 Object* Live(Object* o) { return un::Alive(o) ? o : nullptr; }
 
-bool LiveCtx(const Ctx& c) { return c.inWorld && c.player && c.session != core::Session::Client; }
+bool LiveCtx(const Ctx& c) { return c.inWorld && c.player && c.cheats; }
 
 bool FindBody(Object* lp, Body& b) {
     b = Body{};

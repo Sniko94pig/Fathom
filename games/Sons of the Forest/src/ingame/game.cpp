@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <unordered_set>
 
 namespace sotf {
 
@@ -48,6 +49,23 @@ bool wasInWorld = false;
 int faults = 0;
 core::Session lastSession = core::Session::Solo;
 bool sessionKnown = false;
+bool lastGuest = false;
+bool hostAllows = true;
+double nextHostCheck = 0;
+bool guestApplied = false;
+std::unordered_map<std::string, std::pair<bool, std::string>> savedAvail;
+std::unordered_set<std::string> droppedIds;
+
+const char* kHostOnly[] = {"one_hit_kill", "enemy_range", "kill_in_range", "dismember_in_range", "always_fill_blueprints",
+                           "fast_printing", "finish_blueprints", "stop_time", "instant_save", "kelvin_heal", "kelvin_revive",
+                           "kelvin_bring", "kelvin_freeze", "kelvin_godmode", "virginia_heal", "virginia_revive", "virginia_bring",
+                           "virginia_freeze", "virginia_godmode", "creature_spawner", "remove_spawned_creatures"};
+
+bool HostOnly(const std::string& id) {
+    for (const char* h : kHostOnly)
+        if (id == h) return true;
+    return false;
+}
 
 struct WorldRefs {
     Class* localPlayer = nullptr;
@@ -60,6 +78,7 @@ struct WorldRefs {
     Class *inputSystem = nullptr, *inputState = nullptr, *softwareCursor = nullptr;
     Method *inSetState = nullptr, *inGetState = nullptr, *inCursor = nullptr, *curRefresh = nullptr;
     int lockedState = 0;
+    Method* mpCheats = nullptr;
 } W;
 
 using TickFn = void (*)(const void*);
@@ -88,9 +107,31 @@ void ApplyDropped() {
             if (g->supported && g->supported(f.id)) {
                 f.available = false;
                 f.missing = "Switched off after an error in the game";
+                droppedIds.insert(f.id);
             }
     }
     droppedPending.clear();
+}
+
+void ApplyGuest(bool guest) {
+    if (guest == guestApplied) return;
+    guestApplied = guest;
+    for (Feature& f : model->features) {
+        if (!HostOnly(f.id)) continue;
+        if (guest) {
+            savedAvail[f.id] = {f.available, f.missing};
+            if (f.available) {
+                f.available = false;
+                f.missing = "Only works when you host or play alone";
+            }
+        } else {
+            auto it = savedAvail.find(f.id);
+            if (it == savedAvail.end() || droppedIds.count(f.id)) continue;
+            f.available = it->second.first;
+            f.missing = it->second.second;
+        }
+    }
+    if (!guest) savedAvail.clear();
 }
 
 Snap TakeSnap() {
@@ -99,6 +140,8 @@ Snap TakeSnap() {
     if (!g.owns_lock()) return lastSnap;
     if (!droppedPending.empty()) ApplyDropped();
     if (sessionKnown && model->session != lastSession) model->session = lastSession;
+    model->guestCheats = sessionKnown && lastSession == core::Session::Client && lastGuest;
+    ApplyGuest(model->guestCheats);
     model->inWorld = wasInWorld;
     Snap s;
     bool allowed = model->cheatsAllowed();
@@ -121,14 +164,31 @@ core::Session DetectSession() {
     return core::Session::Solo;
 }
 
-void PublishSession(core::Session s) {
-    if (sessionKnown && s == lastSession) return;
+bool HostAllowsCheats(double now) {
+    if (!W.mpCheats) return true;
+    if (now < nextHostCheck) return hostAllows;
+    nextHostCheck = now + 1.0;
+    bool ok = false;
+    Object* r = un::Call(W.mpCheats, nullptr, {}, &ok);
+    hostAllows = ok ? il2::Result<bool>(r, true) : true;
+    return hostAllows;
+}
+
+void PublishSession(core::Session s, bool guest) {
+    if (sessionKnown && s == lastSession && guest == lastGuest) return;
     bool wasClient = sessionKnown && lastSession == core::Session::Client;
+    bool newSession = !sessionKnown || s != lastSession;
     lastSession = s;
+    lastGuest = guest;
     sessionKnown = true;
-    if (s == core::Session::Client) Note("You joined someone else's game, cheats are off");
-    else if (wasClient) Note("Cheats are available again");
-    LOG("session: %s", s == core::Session::Client ? "client" : s == core::Session::Host ? "host" : "single player");
+    if (s == core::Session::Client) {
+        if (newSession) Note(guest ? "You joined someone else's game. Cheats that need the host are off" : "You joined someone else's game. The host has cheats switched off");
+        else Note(guest ? "The host switched cheats on" : "The host switched cheats off");
+    } else if (wasClient) {
+        Note("All cheats are available again");
+    }
+    LOG("session: %s%s", s == core::Session::Client ? "client" : s == core::Session::Host ? "host" : "single player",
+        s == core::Session::Client ? (guest ? ", host allows cheats" : ", host does not allow cheats") : "");
 }
 
 Object* LocalPlayer() {
@@ -253,8 +313,12 @@ void RunActions(const Ctx& c) {
             Note("Load a save first");
             continue;
         }
-        if (c.session == core::Session::Client) {
-            Note("Cheats are off when you join someone else's game");
+        if (c.session == core::Session::Client && !c.cheats) {
+            Note("The host has cheats switched off");
+            continue;
+        }
+        if (c.session == core::Session::Client && HostOnly(id)) {
+            Note("That only works when you host or play alone");
             continue;
         }
         bool done = false;
@@ -274,12 +338,13 @@ void Tick() {
     double now = GetTickCount64() / 1000.0;
     float dt = std::clamp(un::DeltaTime(), 0.0f, 0.1f);
     core::Session session = DetectSession();
-    PublishSession(session);
-    if (session == core::Session::Client) s = OffSnap(s);
+    bool cheats = session != core::Session::Client || HostAllowsCheats(now);
+    PublishSession(session, session == core::Session::Client && cheats);
+    if (!cheats) s = OffSnap(s);
     Object* player = LocalPlayer();
     bool inWorld = player != nullptr && !Loading();
     MenuInput(false);
-    Ctx c{s, prevSnap, inWorld ? player : nullptr, inWorld, false, session, now, dt};
+    Ctx c{s, prevSnap, inWorld ? player : nullptr, inWorld, false, session, now, dt, cheats};
     if (!inWorld && wasInWorld) ReleaseGroups(c);
     for (size_t i = 0; i < slots.size(); ++i) {
         Slot& sl = slots[i];
@@ -389,6 +454,8 @@ bool Prepare(std::string& err) {
         W.lsMainLoaded = un::F(W.loadScene, "_isMainSceneLoadComplete");
     }
     if (Class* sgm = un::C("Sons.Save", "Sons.Save", "SaveGameManager")) W.saveLoading = il2::FindStaticMethod(sgm, "LoadInProgress", 0);
+    if (Class* gsm = un::C("Sons.Gameplay.GameSetup", "Sons.Gameplay.GameSetup", "GameSetupManager"))
+        W.mpCheats = il2::FindStaticMethod(gsm, "GetMultiplayerCheatsSetting", 0);
     W.inputSystem = un::C("Sons.Input", "Sons.Input", "InputSystem");
     W.inputState = un::C("Sons.Input", "TheForest.Utils", "InputState");
     if (W.inputSystem && W.inputState) {
