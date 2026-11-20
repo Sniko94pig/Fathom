@@ -32,6 +32,7 @@ struct Home {
     std::vector<bool> installed;
     bool showSoon = true;
     bool installedFirst = false;
+    int featStart = 0;
     std::unordered_map<long long, Art> art;
     void Draw();
 

@@ -7,6 +7,7 @@
 #include <shellapi.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -147,16 +148,34 @@ void Home::DrawLibrary() {
     float gap = S(16), top = o.y + S(54);
 
     if (!feat.empty()) {
-        int fc = std::min((int)feat.size(), 3);
-        float fw = std::floor((w - gap * (fc - 1)) / fc), fh = S(150);
-        for (int k = 0; k < (int)feat.size(); ++k) {
+        int n = (int)feat.size();
+        int fc = std::min(n, 2);
+        bool carousel = n > fc;
+        float arrow = S(44);
+        float areaW = carousel ? w - arrow - gap : w;
+        float fw = std::floor((areaW - gap * (fc - 1)) / fc), fh = S(150), step = fw + gap;
+        float off = carousel ? Ease(ImGui::GetID("featoff"), (float)featStart, 10.0f, (float)featStart) : 0.0f;
+        dl->PushClipRect(ImVec2(o.x, top - S(2)), ImVec2(o.x + areaW, top + fh + S(2)), true);
+        for (int k = 0; k < n; ++k) {
+            float p = (float)k;
+            if (carousel) {
+                p = std::fmod((float)k - off, (float)n);
+                if (p < -1.0f) p += (float)n;
+                if (p >= (float)(n - 1)) p -= (float)n;
+                if (p <= -1.0f || p >= (float)fc) continue;
+            }
             int idx = feat[k];
             const GameDef& g = games[idx];
-            ImVec2 a(o.x + (k % fc) * (fw + gap), top + (k / fc) * (fh + gap)), b(a.x + fw, a.y + fh);
-            ImGui::SetCursorScreenPos(a);
+            ImVec2 a(std::floor(o.x + p * step), top), b(a.x + fw, a.y + fh);
+            bool whole = p > -0.02f && p < (float)fc - 0.98f;
+            bool clicked = false, hovered = false;
             ImGui::PushID(idx);
-            bool clicked = ImGui::InvisibleButton("feat", ImVec2(fw, fh));
-            float hv = Ease(ImGui::GetID("hover"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18.0f);
+            if (whole) {
+                ImGui::SetCursorScreenPos(a);
+                clicked = ImGui::InvisibleButton("feat", ImVec2(fw, fh));
+                hovered = ImGui::IsItemHovered();
+            }
+            float hv = Ease(ImGui::GetID("hover"), hovered ? 1.0f : 0.0f, 18.0f);
             ImGui::PopID();
             float shade = 0.8f + 0.2f * hv;
             ImU32 tint = ImGui::GetColorU32(ImVec4(shade, shade, shade, 1));
@@ -182,7 +201,10 @@ void Home::DrawLibrary() {
             Text(dl, T().regular, 12, ImVec2(x, b.y - S(18) - S(15)), White(0.6f), inst ? "Installed on this PC" : "Not installed");
             if (clicked) game = idx;
         }
-        top += ((int)feat.size() + fc - 1) / fc * (fh + gap) + S(6);
+        dl->PopClipRect();
+        if (carousel && IconButton("featnext", ICON_CHEVRON_RIGHT, ImVec2(o.x + w - arrow, top + std::floor((fh - arrow) * 0.5f)), arrow))
+            ++featStart;
+        top += fh + gap + S(6);
         if (!rest.empty()) {
             ImVec2 ls = MeasureUpper(T().semibold, 11.5f, "All games");
             Upper(dl, T().semibold, 11.5f, ImVec2(o.x, top), White(0.92f), "All games");
