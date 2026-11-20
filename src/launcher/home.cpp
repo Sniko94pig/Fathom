@@ -147,7 +147,7 @@ void Home::DrawLibrary() {
     float gap = S(16), top = o.y + S(54);
 
     if (!feat.empty()) {
-        int fc = std::min((int)feat.size(), 2);
+        int fc = std::min((int)feat.size(), 3);
         float fw = std::floor((w - gap * (fc - 1)) / fc), fh = S(150);
         for (int k = 0; k < (int)feat.size(); ++k) {
             int idx = feat[k];
@@ -169,10 +169,15 @@ void Home::DrawLibrary() {
             dl->AddRect(a, b, hv > 0.01f ? Mix(ImVec4(1, 1, 1, 0.07f), T().accent, hv, 0.9f) : White(0.07f));
             dl->AddRectFilled(a, ImVec2(a.x + S(4), b.y), Accent());
             float x = a.x + S(22);
-            ImVec2 ts = MeasureUpper(T().semibold, 24, g.name);
+            float size = 24.0f;
+            ImVec2 ts = MeasureUpper(T().semibold, size, g.name);
+            while (size > 15.0f && ts.x > fw - S(44)) {
+                size -= 1.0f;
+                ts = MeasureUpper(T().semibold, size, g.name);
+            }
             float ty = b.y - S(18) - S(16) - S(8) - ts.y;
             Badge(dl, ImVec2(x, ty - S(28)), g);
-            Upper(dl, T().semibold, 24, ImVec2(x, ty), White(0.98f), g.name);
+            Upper(dl, T().semibold, size, ImVec2(x, ty), White(0.98f), g.name);
             bool inst = idx < (int)installed.size() && installed[idx];
             Text(dl, T().regular, 12, ImVec2(x, b.y - S(18) - S(15)), White(0.6f), inst ? "Installed on this PC" : "Not installed");
             if (clicked) game = idx;
