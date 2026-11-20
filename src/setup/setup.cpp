@@ -171,13 +171,16 @@ public:
     HRESULT STDMETHODCALLTYPE OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
 };
 
-bool LooksLikeProgram(const fs::path& file) {
+bool LooksRight(const fs::path& file, const wchar_t* name) {
     std::error_code ec;
-    if (fs::file_size(file, ec) < 50000 || ec) return false;
+    size_t len = wcslen(name);
+    bool jar = len > 4 && _wcsicmp(name + len - 4, L".jar") == 0;
+    uintmax_t size = fs::file_size(file, ec);
+    if (ec || size < (jar ? 1000u : 50000u)) return false;
     std::ifstream in(file, std::ios::binary);
-    char mz[2] = {};
-    in.read(mz, 2);
-    return mz[0] == 'M' && mz[1] == 'Z';
+    char head[2] = {};
+    in.read(head, 2);
+    return jar ? head[0] == 'P' && head[1] == 'K' : head[0] == 'M' && head[1] == 'Z';
 }
 
 bool Replace(const fs::path& from, const fs::path& to) {
@@ -279,7 +282,7 @@ bool Install() {
         DeleteUrlCacheEntryW(url.c_str());
         cb.index = i;
         HRESULT hr = URLDownloadToFileW(nullptr, url.c_str(), part.c_str(), 0, &cb);
-        if (FAILED(hr) || !LooksLikeProgram(part)) {
+        if (FAILED(hr) || !LooksRight(part, kFiles[i])) {
             fs::remove(part, ec);
             Show(Failed, L"The download did not work",
                  L"Check your internet connection and press Try again. If it keeps failing, GitHub may be down for a moment.");
