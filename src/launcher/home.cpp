@@ -147,7 +147,7 @@ void Home::DrawLibrary() {
     float gap = S(16), top = o.y + S(54);
 
     if (!feat.empty()) {
-        int fc = std::min((int)feat.size(), 2);
+        int fc = std::min((int)feat.size(), 3);
         float fw = std::floor((w - gap * (fc - 1)) / fc), fh = S(150);
         for (int k = 0; k < (int)feat.size(); ++k) {
             int idx = feat[k];
@@ -169,10 +169,15 @@ void Home::DrawLibrary() {
             dl->AddRect(a, b, hv > 0.01f ? Mix(ImVec4(1, 1, 1, 0.07f), T().accent, hv, 0.9f) : White(0.07f));
             dl->AddRectFilled(a, ImVec2(a.x + S(4), b.y), Accent());
             float x = a.x + S(22);
-            ImVec2 ts = MeasureUpper(T().semibold, 24, g.name);
+            float size = 24.0f;
+            ImVec2 ts = MeasureUpper(T().semibold, size, g.name);
+            while (size > 15.0f && ts.x > fw - S(44)) {
+                size -= 1.0f;
+                ts = MeasureUpper(T().semibold, size, g.name);
+            }
             float ty = b.y - S(18) - S(16) - S(8) - ts.y;
             Badge(dl, ImVec2(x, ty - S(28)), g);
-            Upper(dl, T().semibold, 24, ImVec2(x, ty), White(0.98f), g.name);
+            Upper(dl, T().semibold, size, ImVec2(x, ty), White(0.98f), g.name);
             bool inst = idx < (int)installed.size() && installed[idx];
             Text(dl, T().regular, 12, ImVec2(x, b.y - S(18) - S(15)), White(0.6f), inst ? "Installed on this PC" : "Not installed");
             if (clicked) game = idx;
@@ -236,8 +241,9 @@ void Home::DrawGame() {
 
     bool sn2 = std::strcmp(g.id, "subnautica2") == 0;
     bool sn1 = std::strcmp(g.id, "subnautica") == 0;
-    const inject::Paths& gp = sn1 ? sn1Paths : paths;
-    inject::GameState gs = sn1 ? sn1State : state;
+    bool sotf = std::strcmp(g.id, "sonsoftheforest") == 0;
+    const inject::Paths& gp = sn1 ? sn1Paths : sotf ? sotfPaths : paths;
+    inject::GameState gs = sn1 ? sn1State : sotf ? sotfState : state;
     bool running = gs != inject::GameState::NotRunning;
     bool injected = gs == inject::GameState::Injected;
     std::string line;
@@ -266,15 +272,16 @@ void Home::DrawGame() {
     } else if (running) {
         if (Button("main", "Inject", bp, bs, Btn::Primary, ICON_ZAP, gp.found)) {
             injectNow = true;
-            injectSn1 = sn1;
+            injectGame = sn1 ? 1 : sotf ? 2 : 0;
         }
     } else {
         if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) startNow = true;
     }
 
     float y = b.y + S(16);
-    if ((sn2 || sn1) && g.ready) {
-        DrawSubnauticaCards(y, w, o, gp, gs, sn1 ? "Subnautica (Steam)" : "Subnautica2 (Steam)", sn1 ? "fathom_sn1.dll" : "fathom.dll");
+    if ((sn2 || sn1 || sotf) && g.ready) {
+        DrawGameCards(y, w, o, gp, gs, sn1 ? "Subnautica (Steam)" : sotf ? "Sons Of The Forest (Steam)" : "Subnautica2 (Steam)",
+                      sn1 ? "fathom_sn1.dll" : sotf ? "fathom_sotf.dll" : "fathom.dll");
         return;
     }
     float ch = S(132);
@@ -295,7 +302,7 @@ void Home::DrawGame() {
     ImGui::Dummy(ImVec2(w, y + ch - o.y));
 }
 
-void Home::DrawSubnauticaCards(float y, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName) {
+void Home::DrawGameCards(float y, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     bool running = state != inject::GameState::NotRunning;
     bool injected = state == inject::GameState::Injected;

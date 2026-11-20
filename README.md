@@ -10,14 +10,14 @@ Every game has its own folder in [games](games).
 
 | Game | Status |
 |---|---|
-| [Subnautica 2](<games/Subnautica 2>) | Ready |
+| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>) | Ready |
 | [Borderlands](<games/Borderlands>), [Borderlands 2](<games/Borderlands 2>), [Borderlands 3](<games/Borderlands 3>), [Borderlands 4](<games/Borderlands 4>) | Coming soon |
 | [Cyberpunk 2077](<games/Cyberpunk 2077>) | Coming soon |
 | [Fallout 4](<games/Fallout 4>), [Fallout: New Vegas](<games/Fallout New Vegas>) | Coming soon |
 | [Outlast](<games/Outlast>) | Coming soon |
 | [Satisfactory](<games/Satisfactory>) | Coming soon |
-| [Sons of the Forest](<games/Sons of the Forest>), [The Forest](<games/The Forest>) | Coming soon |
-| [Subnautica](<games/Subnautica>), [Subnautica: Below Zero](<games/Subnautica Below Zero>) | Coming soon |
+| [The Forest](<games/The Forest>) | Coming soon |
+| [Subnautica: Below Zero](<games/Subnautica Below Zero>) | Coming soon |
 | [The Last of Us Part I](<games/The Last of Us Part I>), [The Last of Us Part II](<games/The Last of Us Part II>) | Coming soon |
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.

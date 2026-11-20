@@ -4,7 +4,7 @@
 #include "launcher/home.h"
 #include "launcher/logview.h"
 #include "launcher/inject.h"
-#include "launcher/sn1_inject.h"
+#include "launcher/game_inject.h"
 #include "core/sn1_features.h"
 #include "core/sotf_features.h"
 #include "launcher/prefs.h"
@@ -186,7 +186,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     sn1::BuildFeatures(sn1Model);
     launcher::Home home;
     home.paths = inject::Locate();
-    home.sn1Paths = sn1inject::Locate();
+    home.sn1Paths = gameinject::Locate(gameinject::kSubnautica);
     std::wstring sn1SettingsPath = home.sn1Paths.found ? home.sn1Paths.settings : (std::filesystem::path(ExeDir()) / L"subnautica-settings.json").wstring();
     if (home.sn1Paths.found) { std::error_code ec; std::filesystem::create_directories(home.sn1Paths.folder, ec); }
     sn1Model.settingsPath = Narrow(sn1SettingsPath);
@@ -211,17 +211,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         f.available = false;
         f.missing = "Turn this on inside the game. Cheats always start off.";
     }
-    sn1Model.backupSaves = [&home] { return sn1inject::BackupSaves(home.sn1Paths); };
+    sn1Model.backupSaves = [&home] { return gameinject::BackupSaves(gameinject::kSubnautica, home.sn1Paths); };
     sn1Model.openUrl = model.openUrl;
     core::LoadSettings(sn1Model);
     std::string sn1LastText = core::SettingsText(sn1Model);
     auto sn1KnownTime = FileTime(sn1SettingsPath);
     core::Model sotfModel;
     sotf::BuildFeatures(sotfModel);
-    sotfModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"sonsoftheforest-settings.json").wstring());
+    home.sotfPaths = gameinject::Locate(gameinject::kSonsOfTheForest);
+    std::wstring sotfSettingsPath = home.sotfPaths.found ? home.sotfPaths.settings : (std::filesystem::path(ExeDir()) / L"sonsoftheforest-settings.json").wstring();
+    if (home.sotfPaths.found) { std::error_code ec; std::filesystem::create_directories(home.sotfPaths.folder, ec); }
+    sotfModel.settingsPath = Narrow(sotfSettingsPath);
+    for (core::Feature& f : sotfModel.features)
+    {
+        f.available = false;
+        f.missing = "Turn this on inside the game. Cheats always start off.";
+    }
+    sotfModel.backupSaves = [&home] { return gameinject::BackupSaves(gameinject::kSonsOfTheForest, home.sotfPaths); };
     sotfModel.openUrl = model.openUrl;
     core::LoadSettings(sotfModel);
     std::string sotfLastText = core::SettingsText(sotfModel);
+    auto sotfKnownTime = FileTime(sotfSettingsPath);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -287,7 +297,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         ULONGLONG since = 0;
         bool tried = false;
     };
-    Watch watch[2];
+    Watch watch[3];
     auto openPath = [](const std::wstring& path) {
         std::error_code ec;
         std::filesystem::create_directories(path, ec);
@@ -405,11 +415,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             lastPoll = now;
             home.state = inject::State(home.paths);
-            home.sn1State = sn1inject::State(home.sn1Paths);
-            for (int gi = 0; gi < 2; ++gi)
+            home.sn1State = gameinject::State(gameinject::kSubnautica);
+            home.sotfState = gameinject::State(gameinject::kSonsOfTheForest);
+            for (int gi = 0; gi < 3; ++gi)
             {
-                inject::GameState st = gi ? home.sn1State : home.state;
-                bool found = gi ? home.sn1Paths.found : home.paths.found;
+                inject::GameState st = gi == 1 ? home.sn1State : gi == 2 ? home.sotfState : home.state;
+                bool found = gi == 1 ? home.sn1Paths.found : gi == 2 ? home.sotfPaths.found : home.paths.found;
                 Watch& wt = watch[gi];
                 if (wt.last == inject::GameState::Injected && st == inject::GameState::Running)
                     menu.Notify("The menu was unloaded from the game", ICON_INFO);
@@ -427,7 +438,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 {
                     wt.tried = true;
                     home.injectNow = true;
-                    home.injectSn1 = gi == 1;
+                    home.injectGame = gi;
                     menu.Notify("Injecting the menu automatically", ICON_ZAP);
                 }
             }
@@ -439,7 +450,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? "All games" : nullptr;
-            home.openKey = core::KeyName(sn1Open ? sn1Model.keyOpen : model.keyOpen);
+            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : model;
+            home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;
             home.installedFirst = loader.s.installedFirst;
             ui::T().accent = ui::AccentColor(loader.s.accent);
@@ -470,7 +482,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     done = true;
                 }
             }
-            home.unloadKey = core::KeyName(sn1Open ? sn1Model.keyUnload : model.keyUnload);
+            home.unloadKey = core::KeyName(keyModel.keyUnload);
             if (sn2)
             {
                 menu.status = home.state == inject::GameState::Injected ? "Menu active in game" : home.state == inject::GameState::Running ? "Game running" : "Game not running";
@@ -483,8 +495,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             }
             else if (sotfOpen)
             {
-                menu.status = "Being built";
-                menu.statusGood = false;
+                menu.status = home.sotfState == inject::GameState::Injected ? "Menu active in game" : home.sotfState == inject::GameState::Running ? "Game running" : "Game not running";
+                menu.statusGood = home.sotfState != inject::GameState::NotRunning;
             }
             else
             {
@@ -516,21 +528,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             home.startNow = false;
             if (sn1Open)
-                sn1inject::StartGame();
+                gameinject::StartGame(gameinject::kSubnautica);
+            else if (sotfOpen)
+                gameinject::StartGame(gameinject::kSonsOfTheForest);
             else
                 inject::StartGame();
-            menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6" : "Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
+            menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6" : sotfOpen ? "Starting Sons of the Forest\xe2\x80\xa6" : "Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
         }
         if (home.injectNow && !home.busy)
         {
             home.injectNow = false;
             home.busy = true;
-            bool forSn1 = home.injectSn1;
-            if (forSn1)
+            int target = home.injectGame;
+            if (target == 1)
             {
                 core::SaveSettings(sn1Model);
                 sn1LastText = core::SettingsText(sn1Model);
                 sn1KnownTime = FileTime(sn1SettingsPath);
+            }
+            else if (target == 2)
+            {
+                core::SaveSettings(sotfModel);
+                sotfLastText = core::SettingsText(sotfModel);
+                sotfKnownTime = FileTime(sotfSettingsPath);
             }
             else
             {
@@ -539,10 +559,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 knownTime = FileTime(settingsPath);
             }
             workerDone = false;
-            inject::Paths paths = forSn1 ? home.sn1Paths : home.paths;
-            std::string key = core::KeyName(sn1Model.keyOpen);
-            worker = std::thread([&, paths, forSn1, key] {
-                workerResult = forSn1 ? sn1inject::Inject(paths, workerOk, key) : inject::Inject(paths, workerOk);
+            inject::Paths paths = target == 1 ? home.sn1Paths : target == 2 ? home.sotfPaths : home.paths;
+            std::string key = core::KeyName(target == 2 ? sotfModel.keyOpen : sn1Model.keyOpen);
+            worker = std::thread([&, paths, target, key] {
+                workerResult = target == 1 ? gameinject::Inject(gameinject::kSubnautica, paths, workerOk, key)
+                             : target == 2 ? gameinject::Inject(gameinject::kSonsOfTheForest, paths, workerOk, key)
+                                           : inject::Inject(paths, workerOk);
                 workerDone = true;
             });
         }
@@ -577,6 +599,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             };
             sync(model, mainMenu, settingsPath, lastText, knownTime);
             sync(sn1Model, sn1Menu, sn1SettingsPath, sn1LastText, sn1KnownTime);
+            sync(sotfModel, sotfMenu, sotfSettingsPath, sotfLastText, sotfKnownTime);
         }
         if (closeAt && now >= closeAt)
             done = true;
