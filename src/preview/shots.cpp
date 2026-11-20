@@ -286,6 +286,23 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_LAYERS;
              u.onHome = true;
          }, ImVec2(470, 230), nullptr},
+        {"29-launcher-mine", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             home.game = -1;
+             home.installed.assign(launcher::Games().size(), false);
+             for (const char* id : {"subnautica2", "sonsoftheforest", "borderlands3"}) home.installed[launcher::FindGame(id)] = true;
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.mine = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}};
+             u.homeIndex = 1;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
         {"13-launcher-subnautica", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              LoadShotArt(home, outDir);

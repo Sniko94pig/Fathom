@@ -127,9 +127,13 @@ void Home::DrawLibrary() {
         ready += g.ready ? 1 : 0;
         building += g.building ? 1 : 0;
     }
-    Input("gamesearch", &search, "Search games", o, S(280), ICON_SEARCH);
+    int owned = 0;
+    for (int i = 0; i < (int)games.size(); ++i) owned += games[i].ready && i < (int)installed.size() && installed[i] ? 1 : 0;
+    Input(mine ? "minesearch" : "gamesearch", &search, mine ? "Search your games" : "Search games", o, S(280), ICON_SEARCH);
     char buf[96];
-    if (building)
+    if (mine)
+        std::snprintf(buf, sizeof(buf), owned == 1 ? "%d game with mods on this PC" : "%d games with mods on this PC", owned);
+    else if (building)
         std::snprintf(buf, sizeof(buf), "%d ready  \xc2\xb7  %d being built  \xc2\xb7  %d coming soon", ready, building,
                       (int)games.size() - ready - building);
     else
@@ -146,18 +150,38 @@ void Home::DrawLibrary() {
     std::vector<int> feat, rest;
     for (int i : shown) (games[i].ready ? feat : rest).push_back(i);
     float gap = S(16), top = o.y + S(54);
+    if (mine) {
+        std::vector<int> own;
+        for (int i : feat)
+            if (i < (int)installed.size() && installed[i]) own.push_back(i);
+        feat.swap(own);
+        rest.clear();
+        if (feat.empty()) {
+            float eh = S(110);
+            Card(dl, ImVec2(o.x, top), ImVec2(o.x + w, top + eh));
+            Caption(dl, ImVec2(o.x + S(16), top + S(15)), q.empty() ? "No games yet" : "Nothing found");
+            Text(dl, T().regular, 13, ImVec2(o.x + S(16), top + S(40)), White(0.7f),
+                 q.empty() ? "A game shows up here when Fathom has mods for it and it is installed with Steam on this PC."
+                           : "None of your games match the search.",
+                 w - S(32));
+            ImGui::SetCursorScreenPos(o);
+            ImGui::Dummy(ImVec2(w, top + eh - o.y));
+            return;
+        }
+    }
 
     if (!feat.empty()) {
         int n = (int)feat.size();
         int fc = std::min(n, 2);
-        bool carousel = n > fc;
+        bool carousel = !mine && n > fc;
+        int rows = carousel ? 1 : (n + fc - 1) / fc;
         float arrow = S(44);
         float areaW = carousel ? w - arrow - gap : w;
         float fw = std::floor((areaW - gap * (fc - 1)) / fc), fh = S(150), step = fw + gap;
         float off = carousel ? Ease(ImGui::GetID("featoff"), (float)featStart, 10.0f, (float)featStart) : 0.0f;
-        dl->PushClipRect(ImVec2(o.x, top - S(2)), ImVec2(o.x + areaW, top + fh + S(2)), true);
+        if (carousel) dl->PushClipRect(ImVec2(o.x, top - S(2)), ImVec2(o.x + areaW, top + fh + S(2)), true);
         for (int k = 0; k < n; ++k) {
-            float p = (float)k;
+            float p = (float)(k % fc), row = carousel ? 0.0f : (float)(k / fc);
             if (carousel) {
                 p = std::fmod((float)k - off, (float)n);
                 if (p < -1.0f) p += (float)n;
@@ -166,7 +190,7 @@ void Home::DrawLibrary() {
             }
             int idx = feat[k];
             const GameDef& g = games[idx];
-            ImVec2 a(std::floor(o.x + p * step), top), b(a.x + fw, a.y + fh);
+            ImVec2 a(std::floor(o.x + p * step), top + row * (fh + gap)), b(a.x + fw, a.y + fh);
             bool whole = p > -0.02f && p < (float)fc - 0.98f;
             bool clicked = false, hovered = false;
             ImGui::PushID(idx);
@@ -201,10 +225,10 @@ void Home::DrawLibrary() {
             Text(dl, T().regular, 12, ImVec2(x, b.y - S(18) - S(15)), White(0.6f), inst ? "Installed on this PC" : "Not installed");
             if (clicked) game = idx;
         }
-        dl->PopClipRect();
+        if (carousel) dl->PopClipRect();
         if (carousel && IconButton("featnext", ICON_CHEVRON_RIGHT, ImVec2(o.x + w - arrow, top + std::floor((fh - arrow) * 0.5f)), arrow))
             ++featStart;
-        top += fh + gap + S(6);
+        top += rows * (fh + gap) + S(6);
         if (!rest.empty()) {
             ImVec2 ls = MeasureUpper(T().semibold, 11.5f, "All games");
             Upper(dl, T().semibold, 11.5f, ImVec2(o.x, top), White(0.92f), "All games");

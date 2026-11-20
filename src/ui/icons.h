@@ -7,6 +7,7 @@
 #define ICON_PACKAGE "\xee\x84\xa9"
 #define ICON_MAP "\xee\x84\x90"
 #define ICON_HOUSE "\xee\x83\xb5"
+#define ICON_GAMEPAD_2 "\xee\x83\x9f"
 #define ICON_SHIELD_CHECK "\xee\x87\xbf"
 #define ICON_SETTINGS "\xee\x85\x94"
 #define ICON_SEARCH "\xee\x85\x91"

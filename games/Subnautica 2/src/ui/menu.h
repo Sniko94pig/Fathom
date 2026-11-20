@@ -32,6 +32,13 @@ public:
     const char* homeName = "Home";
     const char* homeIcon = nullptr;
     bool onHome = false;
+    struct HomeTab {
+        const char* name;
+        const char* icon;
+    };
+    std::vector<HomeTab> homeTabs;
+    int homeIndex = 0;
+    int ActiveHome() const { return homeIndex >= 0 && homeIndex <= (int)homeTabs.size() ? homeIndex : 0; }
     bool embedded = false;
     bool showGameTabs = true;
     const char* backName = nullptr;

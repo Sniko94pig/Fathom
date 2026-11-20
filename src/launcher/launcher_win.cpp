@@ -279,7 +279,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu })
     {
         mm->embedded = true;
-        mm->homePage = [&] { home.Draw(); };
+        mm->homePage = [&home, mm] {
+            home.mine = mm->ActiveHome() == 1;
+            home.Draw();
+        };
         mm->homeName = "Games";
         mm->homeIcon = ICON_LAYERS;
         mm->onHome = true;
@@ -449,7 +452,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             menu.showGameTabs = sn2 || sn1Open || sotfOpen;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
-            menu.backName = inGame ? "All games" : nullptr;
+            menu.backName = inGame ? (mainMenu.homeIndex == 1 ? "My games" : "All games") : nullptr;
+            if (inGame)
+                mainMenu.homeTabs.clear();
+            else if (mainMenu.homeTabs.empty())
+                mainMenu.homeTabs.push_back({ "My games", ICON_GAMEPAD_2 });
             const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : model;
             home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;

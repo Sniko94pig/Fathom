@@ -215,10 +215,15 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
         const TabDef* td;
         const char* name;
         const char* icon;
+        int sub = 0;
     };
     std::vector<Entry> list;
     if (backName && onBack) list.push_back({0, nullptr, backName, ICON_UNDO_2});
-    if (homePage) list.push_back({1, nullptr, homeName, homeIcon ? homeIcon : ICON_ZAP});
+    if (homePage) {
+        list.push_back({1, nullptr, homeName, homeIcon ? homeIcon : ICON_ZAP});
+        for (int i = 0; i < (int)homeTabs.size(); ++i) list.push_back({1, nullptr, homeTabs[i].name, homeTabs[i].icon, i + 1});
+    }
+    int hi = ActiveHome();
     std::vector<Tab> order = m.tabs;
     if (order.empty())
         for (const TabDef& d : kTabs) order.push_back(d.tab);
@@ -227,7 +232,7 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
     int count = (int)list.size();
     int idx = -1;
     for (int i = 0; i < count; ++i)
-        if ((onHome && list[i].kind == 1) || (!onHome && list[i].kind == 2 && list[i].td->tab == tab)) idx = i;
+        if ((onHome && list[i].kind == 1 && list[i].sub == hi) || (!onHome && list[i].kind == 2 && list[i].td->tab == tab)) idx = i;
     if (idx < 0) {
         for (int i = 0; i < count && idx < 0; ++i)
             if (list[i].kind == 1) idx = i;
@@ -252,6 +257,7 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
                 onBack();
             } else {
                 onHome = e.kind == 1;
+                if (onHome) homeIndex = e.sub;
                 if (e.td) tab = e.td->tab;
             }
         }
@@ -285,7 +291,8 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
 
 void Menu::TopBar(ImVec2 p, ImVec2 size) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const char* title = homePage && onHome ? homeName : TabName(m, tab);
+    int hi = ActiveHome();
+    const char* title = homePage && onHome ? (hi ? homeTabs[hi - 1].name : homeName) : TabName(m, tab);
     ImVec2 ts = MeasureUpper(T().semibold, 20, title);
     float tx = p.x + S(kSide) + S(24), ty = p.y + std::floor((S(kTop) - ts.y) * 0.5f) - S(2);
     Upper(dl, T().semibold, 20, ImVec2(tx, ty), White(0.98f), title);
@@ -332,7 +339,8 @@ void Menu::Banner() {
 
 void Menu::Content(ImVec2 p, ImVec2 size) {
     bool home = homePage && onHome;
-    int key = home ? -1 : (int)tab;
+    int hi = ActiveHome();
+    int key = home ? -1 - hi : (int)tab;
     if (key != lastTab) {
         lastTab = key;
         SetAnim(ImGui::GetID("tabfade"), 0.0f);
@@ -340,7 +348,8 @@ void Menu::Content(ImVec2 p, ImVec2 size) {
     float fade = Ease(ImGui::GetID("tabfade"), 1.0f, 13.0f);
     ImGui::SetCursorScreenPos(ImVec2(p.x + S(kSide), p.y + S(kTop) + 1));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(S(24), S(20)));
-    ImGui::BeginChild(home ? "##home" : kTabs[(int)tab].name, ImVec2(size.x - S(kSide), size.y - S(kTop) - 1),
+    std::string homeId = "##home" + std::to_string(hi);
+    ImGui::BeginChild(home ? homeId.c_str() : kTabs[(int)tab].name, ImVec2(size.x - S(kSide), size.y - S(kTop) - 1),
                       ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * fade);
     float slide = std::floor((1.0f - fade) * S(12));

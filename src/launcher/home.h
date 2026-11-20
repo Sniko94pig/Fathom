@@ -33,6 +33,7 @@ struct Home {
     bool showSoon = true;
     bool installedFirst = false;
     int featStart = 0;
+    bool mine = false;
     std::unordered_map<long long, Art> art;
     void Draw();
 
