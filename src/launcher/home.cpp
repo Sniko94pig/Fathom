@@ -236,8 +236,9 @@ void Home::DrawGame() {
 
     bool sn2 = std::strcmp(g.id, "subnautica2") == 0;
     bool sn1 = std::strcmp(g.id, "subnautica") == 0;
-    const inject::Paths& gp = sn1 ? sn1Paths : paths;
-    inject::GameState gs = sn1 ? sn1State : state;
+    bool sotf = std::strcmp(g.id, "sonsoftheforest") == 0;
+    const inject::Paths& gp = sn1 ? sn1Paths : sotf ? sotfPaths : paths;
+    inject::GameState gs = sn1 ? sn1State : sotf ? sotfState : state;
     bool running = gs != inject::GameState::NotRunning;
     bool injected = gs == inject::GameState::Injected;
     std::string line;
@@ -266,15 +267,16 @@ void Home::DrawGame() {
     } else if (running) {
         if (Button("main", "Inject", bp, bs, Btn::Primary, ICON_ZAP, gp.found)) {
             injectNow = true;
-            injectSn1 = sn1;
+            injectGame = sn1 ? 1 : sotf ? 2 : 0;
         }
     } else {
         if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) startNow = true;
     }
 
     float y = b.y + S(16);
-    if ((sn2 || sn1) && g.ready) {
-        DrawSubnauticaCards(y, w, o, gp, gs, sn1 ? "Subnautica (Steam)" : "Subnautica2 (Steam)", sn1 ? "fathom_sn1.dll" : "fathom.dll");
+    if ((sn2 || sn1 || sotf) && g.ready) {
+        DrawGameCards(y, w, o, gp, gs, sn1 ? "Subnautica (Steam)" : sotf ? "Sons Of The Forest (Steam)" : "Subnautica2 (Steam)",
+                      sn1 ? "fathom_sn1.dll" : sotf ? "fathom_sotf.dll" : "fathom.dll");
         return;
     }
     float ch = S(132);
@@ -295,7 +297,7 @@ void Home::DrawGame() {
     ImGui::Dummy(ImVec2(w, y + ch - o.y));
 }
 
-void Home::DrawSubnauticaCards(float y, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName) {
+void Home::DrawGameCards(float y, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     bool running = state != inject::GameState::NotRunning;
     bool injected = state == inject::GameState::Injected;

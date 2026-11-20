@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.6.2)
+set(FATHOM_VERSION 1.7.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -91,7 +91,7 @@ if(WIN32)
     src/launcher/launcher_win.cpp
     src/launcher/home.cpp
     ${SN2}/launcher/inject.cpp
-    src/launcher/sn1_inject.cpp
+    src/launcher/game_inject.cpp
     src/launcher/logview.cpp
     src/launcher/games.cpp
     src/launcher/art.cpp

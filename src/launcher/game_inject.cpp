@@ -1,4 +1,4 @@
-#include "launcher/sn1_inject.h"
+#include "launcher/game_inject.h"
 #include "launcher/games.h"
 #include <windows.h>
 #include <shellapi.h>
@@ -10,13 +10,9 @@
 
 namespace fs = std::filesystem;
 
-namespace sn1inject {
+namespace gameinject {
 
 namespace {
-
-const wchar_t* kExe = L"Subnautica.exe";
-const wchar_t* kDll = L"fathom_sn1.dll";
-const wchar_t* kRun = L"fathom_sn1.run.dll";
 
 std::string Narrow(const std::wstring& w) {
     int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
@@ -25,13 +21,13 @@ std::string Narrow(const std::wstring& w) {
     return s;
 }
 
-DWORD FindGame() {
+DWORD FindGame(const Spec& s) {
     DWORD pid = 0;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return 0;
     PROCESSENTRY32W pe{sizeof(pe)};
     for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe))
-        if (_wcsicmp(pe.szExeFile, kExe) == 0) {
+        if (_wcsicmp(pe.szExeFile, s.exe) == 0) {
             pid = pe.th32ProcessID;
             break;
         }
@@ -64,11 +60,11 @@ std::wstring ProcessPath(DWORD pid) {
     return out;
 }
 
-std::wstring SteamFolder() {
+std::wstring SteamFolder(const Spec& s) {
     for (const std::wstring& lib : launcher::SteamLibraries()) {
-        fs::path dir = fs::path(lib) / L"steamapps" / L"common" / L"Subnautica";
+        fs::path dir = fs::path(lib) / L"steamapps" / L"common" / s.steamDir;
         std::error_code ec;
-        if (fs::exists(dir / kExe, ec)) return dir.wstring();
+        if (fs::exists(dir / s.exe, ec)) return dir.wstring();
     }
     return {};
 }
@@ -104,42 +100,55 @@ bool RunRemote(HANDLE proc, void* start, void* param, DWORD& code, DWORD wait) {
     return done;
 }
 
+fs::path Sn1Saves(const inject::Paths& p) { return fs::path(p.win64) / L"SNAppData" / L"SavedGames"; }
+
+fs::path SotfSaves(const inject::Paths&) {
+    wchar_t buf[MAX_PATH * 2];
+    DWORD n = GetEnvironmentVariableW(L"USERPROFILE", buf, MAX_PATH * 2);
+    if (!n || n >= MAX_PATH * 2) return {};
+    return fs::path(buf) / L"AppData" / L"LocalLow" / L"Endnight" / L"SonsOfTheForest" / L"Saves";
 }
 
-inject::Paths Locate() {
+}
+
+const Spec kSubnautica{L"Subnautica.exe", L"Subnautica", L"fathom_sn1.dll", L"fathom_sn1.run.dll", "Subnautica", 264710, L"Subnautica", Sn1Saves};
+const Spec kSonsOfTheForest{L"SonsOfTheForest.exe", L"Sons Of The Forest", L"fathom_sotf.dll", L"fathom_sotf.run.dll", "Sons of the Forest", 1326470,
+                            L"SonsOfTheForest", SotfSaves};
+
+inject::Paths Locate(const Spec& s) {
     inject::Paths p;
-    p.win64 = SteamFolder();
+    p.win64 = SteamFolder(s);
     if (p.win64.empty()) {
-        DWORD pid = FindGame();
+        DWORD pid = FindGame(s);
         if (pid) {
             std::wstring exe = ProcessPath(pid);
             if (!exe.empty()) p.win64 = fs::path(exe).parent_path().wstring();
         }
     }
-    p.bundled = (fs::path(ExeFolder()) / kDll).wstring();
+    p.bundled = (fs::path(ExeFolder()) / s.dll).wstring();
     if (p.win64.empty()) return p;
     fs::path folder = fs::path(p.win64) / L"fathom";
     p.folder = folder.wstring();
-    p.dll = (folder / kDll).wstring();
-    p.run = (folder / kRun).wstring();
+    p.dll = (folder / s.dll).wstring();
+    p.run = (folder / s.run).wstring();
     p.settings = (folder / L"settings.json").wstring();
     p.log = (folder / L"fathom.log").wstring();
     p.found = true;
     return p;
 }
 
-inject::GameState State(const inject::Paths&) {
-    DWORD pid = FindGame();
+inject::GameState State(const Spec& s) {
+    DWORD pid = FindGame(s);
     if (!pid) return inject::GameState::NotRunning;
-    return RemoteModule(pid, kRun) ? inject::GameState::Injected : inject::GameState::Running;
+    return RemoteModule(pid, s.run) ? inject::GameState::Injected : inject::GameState::Running;
 }
 
-std::string Inject(const inject::Paths& p, bool& ok, const std::string& openKey) {
+std::string Inject(const Spec& s, const inject::Paths& p, bool& ok, const std::string& openKey) {
     ok = false;
-    if (!p.found) return "Subnautica was not found";
-    DWORD pid = FindGame();
+    if (!p.found) return std::string(s.name) + " was not found";
+    DWORD pid = FindGame(s);
     if (!pid) return "Start the game first";
-    if (RemoteModule(pid, kRun)) return "The menu is already running in the game";
+    if (RemoteModule(pid, s.run)) return "The menu is already running in the game";
 
     std::error_code ec;
     fs::create_directories(p.folder, ec);
@@ -149,7 +158,7 @@ std::string Inject(const inject::Paths& p, bool& ok, const std::string& openKey)
         h.write((const char*)home.data(), (std::streamsize)(home.size() * sizeof(wchar_t)));
     }
     if (fs::exists(p.bundled, ec) && !SameFile(p.bundled, p.dll)) fs::copy_file(p.bundled, p.dll, fs::copy_options::overwrite_existing, ec);
-    if (!fs::exists(p.dll, ec)) return "fathom_sn1.dll is missing";
+    if (!fs::exists(p.dll, ec)) return Narrow(s.dll) + " is missing";
     fs::copy_file(p.dll, p.run, fs::copy_options::overwrite_existing, ec);
     if (ec) return "Could not prepare the menu file";
 
@@ -166,7 +175,7 @@ std::string Inject(const inject::Paths& p, bool& ok, const std::string& openKey)
     if (!proc) return "No access to the game process";
     if (!Is64Bit(proc)) {
         CloseHandle(proc);
-        return "Start the 64-bit Subnautica from Steam";
+        return "Start the 64-bit " + std::string(s.name) + " from Steam";
     }
     size_t bytes = (p.run.size() + 1) * sizeof(wchar_t);
     void* mem = VirtualAllocEx(proc, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -179,7 +188,7 @@ std::string Inject(const inject::Paths& p, bool& ok, const std::string& openKey)
         if (!RunRemote(proc, loadLib, mem, code, 15000)) {
             result = "The game did not respond";
         } else {
-            uintptr_t base = RemoteModule(pid, kRun);
+            uintptr_t base = RemoteModule(pid, s.run);
             if (!base) {
                 result = "The game refused to load the menu";
             } else if (!RunRemote(proc, (void*)(base + rva), nullptr, code, 5000) || code == 0) {
@@ -195,19 +204,22 @@ std::string Inject(const inject::Paths& p, bool& ok, const std::string& openKey)
     return result;
 }
 
-void StartGame() { ShellExecuteW(nullptr, L"open", L"steam://rungameid/264710", nullptr, nullptr, SW_SHOWNORMAL); }
+void StartGame(const Spec& s) {
+    std::wstring url = L"steam://rungameid/" + std::to_wstring(s.appId);
+    ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
 
-std::string BackupSaves(const inject::Paths& p) {
+std::string BackupSaves(const Spec& s, const inject::Paths& p) {
     try {
         if (!p.found) return {};
-        fs::path src = fs::path(p.win64) / L"SNAppData" / L"SavedGames";
-        if (!fs::exists(src)) return {};
+        fs::path src = s.saves(p);
+        if (src.empty() || !fs::exists(src)) return {};
         fs::path root = fs::path(ExeFolder()) / L"save-backups";
         SYSTEMTIME t;
         GetLocalTime(&t);
         wchar_t stamp[64];
-        swprintf_s(stamp, L"Subnautica_%04d-%02d-%02d_%02d-%02d-%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
-        fs::path dst = root / stamp / L"SavedGames";
+        swprintf_s(stamp, L"%s_%04d-%02d-%02d_%02d-%02d-%02d", s.backupName, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        fs::path dst = root / stamp / src.filename();
         fs::create_directories(dst);
         fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
         return Narrow((root / stamp).wstring());

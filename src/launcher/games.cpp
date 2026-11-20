@@ -21,7 +21,7 @@ const std::vector<GameDef>& Games() {
         {"falloutnv", "Fallout: New Vegas", 22380, "FNV", false},
         {"outlast", "Outlast", 238320, "OL", false},
         {"satisfactory", "Satisfactory", 526870, "SAT", false},
-        {"sonsoftheforest", "Sons of the Forest", 1326470, "SOF", false, true},
+        {"sonsoftheforest", "Sons of the Forest", 1326470, "SOF", true},
         {"subnautica", "Subnautica", 264710, "SN", true},
         {"belowzero", "Subnautica: Below Zero", 848450, "BZ", false},
         {"theforest", "The Forest", 242760, "TF", false},

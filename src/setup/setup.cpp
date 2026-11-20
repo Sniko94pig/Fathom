@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 namespace {
 
 const wchar_t* kBase = L"https://github.com/Sniko94pig/Fathom/releases/latest/download/";
-const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll"};
+const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll"};
 const wchar_t* kKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fathom";
 const wchar_t* kUninstaller = L"Uninstall Fathom.exe";
 const wchar_t* kSetup = L"FathomSetup.exe";
@@ -331,7 +331,10 @@ bool Uninstall() {
     Show(Working, L"Removing Fathom...", dir.wstring());
     progress = 0.3f;
     bool ok = true;
-    for (const wchar_t* f : {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"Fathom.exe.download", L"fathom.dll.download", L"fathom_sn1.dll.download"}) ok = RemoveFile(dir / f) && ok;
+    for (const wchar_t* f : kFiles) {
+        ok = RemoveFile(dir / f) && ok;
+        ok = RemoveFile(dir / (std::wstring(f) + L".download")) && ok;
+    }
     fs::path uninstaller = dir / kUninstaller;
     if (!fs::equivalent(SelfPath(), uninstaller, ec)) ok = RemoveFile(uninstaller) && ok;
     fs::path setupCopy = dir / kSetup;
