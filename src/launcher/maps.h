@@ -43,6 +43,7 @@ const Kind* Kinds(int game, int& count);
 const Place* Places(int game, int& count);
 const Area* Areas(int game, int& count);
 bool World(int game, float& x0, float& z0, float& x1, float& z1);
+const char* Axis(int game);
 
 void Start(const Request& r);
 bool Take(Image& out);

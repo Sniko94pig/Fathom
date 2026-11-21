@@ -464,7 +464,7 @@ void Home::DrawMapView() {
             float mu = cu + (io.MousePos.x - c.x) / (zoom * pic.w), mv = cv + (io.MousePos.y - c.y) / (zoom * pic.h);
             if (mu >= 0 && mu <= 1 && mv >= 0 && mv <= 1) {
                 char buf[64];
-                std::snprintf(buf, sizeof(buf), "X %d   Z %d", (int)std::lround(wx0 + mu * (wx1 - wx0)), (int)std::lround(wz1 - mv * (wz1 - wz0)));
+                std::snprintf(buf, sizeof(buf), "X %d   %s %d", (int)std::lround(wx0 + mu * (wx1 - wx0)), mapdata::Axis(gi), (int)std::lround(wz1 - mv * (wz1 - wz0)));
                 ImVec2 ts = Measure(T().medium, 11.5f, buf);
                 ImVec2 pa(a.x + S(10), b.y - S(10) - ts.y - S(10)), pb(pa.x + ts.x + S(16), b.y - S(10));
                 dl->AddRectFilled(pa, pb, Black(0.65f));
@@ -476,10 +476,8 @@ void Home::DrawMapView() {
         if (hot >= 0 && !dragging) {
             const mapdata::Place& pl = places[hot];
             char tip[256];
-            if (pl.note && *pl.note)
-                std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   Z %d", pl.name, pl.note, (int)std::lround(pl.x), (int)std::lround(pl.z));
-            else
-                std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   Z %d", pl.name, kinds[pl.kind].name, (int)std::lround(pl.x), (int)std::lround(pl.z));
+            std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   %s %d", pl.name, pl.note && *pl.note ? pl.note : kinds[pl.kind].name, (int)std::lround(pl.x),
+                          mapdata::Axis(gi), (int)std::lround(pl.z));
             Tip(tip);
         }
         float bsz = S(34);

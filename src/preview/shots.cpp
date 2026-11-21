@@ -358,18 +358,24 @@ int main(int argc, char** argv) {
         {"41-launcher-map-subnautica", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              home.game = -1;
-             home.mapGame = 0;
-             LoadShotMaps(home);
              char* zoom = nullptr;
              size_t len = 0;
-             _dupenv_s(&zoom, &len, "FATHOM_SHOT_ZOOM");
+             int gi = 0;
+             _dupenv_s(&zoom, &len, "FATHOM_SHOT_GAME");
              if (zoom) {
-                 home.mapZoom[0] = (float)std::atof(zoom);
+                 gi = std::clamp(std::atoi(zoom), 0, 2);
                  std::free(zoom);
              }
-             home.mapPick[0] = 5;
-             home.mapCx[0] = 0.49f;
-             home.mapCy[0] = 0.43f;
+             home.mapGame = gi;
+             LoadShotMaps(home);
+             _dupenv_s(&zoom, &len, "FATHOM_SHOT_ZOOM");
+             if (zoom) {
+                 home.mapZoom[gi] = (float)std::atof(zoom);
+                 std::free(zoom);
+             }
+             home.mapPick[gi] = 5;
+             home.mapCx[gi] = gi == 0 ? 0.49f : 0.5f;
+             home.mapCy[gi] = gi == 0 ? 0.43f : 0.5f;
              u.showGameTabs = false;
              u.homePage = [] {
                  home.maps = true;

@@ -171,6 +171,82 @@ const Place kSotfPlaces[] = {
     {4, "Cannibal village", "", -1195.1f, 241.4f, -1680.7f},
 };
 
+const Place kSn2Places[] = {
+    {0, "Alien Ruins", "127 m deep", -2091.3f, -126.6f, 4258.3f},
+    {0, "Blackbox - Anita (depth 20m)", "21 m deep", -3301.1f, -20.6f, 4190.8f},
+    {0, "Blackbox - Anita (depth 380m)", "381 m deep", -1619.4f, -381.3f, 4274.2f},
+    {0, "Blackbox - Chap (depth 40m)", "43 m deep", -3216.9f, -42.7f, 4484.9f},
+    {0, "Blackbox - Iso (depth 95m - abducted)", "93 m deep", -1606.9f, -93.1f, 4596.6f},
+    {0, "Blackbox - Quaker (depth 50m)", "50 m deep", -3359.1f, -49.6f, 3949.1f},
+    {0, "Blackbox - Ruby (depth 295m - abandoned her Tadpole)", "295 m deep", -1998.7f, -295.4f, 4548.6f},
+    {0, "Blackbox - Ruby (depth 50m - attacked by predator)", "47 m deep", -3134.6f, -47.1f, 4013.3f},
+    {0, "Blackbox - Singh (depth 205m - unknown attacker)", "204 m deep", -1356.2f, -203.9f, 4532.0f},
+    {0, "Blackbox - Unknown (depth 580m)", "583 m deep", -3392.7f, -582.6f, 4466.5f},
+    {0, "Blackbox - Wander (depth 70m - in a viral bloom)", "69 m deep", -3575.5f, -69.4f, 4448.0f},
+    {0, "Blackbox - Zip (depth 305m)", "242 m deep", -2999.2f, -242.5f, 4509.7f},
+    {0, "Blackbox - Zip (depth 475m - electrical hazard)", "472 m deep", -1370.1f, -471.7f, 3957.0f},
+    {0, "Blackbox Cluster", "233 m deep", -3001.4f, -232.9f, 4533.2f},
+    {0, "Blackbox with special access key", "296 m deep", -3031.3f, -295.6f, 4504.6f},
+    {0, "Camp One", "11 m deep", -3249.1f, -10.6f, 4092.8f},
+    {0, "Distress Signal", "125 m deep", -2879.0f, -125.4f, 4508.5f},
+    {0, "Hot Cave Basecamp", "209 m deep", -3068.9f, -209.1f, 4605.8f},
+    {0, "Investigate Tadpole Pens", "145 m deep", -2697.5f, -144.8f, 4327.9f},
+    {0, "Old Habitat", "44 m deep", -3371.9f, -44.0f, 3967.5f},
+    {0, "Power Plant Needle", "419 m deep", -1663.8f, -418.6f, 4375.2f},
+    {0, "Welcome Center", "8 m deep", -3327.7f, -7.6f, 4391.8f},
+    {0, "Wu \"Wu\" Lianghai", "56 m deep", -3374.7f, -56.5f, 3934.2f},
+    {1, "Lifepod", "near the surface", -3371.9f, 1.0f, 4334.1f},
+    {2, "Black box", "21 m deep", -3301.1f, -20.6f, 4190.8f},
+    {2, "Black box", "46 m deep", -3271.8f, -46.2f, 3943.6f},
+    {2, "Black box", "215 m deep", -1362.0f, -215.2f, 4502.5f},
+    {2, "Black box", "204 m deep", -1355.8f, -204.4f, 4532.6f},
+    {2, "Black box", "208 m deep", -1339.2f, -208.2f, 4501.6f},
+    {3, "Supply crate", "21 m deep", -3499.6f, -20.6f, 4408.8f},
+    {3, "Supply crate", "21 m deep", -3497.5f, -20.6f, 4401.6f},
+    {3, "Supply crate", "26 m deep", -3430.4f, -25.7f, 4170.1f},
+    {3, "Supply crate", "28 m deep", -3416.9f, -27.7f, 4186.5f},
+    {3, "Supply crate", "20 m deep", -3390.9f, -20.3f, 4289.9f},
+    {3, "Supply crate", "29 m deep", -3369.3f, -29.2f, 4446.6f},
+    {3, "Supply crate", "88 m deep", -3369.3f, -87.9f, 4566.8f},
+    {3, "Supply crate", "91 m deep", -3362.6f, -90.7f, 4569.3f},
+    {3, "Supply crate", "28 m deep", -3359.9f, -27.9f, 4458.8f},
+    {3, "Supply crate", "30 m deep", -3354.1f, -30.4f, 4213.6f},
+    {3, "Supply crate", "32 m deep", -3267.7f, -32.2f, 4270.5f},
+    {3, "Supply crate", "40 m deep", -3252.8f, -39.8f, 4400.1f},
+    {3, "Supply crate", "41 m deep", -3250.2f, -41.0f, 4393.7f},
+    {3, "Supply crate", "28 m deep", -3204.0f, -27.7f, 4303.8f},
+    {3, "Supply crate", "15 m deep", -3186.0f, -15.4f, 4275.6f},
+    {3, "Supply crate", "31 m deep", -3170.7f, -31.2f, 4431.7f},
+    {3, "Supply crate", "31 m deep", -3169.2f, -31.2f, 4431.1f},
+    {3, "Supply crate", "61 m deep", -3150.9f, -60.7f, 4198.2f},
+    {3, "Supply crate", "110 m deep", -2788.1f, -109.9f, 4379.0f},
+    {3, "Supply crate", "330 m deep", -1217.7f, -330.0f, 4218.7f},
+    {4, "Supply locker", "86 m deep", -3525.0f, -85.5f, 4579.5f},
+    {4, "Supply locker", "28 m deep", -3443.5f, -28.2f, 4163.2f},
+    {4, "Supply locker", "89 m deep", -3380.9f, -88.8f, 4134.6f},
+    {4, "Supply locker", "32 m deep", -3269.5f, -32.1f, 4270.0f},
+    {4, "Supply locker", "14 m deep", -3253.3f, -14.2f, 4082.0f},
+    {4, "Supply locker", "48 m deep", -3241.9f, -47.6f, 3971.5f},
+    {4, "Supply locker", "33 m deep", -3202.3f, -32.8f, 4018.3f},
+    {4, "Supply locker", "46 m deep", -3095.2f, -46.2f, 4180.7f},
+    {4, "Supply locker", "212 m deep", -3079.9f, -212.4f, 4598.8f},
+    {4, "Supply locker", "48 m deep", -3036.6f, -47.8f, 4355.6f},
+    {4, "Supply locker", "110 m deep", -2783.8f, -109.9f, 4385.0f},
+    {4, "Supply locker", "138 m deep", -2097.3f, -138.4f, 4254.1f},
+    {5, "Quartz chip", "26 m deep", -3356.6f, -26.2f, 4447.4f},
+    {5, "Quartz chip", "30 m deep", -3354.6f, -29.5f, 4212.3f},
+    {5, "Quartz chip", "17 m deep", -3322.5f, -16.7f, 4402.1f},
+    {5, "Quartz chip", "10 m deep", -3317.3f, -9.6f, 4262.5f},
+    {5, "Quartz chip", "32 m deep", -3271.8f, -31.6f, 4271.9f},
+    {5, "Quartz chip", "39 m deep", -3209.7f, -38.8f, 4291.6f},
+    {5, "Quartz chip", "23 m deep", -3205.7f, -23.0f, 4205.6f},
+    {5, "Quartz chip", "224 m deep", -2223.3f, -224.3f, 4441.7f},
+    {5, "Quartz chip", "196 m deep", -2145.2f, -195.8f, 4439.6f},
+    {5, "Quartz chip", "372 m deep", -1445.3f, -372.3f, 4021.1f},
+    {6, "Terminal", "10 m deep", -3327.5f, -9.8f, 4391.8f},
+    {6, "Terminal", "140 m deep", -2097.0f, -139.8f, 4277.2f},
+};
+
 const Area kSn1Areas[] = {
     {"Safe Shallows", -61.8f, -9.8f, 165.1f},
     {"Kelp Forest", 190.1f, 622.2f, 133.1f},
@@ -203,6 +279,10 @@ const Place* Places(int game, int& count) {
     if (game == Subnautica) {
         count = (int)(sizeof(kSn1Places) / sizeof(kSn1Places[0]));
         return kSn1Places;
+    }
+    if (game == Subnautica2) {
+        count = (int)(sizeof(kSn2Places) / sizeof(kSn2Places[0]));
+        return kSn2Places;
     }
     if (game == SonsOfTheForest) {
         count = (int)(sizeof(kSotfPlaces) / sizeof(kSotfPlaces[0]));
