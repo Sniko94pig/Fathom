@@ -222,7 +222,7 @@ void Home::DrawMapView() {
         return;
     }
     Upper(dl, T().semibold, 18, ImVec2(o.x + S(142), o.y + S(7)), White(0.98f), mapdata::Title(gi));
-    if (gi == mapdata::Subnautica2 &&
+    if (gi == mapdata::Subnautica2 && pic.partial &&
         Button("mapredo", "Refresh", ImVec2(o.x + w - S(130), o.y), ImVec2(S(130), S(34)), Btn::Ghost, ICON_REFRESH_CW, !mapsBusy))
         mapsReload = true;
 

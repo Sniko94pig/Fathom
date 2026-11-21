@@ -30,7 +30,7 @@ The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creat
 
 Minecraft: Java Edition needs Fabric. Press **Start game** on its page and Fathom makes a **Fathom** install in the Minecraft Launcher, with the newest Fabric API and the Fathom mod, `fathom_mc.jar`, which has all the cheats and Baritone inside. In the game, **Right Shift** opens the Fathom menu while you play. The menu needs OpenGL, so leave Graphics API on Default or Prefer OpenGL.
 
-The **Maps** tab in Fathom has the maps of Subnautica, Subnautica 2 and Sons of the Forest. Pick a game to open its map, then filter and search the places on it: lifepods, wrecks, Degasi bases and alien sites in Subnautica, and caves, bunkers and villages in Sons of the Forest. Scroll to zoom, drag to move and click a place to see where it is. The Subnautica and Sons of the Forest maps come with Fathom and are drawn from the games' own world data. Subnautica 2 shows the places you have been to; press **Scan whole map** on the game menu's Map page to draw the rest.
+The **Maps** tab in Fathom has the maps of Subnautica, Subnautica 2 and Sons of the Forest. Pick a game to open its map, then filter and search the places on it: lifepods, wrecks, Degasi bases and alien sites in Subnautica, and caves, bunkers and villages in Sons of the Forest. Scroll to zoom, drag to move and click a place to see where it is. All three maps come with Fathom, so they show even before you play. The Subnautica and Sons of the Forest maps are drawn from the games' own world data.
 
 ![Survival page](<games/Subnautica 2/shots/1-survival.png>)
 

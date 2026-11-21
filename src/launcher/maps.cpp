@@ -23,6 +23,7 @@ namespace {
 
 const int kSubnauticaPicture = 201;
 const int kSonsPicture = 202;
+const int kSubnautica2Picture = 203;
 
 std::thread worker;
 std::atomic<bool> stopping{false};
@@ -227,6 +228,8 @@ void Run(Request r) {
         } else if (g == SonsOfTheForest) {
             if (LoadBundled(kSonsPicture, img)) img.note = "The whole island, drawn from the game's terrain.";
             else img.note = "The map could not be opened.";
+        } else if (LoadBundled(kSubnautica2Picture, img)) {
+            img.note = "The whole map of Subnautica 2.";
         } else if (!r.found[g]) {
             img.note = "Subnautica 2 is not installed on this PC.";
         } else {

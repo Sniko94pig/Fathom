@@ -237,16 +237,7 @@ void LoadShotMaps(launcher::Home& home) {
         done = true;
         LoadShotPicture("assets/maps/subnautica.jpg", pics[0], "The whole map, drawn from Subnautica's world files.", false);
         LoadShotPicture("assets/maps/sonsoftheforest.jpg", pics[2], "The whole island, drawn from the game's terrain.", false);
-        char* sn2 = nullptr;
-        size_t len = 0;
-        _dupenv_s(&sn2, &len, "FATHOM_SHOT_MAP");
-        if (sn2) {
-            LoadShotPicture(sn2, pics[1], "Only the places you have been to.", true);
-            std::free(sn2);
-        } else {
-            pics[1].loaded = true;
-            pics[1].note = "Nothing is drawn yet. Open Spawner & Map in the game menu, then Map, and press Scan whole map.";
-        }
+        LoadShotPicture("assets/maps/subnautica2.jpg", pics[1], "The whole map of Subnautica 2.", false);
     }
     for (int g = 0; g < 3; ++g) home.mapPics[g] = pics[g];
 }
