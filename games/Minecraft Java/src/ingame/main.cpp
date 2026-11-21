@@ -143,9 +143,6 @@ void Frame() {
         }
         it = sliders.erase(it);
     }
-    ImGuiIO& io = ImGui::GetIO();
-    float fit = std::min(io.DisplaySize.x / 1000.0f, io.DisplaySize.y / 660.0f);
-    menu->uiScale = std::clamp(std::min(model.menuScale * overlay::Scale(), fit), 0.5f, 4.0f);
     menu->Frame();
     model.menuOpen = menu->open;
     if (model.requestUnload) {

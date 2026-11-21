@@ -14,7 +14,6 @@ struct Callbacks {
 bool Start(Callbacks cb);
 void Stop();
 bool Rendering();
-float Scale();
 int VirtualKeyFor(int imguiKey);
 
 }

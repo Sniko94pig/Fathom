@@ -144,7 +144,15 @@ void Menu::Unfocus() {
 
 void Menu::Frame() {
     PumpBackup();
-    T().scale = uiScale > 0.0f ? uiScale : m.menuScale;
+    float scale = uiScale > 0.0f ? uiScale : m.menuScale;
+    if (uiScale <= 0.0f && !embedded) {
+        ImVec2 vs = ImGui::GetMainViewport()->Size;
+        if (vs.x > 0.0f && vs.y > 0.0f) {
+            scale *= std::clamp(vs.y / 1080.0f, 1.0f, 3.0f);
+            scale = std::min(scale, std::max(0.5f, std::min(vs.x / (kW + 48.0f), vs.y / (kH + 48.0f))));
+        }
+    }
+    T().scale = scale;
     ApplyStyle();
     m.mapVisible = false;
     m.legitVisible = false;

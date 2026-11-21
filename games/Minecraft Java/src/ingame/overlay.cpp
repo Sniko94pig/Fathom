@@ -17,12 +17,10 @@ namespace {
 
 using SwapFn = BOOL(WINAPI*)(HDC);
 using BindFn = void(APIENTRY*)(GLenum, GLuint);
-using DpiFn = UINT(WINAPI*)(HWND);
 
 SwapFn oSwap = nullptr;
 void* tSwap = nullptr;
 BindFn bindFramebuffer = nullptr;
-DpiFn dpiForWindow = nullptr;
 
 Callbacks cbs;
 std::atomic<int> inflight{0};
@@ -333,7 +331,6 @@ bool Start(Callbacks cb) {
         LOG("the render hook could not be installed");
         return false;
     }
-    dpiForWindow = (DpiFn)GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
     LOG("render hook installed");
     return true;
 }
@@ -346,11 +343,6 @@ void Stop() {
 }
 
 bool Rendering() { return drawn.load() && !stopping.load(); }
-
-float Scale() {
-    UINT dpi = dpiForWindow && hwnd ? dpiForWindow(hwnd) : 96;
-    return std::clamp((float)dpi / 96.0f, 1.0f, 4.0f);
-}
 
 int VirtualKeyFor(int imguiKey) {
     for (int vk = 1; vk < 256; ++vk)
