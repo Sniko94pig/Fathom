@@ -1059,7 +1059,7 @@ bool LegitVisible() { return legitVisibleFlag.load(); }
 uint64_t lastScanFrame = 0;
 
 void TrackActors() {
-    bool need = MenuOpen() || On("esp") || On("item_esp");
+    bool need = MenuOpen() || On("esp") || On("item_esp") || scanForce;
     if (!need || !st.inWorld) return;
     uint64_t frame = overlay::FrameCount();
     if (frame == lastScanFrame) return;
@@ -1862,6 +1862,116 @@ void LoadSurvey() {
     LOG("map: %zu surveyed spots loaded for %s", survey.size(), surveyWorld.c_str());
     imageDirty = true;
 }
+
+struct SpotRec {
+    std::string kind, name;
+    float x = 0, y = 0, z = 0;
+};
+
+std::map<std::string, SpotRec> spots;
+std::string spotsWorld;
+bool spotsDirty = false;
+ULONGLONG lastSpotSave = 0, lastSpotPass = 0;
+
+std::wstring SpotsFile() {
+    std::wstring w(spotsWorld.begin(), spotsWorld.end());
+    return std::filesystem::path(iconDir).parent_path().wstring() + L"\\places_" + w + L".json";
+}
+
+std::string SpotKey(const SpotRec& r) {
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%s:%d:%d:%d", r.kind.c_str(), (int)std::lround(r.x / 3.0f), (int)std::lround(r.y / 3.0f),
+                  (int)std::lround(r.z / 3.0f));
+    return buf;
+}
+
+void LoadSpots() {
+    spots.clear();
+    spotsDirty = false;
+    std::ifstream in(SpotsFile());
+    if (!in) return;
+    nlohmann::json j = nlohmann::json::parse(in, nullptr, false);
+    if (!j.is_array()) return;
+    for (const auto& e : j) {
+        if (!e.is_object()) continue;
+        SpotRec r;
+        r.kind = e.value("kind", std::string());
+        r.name = e.value("name", std::string());
+        r.x = e.value("x", 0.0f);
+        r.y = e.value("y", 0.0f);
+        r.z = e.value("z", 0.0f);
+        if (!r.kind.empty()) spots[SpotKey(r)] = r;
+    }
+    LOG("map: %zu places loaded for %s", spots.size(), spotsWorld.c_str());
+}
+
+void SaveSpots() {
+    if (spotsWorld.empty()) return;
+    nlohmann::json j = nlohmann::json::array();
+    for (const auto& [k, r] : spots)
+        j.push_back({{"kind", r.kind}, {"name", r.name}, {"x", std::round(r.x * 10.0f) / 10.0f}, {"y", std::round(r.y * 10.0f) / 10.0f},
+                     {"z", std::round(r.z * 10.0f) / 10.0f}});
+    std::wstring file = SpotsFile(), tmp = file + L".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) return;
+        out << j.dump(1);
+        if (!out.good()) return;
+    }
+    if (MoveFileExW(tmp.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING)) spotsDirty = false;
+}
+
+const char* SpotKind(const Tracked& t) {
+    std::string cls = ue::Name(ue::ClassOf(t.actor));
+    if (t.kind == KSignal) {
+        if (cls.find("Beacon") != std::string::npos || cls == "BP_Lifepod_C") return nullptr;
+        return cls.find("Lifepod") != std::string::npos ? "lifepod" : "signal";
+    }
+    if (t.kind != KData || cls.find("PlayerDied") != std::string::npos) return nullptr;
+    if (cls.find("SupplyCrate") != std::string::npos) return "crate";
+    if (cls.find("SupplyLocker") != std::string::npos) return "locker";
+    if (cls.find("Terminal") != std::string::npos) return "terminal";
+    if (cls.find("Blackbox") != std::string::npos) return "blackbox";
+    if (cls.find("QuartzChip") != std::string::npos) return "chip";
+    return nullptr;
+}
+
+void RecordSpots() {
+    if (!st.inWorld || surveyWorld.empty() || iconDir.empty()) return;
+    ULONGLONG now = GetTickCount64();
+    if (now - lastSpotPass < 1000) return;
+    lastSpotPass = now;
+    if (spotsWorld != surveyWorld) {
+        if (spotsDirty) SaveSpots();
+        spotsWorld = surveyWorld;
+        LoadSpots();
+    }
+    for (const Tracked& t : tracked) {
+        if (t.kind != KSignal && t.kind != KData) continue;
+        if (!ue::Alive(t.actor)) continue;
+        const char* kind = SpotKind(t);
+        if (!kind) continue;
+        ue::FVector p;
+        if (!ActorPosFast(t.actor, p)) continue;
+        if (std::fabs(p.x) < 1 && std::fabs(p.y) < 1 && std::fabs(p.z) < 1) continue;
+        SpotRec r;
+        r.kind = kind;
+        r.name = std::strcmp(kind, "signal") == 0 ? SignalName(t.actor) : t.name;
+        r.x = (float)(p.x / 100);
+        r.y = (float)(p.y / 100);
+        r.z = (float)(p.z / 100);
+        std::string k = SpotKey(r);
+        if (spots.find(k) == spots.end()) {
+            spots[k] = r;
+            spotsDirty = true;
+        }
+    }
+    if (spotsDirty && now - lastSpotSave >= 5000) {
+        lastSpotSave = now;
+        SaveSpots();
+    }
+}
+
 
 bool TraceDown(double xm, double ym, double fromZ, float& hitZ, bool* water = nullptr) {
     static std::vector<void*> ignore(1);
@@ -2720,6 +2830,7 @@ void MoveScanCam(int tx, int ty) {
 
 void EndMapScan() {
     if (!mapRun.active) return;
+    if (spotsDirty) SaveSpots();
     if (ue::Alive(mapRun.pc)) {
         void* back = ControlledPawn(mapRun.pc);
         if (back) SetViewTarget(mapRun.pc, back);
@@ -5246,6 +5357,7 @@ void Tick() {
     FrameTick();
     TickMapScan();
     TrackActors();
+    RecordSpots();
     UpdateEsp();
     ClearCooldowns();
     UpdateItemEsp();
