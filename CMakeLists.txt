@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.9.1)
+set(FATHOM_VERSION 1.10.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -98,6 +98,7 @@ if(WIN32)
     src/launcher/games.cpp
     src/launcher/art.cpp
     src/launcher/mc_link.cpp
+    src/launcher/maps.cpp
     src/launcher/prefs.cpp
     ${SN1}/core/sn1_features.cpp
     ${SOTF}/core/sotf_features.cpp

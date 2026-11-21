@@ -6,6 +6,7 @@
 #include "launcher/inject.h"
 #include "launcher/game_inject.h"
 #include "launcher/mc_link.h"
+#include "launcher/maps.h"
 #include "core/sn1_features.h"
 #include "core/sotf_features.h"
 #include "core/mc_features.h"
@@ -335,6 +336,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->embedded = true;
         mm->homePage = [&home, mm] {
             home.mine = mm->ActiveHome() == 1;
+            home.maps = mm->ActiveHome() == 2;
             home.Draw();
         };
         mm->homeName = "Games";
@@ -387,6 +389,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     launcher::art::Start(wantedArt, artDir, loader.s.webArt);
     struct ArtTex { ID3D12Resource* tex; D3D12_CPU_DESCRIPTOR_HANDLE cpu; D3D12_GPU_DESCRIPTOR_HANDLE gpu; };
     std::vector<ArtTex> artTex;
+    ArtTex mapTex[launcher::maps::Count] = {};
+    bool mapsStarted = false;
 
     ImGui_ImplWin32_Init(hwnd);
 
@@ -587,7 +591,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             if (inGame)
                 mainMenu.homeTabs.clear();
             else if (mainMenu.homeTabs.empty())
+            {
                 mainMenu.homeTabs.push_back({ "My games", ICON_GAMEPAD_2 });
+                mainMenu.homeTabs.push_back({ "Maps", ICON_MAP });
+            }
             const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : model;
             home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;
@@ -665,6 +672,68 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 }
                 artTex.push_back({ tex, cpu, gpu });
                 home.art[launcher::ArtKey(img.appId, img.kind)] = { (ImTextureID)gpu.ptr, (float)img.width, (float)img.height };
+            }
+        }
+        if ((home.mapsWanted && !mapsStarted) || (home.mapsReload && !launcher::maps::Busy()))
+        {
+            mapsStarted = true;
+            bool redraw = home.mapsRedraw;
+            home.mapsReload = home.mapsRedraw = false;
+            launcher::maps::Request r;
+            const inject::Paths* gp[launcher::maps::Count] = { &home.sn1Paths, &home.paths, &home.sotfPaths };
+            for (int g = 0; g < launcher::maps::Count; ++g)
+            {
+                r.root[g] = gp[g]->win64;
+                r.folder[g] = gp[g]->folder;
+                r.found[g] = gp[g]->found;
+            }
+            r.redraw = redraw;
+            WaitForPendingOperations();
+            for (int g = 0; g < launcher::maps::Count; ++g)
+            {
+                if (mapTex[g].tex)
+                {
+                    mapTex[g].tex->Release();
+                    g_pd3dSrvDescHeapAlloc.Free(mapTex[g].cpu, mapTex[g].gpu);
+                }
+                mapTex[g] = {};
+                home.mapPics[g] = launcher::MapPic();
+            }
+            launcher::maps::Start(r);
+        }
+        home.mapsBusy = launcher::maps::Busy();
+        for (int g = 0; g < launcher::maps::Count; ++g)
+            home.mapStatus[g] = launcher::maps::Status(g);
+        {
+            launcher::maps::Image mi;
+            while (launcher::maps::Take(mi))
+            {
+                if (mi.game < 0 || mi.game >= launcher::maps::Count)
+                    continue;
+                launcher::MapPic pic;
+                pic.loaded = true;
+                pic.note = mi.note;
+                pic.partial = mi.partial;
+                for (const launcher::maps::Label& l : mi.labels)
+                    pic.labels.push_back({ l.name, l.u, l.v, l.area, l.reach });
+                if (mi.width > 0 && mi.height > 0)
+                {
+                    D3D12_CPU_DESCRIPTOR_HANDLE cpu;
+                    D3D12_GPU_DESCRIPTOR_HANDLE gpu;
+                    g_pd3dSrvDescHeapAlloc.Alloc(&cpu, &gpu);
+                    ID3D12Resource* tex = dx12::CreateTexture(g_pd3dDevice, g_pd3dCommandQueue, mi.rgba.data(), mi.width, mi.height, cpu);
+                    if (tex)
+                    {
+                        mapTex[mi.game] = { tex, cpu, gpu };
+                        pic.tex = (ImTextureID)gpu.ptr;
+                        pic.w = (float)mi.width;
+                        pic.h = (float)mi.height;
+                    }
+                    else
+                        g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
+                }
+                home.mapZoom[mi.game] = 0;
+                home.mapPics[mi.game] = std::move(pic);
             }
         }
         if (!home.logPath.empty())
@@ -907,10 +976,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(ukModel);
 
     launcher::art::Stop();
+    launcher::maps::Stop();
     launcher::update::Wait();
     WaitForPendingOperations();
     for (const ArtTex& t : artTex)
         t.tex->Release();
+    for (const ArtTex& t : mapTex)
+        if (t.tex)
+            t.tex->Release();
     if (iconTex)
         iconTex->Release();
     if (logoTex)

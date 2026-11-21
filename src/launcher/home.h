@@ -12,6 +12,22 @@ struct Art {
     float w = 0, h = 0;
 };
 
+struct MapLabel {
+    std::string name;
+    float u = 0, v = 0;
+    bool area = true;
+    float reach = 0;
+};
+
+struct MapPic {
+    ImTextureID tex = 0;
+    float w = 0, h = 0;
+    std::vector<MapLabel> labels;
+    std::string note;
+    bool partial = false;
+    bool loaded = false;
+};
+
 struct Home {
     inject::Paths paths;
     inject::GameState state = inject::GameState::NotRunning;
@@ -48,6 +64,17 @@ struct Home {
     std::string mcStep;
     std::wstring mcMods;
     std::wstring mcLog;
+    bool maps = false;
+    bool mapsWanted = false;
+    bool mapsReload = false;
+    bool mapsRedraw = false;
+    bool mapsBusy = false;
+    int mapGame = 0;
+    MapPic mapPics[3];
+    std::string mapStatus[3];
+    float mapZoom[3] = {0, 0, 0};
+    float mapCx[3] = {0.5f, 0.5f, 0.5f};
+    float mapCy[3] = {0.5f, 0.5f, 0.5f};
     std::unordered_map<long long, Art> art;
     void Draw();
 
@@ -56,6 +83,7 @@ private:
     void DrawGame();
     void DrawGameCards(float top, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName);
     void DrawMinecraftCards(float top, float w, ImVec2 o);
+    void DrawMaps();
     const Art* Find(int appId, int kind) const;
 };
 

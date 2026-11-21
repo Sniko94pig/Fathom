@@ -114,7 +114,130 @@ const Art* Home::Find(int appId, int kind) const {
 
 void Home::Draw() {
     if (game >= 0 && game < (int)Games().size()) DrawGame();
+    else if (maps) DrawMaps();
     else DrawLibrary();
+}
+
+void Home::DrawMaps() {
+    mapsWanted = true;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 o = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x, avail = ImGui::GetContentRegionAvail().y;
+    static const char* names[3] = {"Subnautica", "Subnautica 2", "Sons of the Forest"};
+    float x = o.x;
+    for (int g = 0; g < 3; ++g) {
+        std::string id = "mapgame" + std::to_string(g);
+        if (Chip(id.c_str(), names[g], ImVec2(x, o.y), mapGame == g)) mapGame = g;
+        x += ChipWidth(names[g]) + S(8);
+    }
+    MapPic& pic = mapPics[mapGame];
+    const std::string& status = mapStatus[mapGame];
+    float bw = S(150);
+    if (Button("mapredo", mapGame == 0 ? "Draw again" : "Refresh", ImVec2(o.x + w - bw, o.y - S(2)), ImVec2(bw, S(34)), Btn::Ghost, ICON_REFRESH_CW,
+               !mapsBusy)) {
+        mapsRedraw = mapGame == 0;
+        mapsReload = true;
+    }
+    float top = o.y + S(48), h = std::max(S(280), avail - S(48) - S(40));
+    ImVec2 a(o.x, top), b(o.x + w, top + h), c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+    dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
+    if (pic.tex && pic.w > 0 && pic.h > 0) {
+        float fit = std::min(w / pic.w, h / pic.h);
+        float& zoom = mapZoom[mapGame];
+        float& cu = mapCx[mapGame];
+        float& cv = mapCy[mapGame];
+        if (zoom <= 0) zoom = fit;
+        ImGuiIO& io = ImGui::GetIO();
+        ImGui::SetCursorScreenPos(a);
+        ImGui::InvisibleButton("mapview", ImVec2(w, h));
+        bool hov = ImGui::IsItemHovered();
+        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 0.0f)) {
+            cu -= io.MouseDelta.x / (zoom * pic.w);
+            cv -= io.MouseDelta.y / (zoom * pic.h);
+        }
+        if (hov && io.MouseWheel != 0.0f) {
+            float mu = cu + (io.MousePos.x - c.x) / (zoom * pic.w), mv = cv + (io.MousePos.y - c.y) / (zoom * pic.h);
+            zoom = std::clamp(zoom * std::pow(1.2f, io.MouseWheel), fit * 0.8f, fit * 14.0f);
+            cu = mu - (io.MousePos.x - c.x) / (zoom * pic.w);
+            cv = mv - (io.MousePos.y - c.y) / (zoom * pic.h);
+        }
+        if (hov && ImGui::IsMouseDoubleClicked(0)) {
+            zoom = fit;
+            cu = cv = 0.5f;
+        }
+        cu = std::clamp(cu, 0.0f, 1.0f);
+        cv = std::clamp(cv, 0.0f, 1.0f);
+        auto toScreen = [&](float u, float v) { return ImVec2(c.x + (u - cu) * pic.w * zoom, c.y + (v - cv) * pic.h * zoom); };
+        dl->PushClipRect(a, b, true);
+        dl->AddImage(pic.tex, toScreen(0, 0), toScreen(1, 1));
+        bool close = zoom >= fit * 2.2f;
+        const MapLabel* hot = nullptr;
+        bool hotNamed = false;
+        std::vector<ImVec4> used;
+        auto room = [&](ImVec2 p0, ImVec2 p1) {
+            for (const ImVec4& r : used)
+                if (p0.x < r.z && p1.x > r.x && p0.y < r.w && p1.y > r.y) return false;
+            used.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+            return true;
+        };
+        auto inView = [&](ImVec2 p) { return p.x > a.x - S(80) && p.x < b.x + S(80) && p.y > a.y - S(20) && p.y < b.y + S(20); };
+        float pad = S(6);
+        std::vector<std::pair<const std::string*, ImVec2>> named;
+        for (const MapLabel& l : pic.labels) {
+            ImVec2 p = toScreen(l.u, l.v);
+            if (!l.area || !inView(p)) continue;
+            bool twice = false;
+            for (const auto& n : named)
+                if (*n.first == l.name && std::hypot(n.second.x - p.x, n.second.y - p.y) < S(240)) twice = true;
+            if (twice) continue;
+            ImVec2 ts = MeasureUpper(T().semibold, 11, l.name.c_str());
+            float reach = l.reach * pic.w * zoom;
+            static const ImVec2 moves[] = {{0, 0}, {0, -1}, {0, 1}, {-0.5f, 0}, {0.5f, 0}, {-0.5f, -1}, {0.5f, -1}, {-0.5f, 1}, {0.5f, 1}};
+            for (const ImVec2& m : moves) {
+                ImVec2 shift(m.x * (ts.x * 0.5f + pad), m.y * (ts.y + pad));
+                if (std::hypot(shift.x, shift.y) > reach && (m.x != 0 || m.y != 0)) continue;
+                ImVec2 tp(std::floor(p.x + shift.x - ts.x * 0.5f), std::floor(p.y + shift.y - ts.y * 0.5f));
+                if (!room(ImVec2(tp.x - pad, tp.y - pad * 0.5f), ImVec2(tp.x + ts.x + pad, tp.y + ts.y + pad * 0.5f))) continue;
+                Upper(dl, T().semibold, 11, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), l.name.c_str());
+                Upper(dl, T().semibold, 11, tp, White(0.95f), l.name.c_str());
+                named.push_back({&l.name, p});
+                break;
+            }
+        }
+        for (const MapLabel& l : pic.labels) {
+            ImVec2 p = toScreen(l.u, l.v);
+            if (l.area || !inView(p)) continue;
+            Diamond(dl, p, S(4.5f), Accent());
+            bool shown = false;
+            if (close) {
+                ImVec2 ts = Measure(T().medium, 11.5f, l.name.c_str());
+                ImVec2 tp(std::floor(p.x + S(8)), std::floor(p.y - S(8)));
+                shown = room(tp, ImVec2(tp.x + ts.x + pad, tp.y + ts.y));
+                if (shown) {
+                    Text(dl, T().medium, 11.5f, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), l.name.c_str());
+                    Text(dl, T().medium, 11.5f, tp, White(0.92f), l.name.c_str());
+                }
+            }
+            if (hov && std::hypot(io.MousePos.x - p.x, io.MousePos.y - p.y) < S(10)) {
+                hot = &l;
+                hotNamed = shown;
+            }
+        }
+        dl->PopClipRect();
+        if (hot && !hotNamed) Tip(hot->name.c_str());
+    } else {
+        std::string msg = !status.empty() ? status + "\xe2\x80\xa6" : pic.loaded ? pic.note : "Loading the map\xe2\x80\xa6";
+        float tw = std::min(w - S(64), S(520));
+        ImGui::PushFont(T().regular, S(13));
+        ImVec2 ts = ImGui::CalcTextSize(msg.c_str(), nullptr, false, tw);
+        ImGui::PopFont();
+        Text(dl, T().regular, 13, ImVec2(std::floor(c.x - ts.x * 0.5f), std::floor(c.y - ts.y * 0.5f)), White(0.6f), msg.c_str(), tw);
+    }
+    dl->AddRect(a, b, White(0.07f));
+    std::string foot = !status.empty() ? status + "\xe2\x80\xa6" : pic.tex ? pic.note + "  Scroll to zoom, drag to move, double-click to see it all." : std::string();
+    TextFit(dl, T().regular, 12, ImVec2(o.x, b.y + S(12)), w, White(0.5f), foot.c_str());
+    ImGui::SetCursorScreenPos(o);
+    ImGui::Dummy(ImVec2(w, b.y + S(34) - o.y));
 }
 
 void Home::DrawLibrary() {
