@@ -1,6 +1,7 @@
 #include "launcher/home.h"
 #include "launcher/art.h"
 #include "launcher/games.h"
+#include "launcher/maps.h"
 #include "ui/icons.h"
 #include "ui/ui.h"
 #include <windows.h>
@@ -8,12 +9,15 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <vector>
 
 namespace launcher {
 
 using namespace ui;
+namespace mapdata = launcher::maps;
 
 namespace {
 
@@ -120,59 +124,261 @@ void Home::Draw() {
 
 void Home::DrawMaps() {
     mapsWanted = true;
+    if (mapGame < 0 || mapGame >= mapdata::Count) DrawMapList();
+    else DrawMapView();
+}
+
+void Home::DrawMapList() {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 o = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x;
+    Text(dl, T().regular, 13, o, White(0.55f), "Pick a game to open its map. Every place is marked, and you can filter and search them.");
+    float gap = S(16), top = o.y + S(36);
+    int cols = w >= S(600) ? 3 : 2;
+    float cw = std::floor((w - gap * (cols - 1)) / cols), ph = std::floor(cw * 0.66f), ch = ph + S(64);
+    for (int g = 0; g < mapdata::Count; ++g) {
+        const MapPic& pic = mapPics[g];
+        ImVec2 a(o.x + (g % cols) * (cw + gap), top + (g / cols) * (ch + gap));
+        ImGui::SetCursorScreenPos(a);
+        ImGui::PushID(g);
+        bool clicked = ImGui::InvisibleButton("mapcard", ImVec2(cw, ch));
+        bool hov = ImGui::IsItemHovered();
+        float hv = Ease(ImGui::GetID("hover"), hov ? 1.0f : 0.0f, 18.0f);
+        ImGui::PopID();
+        float lift = std::floor(hv * S(3));
+        ImVec2 pa(a.x, a.y - lift), pb(a.x + cw, a.y + ph - lift);
+        dl->AddRectFilled(pa, pb, ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
+        if (pic.tex && pic.w > 0 && pic.h > 0) {
+            float zoom = 1.0f + 0.05f * hv;
+            float ar = (pb.x - pa.x) / (pb.y - pa.y), pr = pic.w / pic.h;
+            float uw = std::min(1.0f, ar / pr) / zoom, vh = std::min(1.0f, pr / ar) / zoom;
+            dl->AddImage(pic.tex, pa, pb, ImVec2(0.5f - uw * 0.5f, 0.5f - vh * 0.5f), ImVec2(0.5f + uw * 0.5f, 0.5f + vh * 0.5f));
+        } else {
+            Icon(dl, ImVec2((pa.x + pb.x) * 0.5f, (pa.y + pb.y) * 0.5f - S(10)), S(34), White(0.18f), ICON_MAP);
+            const char* msg = !mapStatus[g].empty() ? mapStatus[g].c_str() : pic.loaded ? "Not drawn yet" : "Loading\xe2\x80\xa6";
+            ImVec2 ms = Measure(T().regular, 12, msg);
+            Text(dl, T().regular, 12, ImVec2(std::floor((pa.x + pb.x - ms.x) * 0.5f), (pa.y + pb.y) * 0.5f + S(18)), White(0.45f), msg);
+        }
+        dl->AddRectFilledMultiColor(ImVec2(pa.x, pb.y - ph * 0.35f), pb, Bg(0.0f), Bg(0.0f), Bg(0.85f), Bg(0.85f));
+        dl->AddRect(pa, pb, hv > 0.01f ? Mix(ImVec4(1, 1, 1, 0.07f), T().accent, hv, 0.9f) : White(0.07f));
+        dl->AddRectFilled(ImVec2(pa.x, pb.y - S(4)), pb, Accent(0.35f + 0.65f * hv));
+        const char* badge = !pic.tex ? (pic.loaded ? "Not drawn yet" : "Loading") : pic.partial ? "Partly drawn" : "Full map";
+        ImVec2 bs = MeasureUpper(T().semibold, 10, badge);
+        ImVec2 ba(pa.x + S(10), pa.y + S(10)), bb(ba.x + bs.x + S(18), ba.y + S(20));
+        ImU32 bcol = !pic.tex ? Black(0.72f) : pic.partial ? ImGui::GetColorU32(ImVec4(0.98f, 0.74f, 0.30f, 1.0f)) : Accent();
+        Para(dl, ba, bb, bcol);
+        Upper(dl, T().semibold, 10, ImVec2(ba.x + S(9), ba.y + (S(20) - bs.y) * 0.5f), pic.partial && pic.tex ? Black(0.9f) : White(0.95f), badge);
+        Upper(dl, T().semibold, 18, ImVec2(pa.x + S(14), pb.y - S(36)), White(0.98f), mapdata::Title(g));
+        int kc = 0, pc = 0;
+        const mapdata::Kind* kinds = mapdata::Kinds(g, kc);
+        const mapdata::Place* places = mapdata::Places(g, pc);
+        std::string line;
+        for (int k = 0; k < kc; ++k) {
+            int n = 0;
+            for (int i = 0; i < pc; ++i) n += places[i].kind == k;
+            if (!line.empty()) line += "  \xc2\xb7  ";
+            line += std::to_string(n) + " " + Lower(kinds[k].name);
+        }
+        if (line.empty()) line = pic.partial ? "Shows the places you have been to" : "No places marked for this game yet";
+        float ly = a.y + ph + S(12);
+        float x = a.x;
+        for (int k = 0; k < kc && k < 6; ++k) {
+            Diamond(dl, ImVec2(x + S(4), ly + S(8)), S(4), IM_COL32(kinds[k].r, kinds[k].g, kinds[k].b, 255));
+            x += S(11);
+        }
+        TextFit(dl, T().regular, 12, ImVec2(x + (kc ? S(4) : 0), ly), a.x + cw - x - S(4), White(0.6f), line.c_str());
+        Text(dl, T().regular, 11.5f, ImVec2(a.x, ly + S(22)), White(0.38f), pc ? (std::to_string(pc) + " places, click to open").c_str() : "Click to open");
+        if (clicked) {
+            mapGame = g;
+            mapSearch.clear();
+        }
+    }
+    int rows = (mapdata::Count + cols - 1) / cols;
+    ImGui::SetCursorScreenPos(o);
+    ImGui::Dummy(ImVec2(w, top + rows * (ch + gap) - o.y));
+}
+
+void Home::DrawMapView() {
+    const int gi = mapGame;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 o = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x, avail = ImGui::GetContentRegionAvail().y;
-    static const char* names[3] = {"Subnautica", "Subnautica 2", "Sons of the Forest"};
-    float x = o.x;
-    for (int g = 0; g < 3; ++g) {
-        std::string id = "mapgame" + std::to_string(g);
-        if (Chip(id.c_str(), names[g], ImVec2(x, o.y), mapGame == g)) mapGame = g;
-        x += ChipWidth(names[g]) + S(8);
+    MapPic& pic = mapPics[gi];
+    const std::string& status = mapStatus[gi];
+    int kc = 0, pc = 0, ac = 0;
+    const mapdata::Kind* kinds = mapdata::Kinds(gi, kc);
+    const mapdata::Place* places = mapdata::Places(gi, pc);
+    const mapdata::Area* areas = mapdata::Areas(gi, ac);
+    float wx0 = 0, wz0 = 0, wx1 = 1, wz1 = 1;
+    bool world = mapdata::World(gi, wx0, wz0, wx1, wz1);
+    auto toUv = [&](float x, float z) { return ImVec2((x - wx0) / (wx1 - wx0), (wz1 - z) / (wz1 - wz0)); };
+    auto kindCol = [&](int k, float alpha) { return IM_COL32(kinds[k].r, kinds[k].g, kinds[k].b, (int)(alpha * 255)); };
+
+    if (Button("mapback", "All maps", o, ImVec2(S(124), S(34)), Btn::Ghost, ICON_ARROW_LEFT)) {
+        mapGame = -1;
+        ImGui::SetCursorScreenPos(o);
+        ImGui::Dummy(ImVec2(w, S(40)));
+        return;
     }
-    MapPic& pic = mapPics[mapGame];
-    const std::string& status = mapStatus[mapGame];
-    float bw = S(150);
-    if (Button("mapredo", mapGame == 0 ? "Draw again" : "Refresh", ImVec2(o.x + w - bw, o.y - S(2)), ImVec2(bw, S(34)), Btn::Ghost, ICON_REFRESH_CW,
-               !mapsBusy)) {
-        mapsRedraw = mapGame == 0;
+    Upper(dl, T().semibold, 18, ImVec2(o.x + S(142), o.y + S(7)), White(0.98f), mapdata::Title(gi));
+    if (gi == mapdata::Subnautica2 &&
+        Button("mapredo", "Refresh", ImVec2(o.x + w - S(130), o.y), ImVec2(S(130), S(34)), Btn::Ghost, ICON_REFRESH_CW, !mapsBusy))
         mapsReload = true;
+
+    float top = o.y + S(50), h = std::max(S(320), avail - S(50) - S(34));
+    float side = kc > 0 ? S(256) : 0.0f, sgap = kc > 0 ? S(16) : 0.0f;
+    std::string q = Lower(mapSearch);
+    auto visible = [&](int i) {
+        const mapdata::Place& p = places[i];
+        if (p.kind < 0 || p.kind >= 8 || mapHidden[gi][p.kind]) return false;
+        if (q.empty()) return true;
+        return Lower(p.name).find(q) != std::string::npos || Lower(p.note).find(q) != std::string::npos ||
+               Lower(kinds[p.kind].name).find(q) != std::string::npos;
+    };
+    bool fly = false;
+    if (kc > 0) {
+        ImVec2 sa(o.x, top), sb(o.x + side, top + h);
+        dl->AddRectFilled(sa, sb, White(0.03f));
+        dl->AddRect(sa, sb, White(0.06f));
+        float y = top + S(12);
+        Input("mapsearch", &mapSearch, "Search places", ImVec2(sa.x + S(12), y), side - S(24), ICON_SEARCH);
+        y += S(50);
+        Upper(dl, T().semibold, 10.5f, ImVec2(sa.x + S(14), y), White(0.5f), "Show on the map");
+        y += S(20);
+        int rowsTotal = kc + (ac > 0 ? 1 : 0);
+        for (int r = 0; r < rowsTotal; ++r) {
+            bool isArea = r == kc;
+            bool on = isArea ? mapAreaNames[gi] : !mapHidden[gi][r];
+            ImVec2 ra(sa.x + S(6), y), rb(sb.x - S(6), y + S(30));
+            ImGui::SetCursorScreenPos(ra);
+            ImGui::PushID(1000 + r);
+            if (ImGui::InvisibleButton("kind", ImVec2(rb.x - ra.x, rb.y - ra.y))) {
+                if (isArea) mapAreaNames[gi] = !mapAreaNames[gi];
+                else mapHidden[gi][r] = !mapHidden[gi][r];
+            }
+            bool rh = ImGui::IsItemHovered();
+            ImGui::PopID();
+            if (rh) dl->AddRectFilled(ra, rb, White(0.04f));
+            ImVec2 c(ra.x + S(18), (ra.y + rb.y) * 0.5f);
+            ImU32 col = isArea ? White(on ? 0.85f : 0.3f) : kindCol(r, on ? 1.0f : 0.3f);
+            dl->AddCircleFilled(c, S(10), col, 20);
+            Icon(dl, c, S(11.5f), Black(0.8f), isArea ? ICON_LANDMARK : kinds[r].icon);
+            Text(dl, T().medium, 12.5f, ImVec2(ra.x + S(36), ra.y + S(7)), White(on ? 0.92f : 0.4f), isArea ? "Area names" : kinds[r].name);
+            ImVec2 bx(rb.x - S(24), c.y - S(8)), by(rb.x - S(8), c.y + S(8));
+            dl->AddRect(bx, by, White(on ? 0.0f : 0.25f), 0.0f, S(1.5f));
+            if (on) {
+                dl->AddRectFilled(bx, by, Accent());
+                Icon(dl, ImVec2((bx.x + by.x) * 0.5f, (bx.y + by.y) * 0.5f), S(11), White(), ICON_CHECK);
+            }
+            if (!isArea) {
+                int n = 0;
+                for (int i = 0; i < pc; ++i) n += places[i].kind == r;
+                std::string cnt = std::to_string(n);
+                TextRight(dl, T().regular, 11.5f, ImVec2(bx.x - S(8), ra.y + S(8)), White(0.4f), cnt.c_str());
+            }
+            y += S(30);
+        }
+        y += S(10);
+        dl->AddLine(ImVec2(sa.x + S(12), y), ImVec2(sb.x - S(12), y), White(0.06f));
+        y += S(12);
+        std::vector<int> list;
+        for (int i = 0; i < pc; ++i)
+            if (visible(i)) list.push_back(i);
+        std::string head = "Places (" + std::to_string(list.size()) + ")";
+        Upper(dl, T().semibold, 10.5f, ImVec2(sa.x + S(14), y), White(0.5f), head.c_str());
+        y += S(22);
+        float lh = sb.y - S(8) - y;
+        if (lh > S(40)) {
+            ImGui::SetCursorScreenPos(ImVec2(sa.x + S(4), y));
+            ImGui::BeginChild("mapplaces", ImVec2(side - S(8), lh), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+            ImDrawList* cl = ImGui::GetWindowDrawList();
+            ImVec2 co = ImGui::GetCursorScreenPos();
+            float rw = ImGui::GetContentRegionAvail().x, rh = S(44);
+            for (size_t n = 0; n < list.size(); ++n) {
+                int i = list[n];
+                const mapdata::Place& p = places[i];
+                ImVec2 ra(co.x, co.y + n * rh), rb(co.x + rw, co.y + (n + 1) * rh);
+                ImGui::SetCursorScreenPos(ra);
+                ImGui::PushID(i);
+                bool hit = ImGui::InvisibleButton("place", ImVec2(rw, rh));
+                bool hovered = ImGui::IsItemHovered();
+                ImGui::PopID();
+                bool sel = mapPick[gi] == i;
+                if (sel) cl->AddRectFilled(ra, rb, Accent(0.16f));
+                else if (hovered) cl->AddRectFilled(ra, rb, White(0.04f));
+                if (sel) cl->AddRectFilled(ra, ImVec2(ra.x + S(3), rb.y), Accent());
+                ImVec2 c(ra.x + S(20), ra.y + rh * 0.5f);
+                cl->AddCircleFilled(c, S(9), kindCol(p.kind, 1.0f), 18);
+                Icon(cl, c, S(10.5f), Black(0.8f), kinds[p.kind].icon);
+                TextFit(cl, T().medium, 12.5f, ImVec2(ra.x + S(38), ra.y + S(6)), rw - S(44), White(0.92f), p.name);
+                const char* sub = p.note && *p.note ? p.note : kinds[p.kind].name;
+                TextFit(cl, T().regular, 11, ImVec2(ra.x + S(38), ra.y + S(24)), rw - S(44), White(0.45f), sub);
+                if (hit) {
+                    mapPick[gi] = i;
+                    fly = true;
+                }
+            }
+            if (list.empty()) Text(cl, T().regular, 12, ImVec2(co.x + S(10), co.y + S(6)), White(0.45f), "Nothing found");
+            ImGui::SetCursorScreenPos(co);
+            ImGui::Dummy(ImVec2(rw, std::max(1.0f, list.size() * rh)));
+            ImGui::EndChild();
+            dl = ImGui::GetWindowDrawList();
+        }
     }
-    float top = o.y + S(48), h = std::max(S(280), avail - S(48) - S(40));
-    ImVec2 a(o.x, top), b(o.x + w, top + h), c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+
+    ImVec2 a(o.x + side + sgap, top), b(o.x + w, top + h), c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+    float cw = b.x - a.x;
     dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
     if (pic.tex && pic.w > 0 && pic.h > 0) {
-        float fit = std::min(w / pic.w, h / pic.h);
-        float& zoom = mapZoom[mapGame];
-        float& cu = mapCx[mapGame];
-        float& cv = mapCy[mapGame];
+        float fit = std::min(cw / pic.w, h / pic.h);
+        float& zoom = mapZoom[gi];
+        float& cu = mapCx[gi];
+        float& cv = mapCy[gi];
         if (zoom <= 0) zoom = fit;
-        ImGuiIO& io = ImGui::GetIO();
+        float zmin = fit * 0.8f, zmax = fit * 16.0f;
+        if (fly && mapPick[gi] >= 0 && world) {
+            ImVec2 uv = toUv(places[mapPick[gi]].x, places[mapPick[gi]].z);
+            mapFly[gi] = 1.0f;
+            mapFlyU[gi] = uv.x;
+            mapFlyV[gi] = uv.y;
+            mapFlyZoom[gi] = std::clamp(std::max(zoom, fit * 4.0f), zmin, zmax);
+        }
         ImGui::SetCursorScreenPos(a);
-        ImGui::InvisibleButton("mapview", ImVec2(w, h));
+        ImGui::SetNextItemAllowOverlap();
+        ImGui::InvisibleButton("mapview", ImVec2(cw, h));
         bool hov = ImGui::IsItemHovered();
-        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 0.0f)) {
+        bool dragging = ImGui::IsItemActive() && ImGui::IsMouseDragging(0, S(3));
+        if (dragging) {
             cu -= io.MouseDelta.x / (zoom * pic.w);
             cv -= io.MouseDelta.y / (zoom * pic.h);
+            mapFly[gi] = 0;
         }
-        if (hov && io.MouseWheel != 0.0f) {
-            float mu = cu + (io.MousePos.x - c.x) / (zoom * pic.w), mv = cv + (io.MousePos.y - c.y) / (zoom * pic.h);
-            zoom = std::clamp(zoom * std::pow(1.2f, io.MouseWheel), fit * 0.8f, fit * 14.0f);
-            cu = mu - (io.MousePos.x - c.x) / (zoom * pic.w);
-            cv = mv - (io.MousePos.y - c.y) / (zoom * pic.h);
-        }
+        auto zoomAt = [&](ImVec2 at, float nz) {
+            float mu = cu + (at.x - c.x) / (zoom * pic.w), mv = cv + (at.y - c.y) / (zoom * pic.h);
+            zoom = std::clamp(nz, zmin, zmax);
+            cu = mu - (at.x - c.x) / (zoom * pic.w);
+            cv = mv - (at.y - c.y) / (zoom * pic.h);
+            mapFly[gi] = 0;
+        };
+        if (hov && io.MouseWheel != 0.0f) zoomAt(io.MousePos, zoom * std::pow(1.2f, io.MouseWheel));
         if (hov && ImGui::IsMouseDoubleClicked(0)) {
-            zoom = fit;
-            cu = cv = 0.5f;
+            mapFly[gi] = 1.0f;
+            mapFlyU[gi] = mapFlyV[gi] = 0.5f;
+            mapFlyZoom[gi] = fit;
+        }
+        if (mapFly[gi] > 0) {
+            float t = 1.0f - std::exp(-Dt() * 9.0f);
+            cu += (mapFlyU[gi] - cu) * t;
+            cv += (mapFlyV[gi] - cv) * t;
+            zoom += (mapFlyZoom[gi] - zoom) * t;
+            if (std::fabs(mapFlyU[gi] - cu) < 1e-4f && std::fabs(mapFlyV[gi] - cv) < 1e-4f && std::fabs(mapFlyZoom[gi] - zoom) < fit * 0.002f) mapFly[gi] = 0;
         }
         cu = std::clamp(cu, 0.0f, 1.0f);
         cv = std::clamp(cv, 0.0f, 1.0f);
         auto toScreen = [&](float u, float v) { return ImVec2(c.x + (u - cu) * pic.w * zoom, c.y + (v - cv) * pic.h * zoom); };
         dl->PushClipRect(a, b, true);
         dl->AddImage(pic.tex, toScreen(0, 0), toScreen(1, 1));
-        bool close = zoom >= fit * 2.2f;
-        const MapLabel* hot = nullptr;
-        bool hotNamed = false;
         std::vector<ImVec4> used;
         auto room = [&](ImVec2 p0, ImVec2 p1) {
             for (const ImVec4& r : used)
@@ -182,62 +388,135 @@ void Home::DrawMaps() {
         };
         auto inView = [&](ImVec2 p) { return p.x > a.x - S(80) && p.x < b.x + S(80) && p.y > a.y - S(20) && p.y < b.y + S(20); };
         float pad = S(6);
-        std::vector<std::pair<const std::string*, ImVec2>> named;
-        for (const MapLabel& l : pic.labels) {
-            ImVec2 p = toScreen(l.u, l.v);
-            if (!l.area || !inView(p)) continue;
-            bool twice = false;
-            for (const auto& n : named)
-                if (*n.first == l.name && std::hypot(n.second.x - p.x, n.second.y - p.y) < S(240)) twice = true;
-            if (twice) continue;
-            ImVec2 ts = MeasureUpper(T().semibold, 11, l.name.c_str());
-            float reach = l.reach * pic.w * zoom;
-            static const ImVec2 moves[] = {{0, 0}, {0, -1}, {0, 1}, {-0.5f, 0}, {0.5f, 0}, {-0.5f, -1}, {0.5f, -1}, {-0.5f, 1}, {0.5f, 1}};
-            for (const ImVec2& m : moves) {
-                ImVec2 shift(m.x * (ts.x * 0.5f + pad), m.y * (ts.y + pad));
-                if (std::hypot(shift.x, shift.y) > reach && (m.x != 0 || m.y != 0)) continue;
-                ImVec2 tp(std::floor(p.x + shift.x - ts.x * 0.5f), std::floor(p.y + shift.y - ts.y * 0.5f));
-                if (!room(ImVec2(tp.x - pad, tp.y - pad * 0.5f), ImVec2(tp.x + ts.x + pad, tp.y + ts.y + pad * 0.5f))) continue;
-                Upper(dl, T().semibold, 11, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), l.name.c_str());
-                Upper(dl, T().semibold, 11, tp, White(0.95f), l.name.c_str());
-                named.push_back({&l.name, p});
-                break;
-            }
-        }
-        for (const MapLabel& l : pic.labels) {
-            ImVec2 p = toScreen(l.u, l.v);
-            if (l.area || !inView(p)) continue;
-            Diamond(dl, p, S(4.5f), Accent());
-            bool shown = false;
-            if (close) {
-                ImVec2 ts = Measure(T().medium, 11.5f, l.name.c_str());
-                ImVec2 tp(std::floor(p.x + S(8)), std::floor(p.y - S(8)));
-                shown = room(tp, ImVec2(tp.x + ts.x + pad, tp.y + ts.y));
-                if (shown) {
-                    Text(dl, T().medium, 11.5f, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), l.name.c_str());
-                    Text(dl, T().medium, 11.5f, tp, White(0.92f), l.name.c_str());
+        if (world && mapAreaNames[gi]) {
+            std::vector<std::pair<const char*, ImVec2>> named;
+            for (int i = 0; i < ac; ++i) {
+                const mapdata::Area& ar = areas[i];
+                ImVec2 uv = toUv(ar.x, ar.z);
+                ImVec2 p = toScreen(uv.x, uv.y);
+                if (!inView(p)) continue;
+                bool twice = false;
+                for (const auto& n : named)
+                    if (std::strcmp(n.first, ar.name) == 0 && std::hypot(n.second.x - p.x, n.second.y - p.y) < S(240)) twice = true;
+                if (twice) continue;
+                ImVec2 ts = MeasureUpper(T().semibold, 11, ar.name);
+                float reach = ar.reach / (wx1 - wx0) * pic.w * zoom;
+                static const ImVec2 moves[] = {{0, 0}, {0, -1}, {0, 1}, {-0.5f, 0}, {0.5f, 0}, {-0.5f, -1}, {0.5f, -1}, {-0.5f, 1}, {0.5f, 1}};
+                for (const ImVec2& m : moves) {
+                    ImVec2 shift(m.x * (ts.x * 0.5f + pad), m.y * (ts.y + pad));
+                    if (std::hypot(shift.x, shift.y) > reach && (m.x != 0 || m.y != 0)) continue;
+                    ImVec2 tp(std::floor(p.x + shift.x - ts.x * 0.5f), std::floor(p.y + shift.y - ts.y * 0.5f));
+                    if (!room(ImVec2(tp.x - pad, tp.y - pad * 0.5f), ImVec2(tp.x + ts.x + pad, tp.y + ts.y + pad * 0.5f))) continue;
+                    Upper(dl, T().semibold, 11, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), ar.name);
+                    Upper(dl, T().semibold, 11, tp, White(0.9f), ar.name);
+                    named.push_back({ar.name, p});
+                    break;
                 }
             }
-            if (hov && std::hypot(io.MousePos.x - p.x, io.MousePos.y - p.y) < S(10)) {
-                hot = &l;
-                hotNamed = shown;
+        }
+        int hot = -1;
+        float hotDist = 1e9f;
+        bool big = zoom >= fit * 1.8f, names = zoom >= fit * 3.2f;
+        float rad = big ? S(10) : S(5.5f);
+        if (world) {
+            for (int i = 0; i < pc; ++i) {
+                if (!visible(i)) continue;
+                ImVec2 uv = toUv(places[i].x, places[i].z);
+                ImVec2 p = toScreen(uv.x, uv.y);
+                if (!inView(p)) continue;
+                float d = std::hypot(io.MousePos.x - p.x, io.MousePos.y - p.y);
+                if (hov && d < rad + S(4) && d < hotDist) {
+                    hot = i;
+                    hotDist = d;
+                }
+            }
+            int pick = mapPick[gi];
+            for (int pass = 0; pass < 2; ++pass)
+                for (int i = 0; i < pc; ++i) {
+                    bool front = i == pick || i == hot;
+                    if (front != (pass == 1) || !visible(i)) continue;
+                    const mapdata::Place& pl = places[i];
+                    ImVec2 uv = toUv(pl.x, pl.z);
+                    ImVec2 p = toScreen(uv.x, uv.y);
+                    if (!inView(p)) continue;
+                    float r = front ? std::max(rad, S(10)) * (i == hot ? 1.12f : 1.0f) : rad;
+                    if (i == pick) {
+                        float t = (float)std::fmod(ImGui::GetTime(), 1.4) / 1.4f;
+                        dl->AddCircle(p, r + S(4) + t * S(14), Accent(0.8f * (1.0f - t)), 32, S(2));
+                        dl->AddCircle(p, r + S(3), White(0.95f), 32, S(2));
+                    }
+                    dl->AddCircleFilled(ImVec2(p.x, p.y + S(1.5f)), r + S(1.5f), Black(0.55f), 24);
+                    dl->AddCircleFilled(p, r, kindCol(pl.kind, 1.0f), 24);
+                    dl->AddCircle(p, r, Black(0.45f), 24, S(1.2f));
+                    if (r >= S(9)) Icon(dl, p, r * 1.1f, Black(0.82f), kinds[pl.kind].icon);
+                    if (names || front) {
+                        ImVec2 ts = Measure(T().medium, 12, pl.name);
+                        ImVec2 tp(std::floor(p.x + r + S(6)), std::floor(p.y - ts.y * 0.5f));
+                        if (front || room(ImVec2(tp.x - S(2), tp.y), ImVec2(tp.x + ts.x + pad, tp.y + ts.y))) {
+                            if (front) dl->AddRectFilled(ImVec2(tp.x - S(5), tp.y - S(3)), ImVec2(tp.x + ts.x + S(5), tp.y + ts.y + S(3)), Black(0.72f));
+                            Text(dl, T().medium, 12, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), pl.name);
+                            Text(dl, T().medium, 12, tp, White(0.96f), pl.name);
+                        }
+                    }
+                }
+        }
+        if (hov && world) {
+            float mu = cu + (io.MousePos.x - c.x) / (zoom * pic.w), mv = cv + (io.MousePos.y - c.y) / (zoom * pic.h);
+            if (mu >= 0 && mu <= 1 && mv >= 0 && mv <= 1) {
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "X %d   Z %d", (int)std::lround(wx0 + mu * (wx1 - wx0)), (int)std::lround(wz1 - mv * (wz1 - wz0)));
+                ImVec2 ts = Measure(T().medium, 11.5f, buf);
+                ImVec2 pa(a.x + S(10), b.y - S(10) - ts.y - S(10)), pb(pa.x + ts.x + S(16), b.y - S(10));
+                dl->AddRectFilled(pa, pb, Black(0.65f));
+                Text(dl, T().medium, 11.5f, ImVec2(pa.x + S(8), pa.y + S(5)), White(0.85f), buf);
             }
         }
         dl->PopClipRect();
-        if (hot && !hotNamed) Tip(hot->name.c_str());
+        if (hov && !dragging && ImGui::IsMouseReleased(0) && io.MouseDragMaxDistanceSqr[0] < S(4) * S(4)) mapPick[gi] = hot;
+        if (hot >= 0 && !dragging) {
+            const mapdata::Place& pl = places[hot];
+            char tip[256];
+            if (pl.note && *pl.note)
+                std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   Z %d", pl.name, pl.note, (int)std::lround(pl.x), (int)std::lround(pl.z));
+            else
+                std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   Z %d", pl.name, kinds[pl.kind].name, (int)std::lround(pl.x), (int)std::lround(pl.z));
+            Tip(tip);
+        }
+        float bsz = S(34);
+        ImVec2 bp(b.x - bsz - S(10), a.y + S(10));
+        if (IconButton("mapzin", ICON_ZOOM_IN, bp, bsz)) {
+            mapFly[gi] = 1.0f;
+            mapFlyU[gi] = cu;
+            mapFlyV[gi] = cv;
+            mapFlyZoom[gi] = std::clamp(zoom * 1.6f, zmin, zmax);
+        }
+        if (IconButton("mapzout", ICON_ZOOM_OUT, ImVec2(bp.x, bp.y + bsz + S(6)), bsz)) {
+            mapFly[gi] = 1.0f;
+            mapFlyU[gi] = cu;
+            mapFlyV[gi] = cv;
+            mapFlyZoom[gi] = std::clamp(zoom / 1.6f, zmin, zmax);
+        }
+        if (IconButton("mapfit", ICON_MAXIMIZE, ImVec2(bp.x, bp.y + (bsz + S(6)) * 2), bsz)) {
+            mapFly[gi] = 1.0f;
+            mapFlyU[gi] = mapFlyV[gi] = 0.5f;
+            mapFlyZoom[gi] = fit;
+        }
     } else {
         std::string msg = !status.empty() ? status + "\xe2\x80\xa6" : pic.loaded ? pic.note : "Loading the map\xe2\x80\xa6";
-        float tw = std::min(w - S(64), S(520));
+        float tw = std::min(cw - S(64), S(520));
         ImGui::PushFont(T().regular, S(13));
         ImVec2 ts = ImGui::CalcTextSize(msg.c_str(), nullptr, false, tw);
         ImGui::PopFont();
+        Icon(dl, ImVec2(c.x, c.y - ts.y * 0.5f - S(28)), S(34), White(0.18f), ICON_MAP);
         Text(dl, T().regular, 13, ImVec2(std::floor(c.x - ts.x * 0.5f), std::floor(c.y - ts.y * 0.5f)), White(0.6f), msg.c_str(), tw);
     }
     dl->AddRect(a, b, White(0.07f));
-    std::string foot = !status.empty() ? status + "\xe2\x80\xa6" : pic.tex ? pic.note + "  Scroll to zoom, drag to move, double-click to see it all." : std::string();
-    TextFit(dl, T().regular, 12, ImVec2(o.x, b.y + S(12)), w, White(0.5f), foot.c_str());
+    std::string foot = !status.empty() ? status + "\xe2\x80\xa6"
+                       : pic.tex       ? pic.note + "  Scroll to zoom, drag to move, click a marker or a place in the list."
+                                       : std::string();
+    TextFit(dl, T().regular, 12, ImVec2(a.x, b.y + S(12)), cw, White(0.5f), foot.c_str());
     ImGui::SetCursorScreenPos(o);
-    ImGui::Dummy(ImVec2(w, b.y + S(34) - o.y));
+    ImGui::Dummy(ImVec2(w, b.y + S(32) - o.y));
 }
 
 void Home::DrawLibrary() {

@@ -696,17 +696,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         if ((home.mapsWanted && !mapsStarted) || (home.mapsReload && !launcher::maps::Busy()))
         {
             mapsStarted = true;
-            bool redraw = home.mapsRedraw;
-            home.mapsReload = home.mapsRedraw = false;
+            home.mapsReload = false;
             launcher::maps::Request r;
             const inject::Paths* gp[launcher::maps::Count] = { &home.sn1Paths, &home.paths, &home.sotfPaths };
             for (int g = 0; g < launcher::maps::Count; ++g)
             {
-                r.root[g] = gp[g]->win64;
                 r.folder[g] = gp[g]->folder;
                 r.found[g] = gp[g]->found;
             }
-            r.redraw = redraw;
             WaitForPendingOperations();
             for (int g = 0; g < launcher::maps::Count; ++g)
             {
@@ -733,8 +730,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 pic.loaded = true;
                 pic.note = mi.note;
                 pic.partial = mi.partial;
-                for (const launcher::maps::Label& l : mi.labels)
-                    pic.labels.push_back({ l.name, l.u, l.v, l.area, l.reach });
                 if (mi.width > 0 && mi.height > 0)
                 {
                     D3D12_CPU_DESCRIPTOR_HANDLE cpu;

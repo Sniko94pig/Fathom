@@ -12,17 +12,9 @@ struct Art {
     float w = 0, h = 0;
 };
 
-struct MapLabel {
-    std::string name;
-    float u = 0, v = 0;
-    bool area = true;
-    float reach = 0;
-};
-
 struct MapPic {
     ImTextureID tex = 0;
     float w = 0, h = 0;
-    std::vector<MapLabel> labels;
     std::string note;
     bool partial = false;
     bool loaded = false;
@@ -69,14 +61,21 @@ struct Home {
     bool maps = false;
     bool mapsWanted = false;
     bool mapsReload = false;
-    bool mapsRedraw = false;
     bool mapsBusy = false;
-    int mapGame = 0;
+    int mapGame = -1;
     MapPic mapPics[3];
     std::string mapStatus[3];
     float mapZoom[3] = {0, 0, 0};
     float mapCx[3] = {0.5f, 0.5f, 0.5f};
     float mapCy[3] = {0.5f, 0.5f, 0.5f};
+    bool mapHidden[3][8] = {};
+    bool mapAreaNames[3] = {true, true, true};
+    int mapPick[3] = {-1, -1, -1};
+    float mapFly[3] = {0, 0, 0};
+    float mapFlyU[3] = {0, 0, 0};
+    float mapFlyV[3] = {0, 0, 0};
+    float mapFlyZoom[3] = {0, 0, 0};
+    std::string mapSearch;
     std::unordered_map<long long, Art> art;
     void Draw();
 
@@ -86,6 +85,8 @@ private:
     void DrawGameCards(float top, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName);
     void DrawMinecraftCards(float top, float w, ImVec2 o);
     void DrawMaps();
+    void DrawMapList();
+    void DrawMapView();
     const Art* Find(int appId, int kind) const;
 };
 

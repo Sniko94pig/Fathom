@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.11.0)
+set(FATHOM_VERSION 1.12.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,7 +70,7 @@ target_include_directories(fathom_ui PUBLIC
   ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src ${SN2})
 target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS)
 
-add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp)
+add_executable(fathom_shots src/preview/shots.cpp src/launcher/map_places.cpp src/launcher/map_info.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp)
 target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF} ${MC} ${UK})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
@@ -99,6 +99,8 @@ if(WIN32)
     src/launcher/art.cpp
     src/launcher/mc_link.cpp
     src/launcher/maps.cpp
+    src/launcher/map_places.cpp
+    src/launcher/map_info.cpp
     src/launcher/prefs.cpp
     ${SN1}/core/sn1_features.cpp
     ${SOTF}/core/sotf_features.cpp

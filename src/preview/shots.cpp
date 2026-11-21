@@ -209,6 +209,47 @@ void LoadShotArt(launcher::Home& home, const std::string& outDir) {
     }
     for (const auto& [k, a] : loaded) home.art[k] = a;
 }
+
+void LoadShotPicture(const std::string& path, launcher::MapPic& pic, const char* note, bool partial) {
+    int w = 0, h = 0, n = 0;
+    unsigned char* px = stbi_load(path.c_str(), &w, &h, &n, 4);
+    pic.loaded = true;
+    pic.note = note;
+    pic.partial = partial;
+    if (!px) return;
+    ImTextureData* t = IM_NEW(ImTextureData)();
+    t->Format = ImTextureFormat_RGBA32;
+    t->Width = w;
+    t->Height = h;
+    t->BytesPerPixel = 4;
+    t->Pixels = (unsigned char*)IM_ALLOC((size_t)w * h * 4);
+    std::memcpy(t->Pixels, px, (size_t)w * h * 4);
+    stbi_image_free(px);
+    pic.tex = (ImTextureID)(intptr_t)t;
+    pic.w = (float)w;
+    pic.h = (float)h;
+}
+
+void LoadShotMaps(launcher::Home& home) {
+    static launcher::MapPic pics[3];
+    static bool done = false;
+    if (!done) {
+        done = true;
+        LoadShotPicture("assets/maps/subnautica.jpg", pics[0], "The whole map, drawn from Subnautica's world files.", false);
+        LoadShotPicture("assets/maps/sonsoftheforest.jpg", pics[2], "The whole island, drawn from the game's terrain.", false);
+        char* sn2 = nullptr;
+        size_t len = 0;
+        _dupenv_s(&sn2, &len, "FATHOM_SHOT_MAP");
+        if (sn2) {
+            LoadShotPicture(sn2, pics[1], "Only the places you have been to.", true);
+            std::free(sn2);
+        } else {
+            pics[1].loaded = true;
+            pics[1].note = "Nothing is drawn yet. Open Spawner & Map in the game menu, then Map, and press Scan whole map.";
+        }
+    }
+    for (int g = 0; g < 3; ++g) home.mapPics[g] = pics[g];
+}
 #endif
 
 int main(int argc, char** argv) {
@@ -310,49 +351,52 @@ int main(int argc, char** argv) {
         {"39-launcher-maps", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              home.game = -1;
-             char* file = nullptr;
-             size_t len = 0;
-             _dupenv_s(&file, &len, "FATHOM_SHOT_MAP");
-             int w = 0, h = 0, n = 0;
-             unsigned char* px = file ? stbi_load(file, &w, &h, &n, 4) : nullptr;
-             std::free(file);
-             if (px) {
-                 ImTextureData* t = IM_NEW(ImTextureData)();
-                 t->Format = ImTextureFormat_RGBA32;
-                 t->Width = w;
-                 t->Height = h;
-                 t->BytesPerPixel = 4;
-                 t->Pixels = (unsigned char*)IM_ALLOC((size_t)w * h * 4);
-                 std::memcpy(t->Pixels, px, (size_t)w * h * 4);
-                 stbi_image_free(px);
-                 home.mapPics[0].tex = (ImTextureID)(intptr_t)t;
-                 home.mapPics[0].w = (float)w;
-                 home.mapPics[0].h = (float)h;
-             }
-             home.mapPics[0].loaded = true;
-             home.mapPics[0].note = "Drawn from your Subnautica files. The map in the game uses this picture too.";
-             home.mapPics[0].labels = {{"Safe Shallows", 0.485f, 0.502f, true}, {"Kelp Forest", 0.546f, 0.348f, true},
-                                       {"Grand Reef", 0.344f, 0.838f, true},   {"Crash Zone", 0.719f, 0.645f, true},
-                                       {"Dunes", 0.142f, 0.443f, true},        {"Mountains", 0.676f, 0.177f, true},
-                                       {"Mushroom Forest", 0.288f, 0.366f, true}, {"Bulb Zone", 0.769f, 0.345f, true},
-                                       {"Floating Island", 0.297f, 0.742f, false}, {"Giant Mushroom Tree", 0.288f, 0.356f, false}};
-             char* list = nullptr;
-             _dupenv_s(&list, &len, "FATHOM_SHOT_LABELS");
-             if (list) {
-                 std::ifstream in(list);
-                 std::free(list);
-                 std::vector<launcher::MapLabel> got;
-                 std::string kind, name;
-                 float lu = 0, lv = 0, reach = 0;
-                 while (in >> kind >> lu >> lv >> reach && std::getline(in >> std::ws, name)) got.push_back({name, lu, lv, kind == "area", reach});
-                 if (!got.empty()) home.mapPics[0].labels = got;
-             }
+             home.mapGame = -1;
+             LoadShotMaps(home);
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.maps = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}};
+             u.homeIndex = 2;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
+        {"41-launcher-map-subnautica", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.mapGame = 0;
+             LoadShotMaps(home);
              char* zoom = nullptr;
+             size_t len = 0;
              _dupenv_s(&zoom, &len, "FATHOM_SHOT_ZOOM");
              if (zoom) {
                  home.mapZoom[0] = (float)std::atof(zoom);
                  std::free(zoom);
              }
+             home.mapPick[0] = 5;
+             home.mapCx[0] = 0.49f;
+             home.mapCy[0] = 0.43f;
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.maps = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}};
+             u.homeIndex = 2;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
+        {"42-launcher-map-sotf", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.mapGame = 2;
+             LoadShotMaps(home);
+             home.mapHidden[2][4] = true;
+             home.mapSearch = "";
              u.showGameTabs = false;
              u.homePage = [] {
                  home.maps = true;
