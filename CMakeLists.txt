@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.12.3)
+set(FATHOM_VERSION 1.12.4)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,7 @@ set(SN1 "${CMAKE_SOURCE_DIR}/games/Subnautica/src")
 set(SOTF "${CMAKE_SOURCE_DIR}/games/Sons of the Forest/src")
 set(MC "${CMAKE_SOURCE_DIR}/games/Minecraft Java/src")
 set(UK "${CMAKE_SOURCE_DIR}/games/ULTRAKILL/src")
+set(GD "${CMAKE_SOURCE_DIR}/games/Geometry Dash/src")
 set(GEN ${CMAKE_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${GEN})
 function(fathom_embed out name file)
@@ -70,8 +71,8 @@ target_include_directories(fathom_ui PUBLIC
   ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src ${SN2})
 target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS)
 
-add_executable(fathom_shots src/preview/shots.cpp src/launcher/map_places.cpp src/launcher/map_info.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp)
-target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF} ${MC} ${UK})
+add_executable(fathom_shots src/preview/shots.cpp src/launcher/map_places.cpp src/launcher/map_info.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp ${GD}/core/gd_features.cpp)
+target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF} ${MC} ${UK} ${GD})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
   target_sources(fathom_shots PRIVATE src/launcher/logview.cpp src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
@@ -107,12 +108,13 @@ if(WIN32)
     ${MC}/core/mc_features.cpp
     ${MC}/core/mc_live.cpp
     ${UK}/core/ultrakill_features.cpp
+    ${GD}/core/gd_features.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
   set_target_properties(fathom_launcher PROPERTIES OUTPUT_NAME Fathom)
-  target_include_directories(fathom_launcher PRIVATE ${SN1} ${SOTF} ${MC} ${UK})
+  target_include_directories(fathom_launcher PRIVATE ${SN1} ${SOTF} ${MC} ${UK} ${GD})
   target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING FATHOM_VERSION="${FATHOM_VERSION}")
   target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32 wininet advapi32 bcrypt)
 
@@ -166,6 +168,9 @@ if(WIN32)
   endif()
   if(EXISTS "${UK}/CMakeLists.txt")
     add_subdirectory("${UK}")
+  endif()
+  if(EXISTS "${GD}/CMakeLists.txt")
+    add_subdirectory("${GD}")
   endif()
 
   find_package(Java 17 COMPONENTS Development Runtime)

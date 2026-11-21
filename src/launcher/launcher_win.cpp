@@ -11,6 +11,7 @@
 #include "core/sotf_features.h"
 #include "core/mc_features.h"
 #include "core/ultrakill_features.h"
+#include "core/gd_features.h"
 #include "launcher/prefs.h"
 #include "ui/icons.h"
 #include "ui/atlas.h"
@@ -285,6 +286,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::LoadSettings(ukModel);
     std::string ukLastText = core::SettingsText(ukModel);
     auto ukKnownTime = FileTime(ukSettingsPath);
+    core::Model gdModel;
+    gd::BuildFeatures(gdModel);
+    gdModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"geometrydash-settings.json").wstring());
+    gdModel.openUrl = model.openUrl;
+    core::LoadSettings(gdModel);
+    std::string gdLastText = core::SettingsText(gdModel);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -341,7 +348,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ui::Menu sotfMenu(sotfModel);
     ui::Menu mcMenu(mcModel);
     ui::Menu ukMenu(ukModel);
-    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu, &ukMenu })
+    ui::Menu gdMenu(gdModel);
+    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu, &ukMenu, &gdMenu })
     {
         mm->embedded = true;
         mm->homePage = [&home, mm] {
@@ -353,7 +361,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->homeIcon = ICON_LAYERS;
         mm->onHome = true;
         mm->showGameTabs = false;
-        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; };
+        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; gdMenu.onHome = true; };
         mm->loader = &loader;
         mm->uiScale = loader.s.scale * g_dpi;
     }
@@ -470,6 +478,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     sotfModel.logoTexture = model.logoTexture;
     mcModel.logoTexture = model.logoTexture;
     ukModel.logoTexture = model.logoTexture;
+    gdModel.logoTexture = model.logoTexture;
 
     std::thread worker;
     std::atomic<bool> workerDone{ false };
@@ -512,7 +521,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         bool sotfOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "sonsoftheforest") == 0;
         bool mcOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "minecraft") == 0;
         bool ukOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "ultrakill") == 0;
-        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : ukOpen ? ukMenu : mainMenu;
+        bool gdOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "geometrydash") == 0;
+        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : ukOpen ? ukMenu : gdOpen ? gdMenu : mainMenu;
         ULONGLONG now = GetTickCount64();
         if (now - lastPoll >= 1000)
         {
@@ -603,7 +613,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
             bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
-            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen || ukOpen;
+            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen || ukOpen || gdOpen;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? (mainMenu.homeIndex == 1 ? "My games" : "All games") : nullptr;
@@ -614,7 +624,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 mainMenu.homeTabs.push_back({ "My games", ICON_GAMEPAD_2 });
                 mainMenu.homeTabs.push_back({ "Maps", ICON_MAP });
             }
-            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : model;
+            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : gdOpen ? gdModel : model;
             home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;
             home.installedFirst = loader.s.installedFirst;
@@ -671,6 +681,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 menu.status = home.ukState == inject::GameState::Injected ? "Menu active in game" : home.ukState == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.ukState != inject::GameState::NotRunning;
+            }
+            else if (gdOpen)
+            {
+                menu.status = "Being built";
+                menu.statusGood = false;
             }
             else
             {
@@ -953,6 +968,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         sotfModel.requestUnload = false;
         mcModel.requestUnload = false;
         ukModel.requestUnload = false;
+        gdModel.requestUnload = false;
         ImGui::Render();
 
         FrameContext* frameCtx = WaitForNextFrameContext();
@@ -1002,6 +1018,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(mcModel);
     if (core::SettingsText(ukModel) != ukLastText)
         core::SaveSettings(ukModel);
+    if (core::SettingsText(gdModel) != gdLastText)
+        core::SaveSettings(gdModel);
 
     launcher::art::Stop();
     launcher::maps::Stop();

@@ -25,7 +25,7 @@ const std::vector<GameDef>& Games() {
         {"backrooms", "Escape the Backrooms", 1943950, "ETB", false},
         {"fallout4", "Fallout 4", 377160, "FO4", false},
         {"falloutnv", "Fallout: New Vegas", 22380, "FNV", false},
-        {"geometrydash", "Geometry Dash", 322170, "GD", false},
+        {"geometrydash", "Geometry Dash", 322170, "GD", false, true},
         {"helloneighbor", "Hello Neighbor", 521890, "HN", false},
         {"icarus", "Icarus", 1149460, "ICA", false},
         {"minecraft", "Minecraft: Java Edition", -1, "MC", true, false, "https://www.minecraft.net/"},

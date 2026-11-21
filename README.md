@@ -23,7 +23,7 @@ Every game has its own folder in [games](games).
 | [Dune: Awakening](<games/Dune Awakening>), [Icarus](<games/Icarus>), [Raft](<games/Raft>) | Coming soon |
 | [Dying Light](<games/Dying Light>) | Coming soon |
 | [Escape the Backrooms](<games/Escape the Backrooms>), [Hello Neighbor](<games/Hello Neighbor>), [Poppy Playtime](<games/Poppy Playtime>) | Coming soon |
-| [Geometry Dash](<games/Geometry Dash>) | Coming soon |
+| [Geometry Dash](<games/Geometry Dash>) | Being built |
 | [Schedule I](<games/Schedule I>) | Coming soon |
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
