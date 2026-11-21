@@ -26,11 +26,12 @@ namespace fs = std::filesystem;
 namespace {
 
 const wchar_t* kBase = L"https://github.com/Sniko94pig/Fathom/releases/latest/download/";
-const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll", L"fathom_mc.jar"};
+const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll", L"fathom_ultrakill.dll", L"fathom_mc.jar"};
 const wchar_t* kKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fathom";
 const wchar_t* kUninstaller = L"Uninstall Fathom.exe";
 const wchar_t* kSetup = L"FathomSetup.exe";
 const wchar_t* kGameExe = L"Subnautica2-Win64-Shipping.exe";
+const wchar_t* kGameExes[] = {L"Subnautica2-Win64-Shipping.exe", L"Subnautica.exe", L"SonsOfTheForest.exe", L"ULTRAKILL.exe"};
 const UINT WM_REFRESH = WM_APP + 1;
 const int ID_MAIN = 101, ID_SECOND = 102, ID_CHECK = 103;
 
@@ -207,7 +208,7 @@ bool MakeShortcut(const fs::path& target, const fs::path& link) {
     sl->SetPath(target.c_str());
     sl->SetWorkingDirectory(target.parent_path().c_str());
     sl->SetIconLocation(target.c_str(), 0);
-    sl->SetDescription(L"Fathom mod menu for Subnautica 2");
+    sl->SetDescription(L"Fathom universal mod menu");
     IPersistFile* pf = nullptr;
     bool ok = SUCCEEDED(sl->QueryInterface(IID_IPersistFile, (void**)&pf)) && pf && SUCCEEDED(pf->Save(link.c_str(), TRUE));
     if (pf) pf->Release();
@@ -304,7 +305,7 @@ bool Install() {
     }
     for (const wchar_t* f : kFiles)
         if (!Replace(dir / (std::wstring(f) + L".download"), dir / f)) {
-            Show(Failed, L"Could not replace the old files", L"Close Fathom and Subnautica 2, then press Try again.");
+            Show(Failed, L"Could not replace the old files", L"Close Fathom and your games, then press Try again.");
             return false;
         }
     fs::path self = SelfPath(), uninstaller = dir / kUninstaller;
@@ -327,8 +328,10 @@ bool Install() {
 bool Uninstall() {
     fs::path dir = opt.dir;
     std::error_code ec;
-    if (Running(kGameExe) || Running(L"Fathom.exe")) {
-        Show(Failed, L"Close Subnautica 2 and Fathom first", L"Both have to be closed before Fathom can be removed. Then press Try again.");
+    bool open = Running(L"Fathom.exe");
+    for (const wchar_t* exe : kGameExes) open = open || Running(exe);
+    if (open) {
+        Show(Failed, L"Close Fathom and your games first", L"They have to be closed before Fathom can be removed. Then press Try again.");
         return false;
     }
     Show(Working, L"Removing Fathom...", dir.wstring());
@@ -380,7 +383,7 @@ bool Uninstall() {
         else left = L" Your save backups and other files you added are still in " + dir.wstring() + L".";
     }
     if (!ok) {
-        Show(Failed, L"Some files could not be removed", L"Close Fathom and Subnautica 2, then press Try again.");
+        Show(Failed, L"Some files could not be removed", L"Close Fathom and your games, then press Try again.");
         return false;
     }
     Show(Done, L"Fathom was removed", L"The program and the desktop shortcut are gone." + left);

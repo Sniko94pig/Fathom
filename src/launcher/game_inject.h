@@ -18,6 +18,7 @@ struct Spec {
 
 extern const Spec kSubnautica;
 extern const Spec kSonsOfTheForest;
+extern const Spec kUltrakill;
 
 inject::Paths Locate(const Spec& s);
 inject::GameState State(const Spec& s);

@@ -35,6 +35,8 @@ struct Home {
     inject::GameState sn1State = inject::GameState::NotRunning;
     inject::Paths sotfPaths;
     inject::GameState sotfState = inject::GameState::NotRunning;
+    inject::Paths ukPaths;
+    inject::GameState ukState = inject::GameState::NotRunning;
     bool busy = false;
     bool injectNow = false;
     int injectGame = 0;

@@ -131,7 +131,7 @@ void Menu::LoaderPage() {
         if (Button("backupnow", "Back up saves now", ImVec2(p.x + S(16), y), ImVec2(bw, bh), Btn::Tint, ICON_SAVE, (bool)l.backupSaves)) {
             std::string path = l.backupSaves();
             if (path.empty()) {
-                Notify("No Subnautica 2 saves found", ICON_TRIANGLE_ALERT);
+                Notify("No game saves found", ICON_TRIANGLE_ALERT);
             } else {
                 l.lastBackup = path;
                 Notify("Saves backed up", ICON_ARCHIVE);

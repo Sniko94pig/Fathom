@@ -10,8 +10,7 @@ Every game has its own folder in [games](games).
 
 | Game | Status |
 |---|---|
-| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>) | Ready |
-| [ULTRAKILL](<games/ULTRAKILL>) | Being built |
+| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>), [ULTRAKILL](<games/ULTRAKILL>) | Ready |
 | [Borderlands](<games/Borderlands>), [Borderlands 2](<games/Borderlands 2>), [Borderlands 3](<games/Borderlands 3>), [Borderlands 4](<games/Borderlands 4>) | Coming soon |
 | [Cyberpunk 2077](<games/Cyberpunk 2077>) | Coming soon |
 | [Fallout 4](<games/Fallout 4>), [Fallout: New Vegas](<games/Fallout New Vegas>) | Coming soon |
@@ -39,7 +38,7 @@ The **Maps** tab in Fathom shows the maps of Subnautica, Subnautica 2 and Sons o
 
 1. Download `FathomSetup.exe` from the [latest release](https://github.com/Sniko94pig/Fathom/releases/latest).
 2. Run it and press **Install**. Fathom goes into `C:\Users\<you>\Fathom` with a `save-backups` and an `old-builds` folder, and you get a **Fathom** shortcut on your desktop.
-3. Open Fathom from the shortcut, pick Subnautica 2, start the game and press **Inject**.
+3. Open Fathom from the shortcut, pick your game, start it and press **Inject**.
 4. In the game, **Right Shift** opens the menu and **End** unloads it.
 
 Windows may say the installer is from an unknown publisher, because it isn't signed. Click **More info**, then **Run anyway**.

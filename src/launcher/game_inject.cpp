@@ -109,11 +109,14 @@ fs::path SotfSaves(const inject::Paths&) {
     return fs::path(buf) / L"AppData" / L"LocalLow" / L"Endnight" / L"SonsOfTheForest" / L"Saves";
 }
 
+fs::path UkSaves(const inject::Paths& p) { return fs::path(p.win64) / L"Saves"; }
+
 }
 
 const Spec kSubnautica{L"Subnautica.exe", L"Subnautica", L"fathom_sn1.dll", L"fathom_sn1.run.dll", "Subnautica", 264710, L"Subnautica", Sn1Saves};
 const Spec kSonsOfTheForest{L"SonsOfTheForest.exe", L"Sons Of The Forest", L"fathom_sotf.dll", L"fathom_sotf.run.dll", "Sons of the Forest", 1326470,
                             L"SonsOfTheForest", SotfSaves};
+const Spec kUltrakill{L"ULTRAKILL.exe", L"ULTRAKILL", L"fathom_ultrakill.dll", L"fathom_ultrakill.run.dll", "ULTRAKILL", 1229490, L"ULTRAKILL", UkSaves};
 
 inject::Paths Locate(const Spec& s) {
     inject::Paths p;
