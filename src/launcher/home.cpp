@@ -119,7 +119,141 @@ const Art* Home::Find(int appId, int kind) const {
 void Home::Draw() {
     if (game >= 0 && game < (int)Games().size()) DrawGame();
     else if (maps) DrawMaps();
+    else if (help) DrawHelp();
     else DrawLibrary();
+}
+
+namespace {
+
+const char* const kHelpEmail = "ion_fiber94@tutamail.com";
+const char* const kDiscordUrl = "";
+const char* const kWebsiteUrl = "";
+
+struct Faq {
+    const char* q;
+    const char* a;
+};
+
+const Faq kFaq[] = {
+    {"Is Fathom free?", "Yes. Fathom is free and open source. You can read all of its code on GitHub, and every update is free too."},
+    {"How do I open the menu in a game?",
+     "Open the game's page in Fathom and press Start game. When the game has loaded, press Inject. Then press the open key in the game. The game's page shows which key that is, and you can change it in the menu's Settings."},
+    {"The menu doesn't show up. What can I do?",
+     "Wait until the game's main menu or your save has fully loaded, then press Inject again. If it still doesn't show, press Open log on the game's page and send the log to us by email."},
+    {"Can I get banned?",
+     "Fathom is made for single-player and co-op games you play with friends. Never use cheats in online matches, ranked modes or on public servers. Where a game has leaderboards, Fathom tries to keep cheated runs off them, but using cheats online is always at your own risk."},
+    {"Will cheats break my save?",
+     "Every cheat switches off cleanly when you turn it off or close the menu. To be safe, press Back up saves now in Settings before you try something big."},
+    {"My antivirus warns about Fathom.",
+     "Mod menus load a menu file into the game, and some antivirus apps flag anything that does that. Fathom is open source, so anyone can check what it does. Only download Fathom from its GitHub releases page."},
+    {"How do I update Fathom?", "Fathom checks for updates when it starts. You can also look for one yourself under Settings, Updates."},
+    {"My game says Coming soon.",
+     "More games are added all the time. Games marked Being built already show the modules that are coming. Send us an email if you want a game added."},
+    {"How do I uninstall Fathom?",
+     "Use Uninstall Fathom in the Fathom folder, or find Fathom in Windows Settings, Apps. Your game saves are not touched."},
+};
+
+}
+
+void Home::DrawHelp() {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 o = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x;
+    Text(dl, T().regular, 13, o, White(0.55f), "Stuck or found a bug? Ask on Discord, send us an email, or look at the common questions below.", w);
+    float gap = S(16), top = o.y + S(36);
+    int cols = w >= S(640) ? 3 : 1;
+    float cw = std::floor((w - gap * (cols - 1)) / cols), ch = S(186);
+    std::string mail = std::string("mailto:") + kHelpEmail;
+    struct Contact {
+        const char* id;
+        const char* icon;
+        const char* title;
+        const char* body;
+        const char* url;
+        const char* button;
+    };
+    const Contact cs[3] = {
+        {"discord", ICON_MESSAGE_CIRCLE, "Discord", "Chat with other players, share tips and get help fast.", kDiscordUrl, "Join Discord"},
+        {"email", ICON_MAIL, "Email", "Questions, bugs or a game you want added.", mail.c_str(), "Send email"},
+        {"website", ICON_GLOBE, "Website", "Guides, news and every Fathom download in one place.", kWebsiteUrl, "Open website"},
+    };
+    for (int i = 0; i < 3; ++i) {
+        const Contact& c = cs[i];
+        bool ready = c.url && *c.url;
+        ImVec2 a(o.x + (i % cols) * (cw + gap), top + (i / cols) * (ch + gap)), b(a.x + cw, a.y + ch);
+        Card(dl, a, b, ready);
+        ImVec2 ta(a.x + S(16), a.y + S(18)), tb(ta.x + S(42), ta.y + S(38));
+        Para(dl, ta, tb, ready ? Accent(0.18f) : White(0.06f));
+        Icon(dl, ImVec2((ta.x + tb.x) * 0.5f, (ta.y + tb.y) * 0.5f), S(18), ready ? Accent() : White(0.55f), c.icon);
+        Text(dl, T().semibold, 15, ImVec2(tb.x + S(14), ta.y + S(1)), White(0.96f), c.title);
+        {
+            const char* tag = ready ? "Open" : "Coming soon";
+            ImVec2 bs = MeasureUpper(T().semibold, 9.5f, tag);
+            ImVec2 ba(tb.x + S(14), ta.y + S(22)), bb(ba.x + bs.x + S(16), ba.y + S(16));
+            Para(dl, ba, bb, ready ? Accent() : ImGui::GetColorU32(ImVec4(0.98f, 0.74f, 0.30f, 1.0f)));
+            Upper(dl, T().semibold, 9.5f, ImVec2(ba.x + S(8), ba.y + (S(16) - bs.y) * 0.5f), ready ? White(0.95f) : Black(0.9f), tag);
+        }
+        float by = a.y + S(70);
+        if (i == 1) {
+            TextFit(dl, T().medium, 13, ImVec2(a.x + S(16), by), cw - S(32), Accent(), kHelpEmail);
+            by += S(22);
+        }
+        Text(dl, T().regular, 12.5f, ImVec2(a.x + S(16), by), White(0.6f), c.body, cw - S(32));
+        ImVec2 bp(a.x + S(16), b.y - S(50));
+        float bw = cw - S(32) - (i == 1 ? S(42) : 0.0f);
+        if (ready) {
+            if (Button(c.id, c.button, bp, ImVec2(bw, S(34)), i == 1 ? Btn::Primary : Btn::Tint, c.icon, true)) {
+                std::wstring url(c.url, c.url + std::strlen(c.url));
+                ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            }
+        } else {
+            Button(c.id, "Coming soon", bp, ImVec2(bw, S(34)), Btn::Ghost, ICON_LOCK, false);
+        }
+        if (i == 1) {
+            if (IconButton("copymail", ICON_COPY, ImVec2(b.x - S(16) - S(34), bp.y), S(34))) {
+                ImGui::SetClipboardText(kHelpEmail);
+                helpCopied = ImGui::GetTime();
+            }
+            if (ImGui::IsItemHovered()) Tip(ImGui::GetTime() - helpCopied < 2.0 ? "Copied" : "Copy the email address");
+        }
+    }
+    int rows = (3 + cols - 1) / cols;
+    float y = top + rows * (ch + gap) + S(10);
+    Caption(dl, ImVec2(o.x, y), "Common questions");
+    y += S(34);
+    float tw = w - S(42) - S(48);
+    for (int i = 0; i < (int)(sizeof(kFaq) / sizeof(kFaq[0])); ++i) {
+        const Faq& f = kFaq[i];
+        float hh = S(46);
+        ImGui::SetCursorScreenPos(ImVec2(o.x, y));
+        ImGui::PushID(i);
+        bool clicked = ImGui::InvisibleButton("faq", ImVec2(w, hh));
+        bool hov = ImGui::IsItemHovered();
+        float t = Ease(ImGui::GetID("open"), helpOpen == i ? 1.0f : 0.0f, 14.0f);
+        float hv = Ease(ImGui::GetID("hover"), hov ? 1.0f : 0.0f, 18.0f);
+        ImGui::PopID();
+        if (clicked) helpOpen = helpOpen == i ? -1 : i;
+        if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImGui::PushFont(T().regular, S(13));
+        ImVec2 as = ImGui::CalcTextSize(f.a, nullptr, false, tw);
+        ImGui::PopFont();
+        float ah = std::floor((as.y + S(16)) * t);
+        ImVec2 a(o.x, y), b(o.x + w, y + hh + ah);
+        dl->AddRectFilled(a, b, White(0.035f + 0.025f * std::max(hv, t)));
+        dl->AddRectFilled(a, ImVec2(a.x + S(2), b.y), Accent(0.25f + 0.75f * t));
+        Icon(dl, ImVec2(o.x + S(22), y + hh * 0.5f), S(15), t > 0.5f ? Accent() : White(0.45f), ICON_CIRCLE_HELP);
+        ImVec2 qs = Measure(T().medium, 13.5f, f.q);
+        TextFit(dl, T().medium, 13.5f, ImVec2(o.x + S(42), y + std::floor((hh - qs.y) * 0.5f)), tw, White(0.94f), f.q);
+        Icon(dl, ImVec2(o.x + w - S(24), y + hh * 0.5f), S(15), White(0.45f + 0.4f * hv), helpOpen == i ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN);
+        if (ah > 0.5f) {
+            dl->PushClipRect(ImVec2(o.x, y + hh - S(8)), b, true);
+            Text(dl, T().regular, 13, ImVec2(o.x + S(42), y + hh - S(4)), White(0.62f * t), f.a, tw);
+            dl->PopClipRect();
+        }
+        y = b.y + S(6);
+    }
+    ImGui::SetCursorScreenPos(o);
+    ImGui::Dummy(ImVec2(w, y - o.y + S(10)));
 }
 
 void Home::DrawMaps() {

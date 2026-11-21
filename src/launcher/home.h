@@ -58,6 +58,9 @@ struct Home {
     std::string mcStep;
     std::wstring mcMods;
     std::wstring mcLog;
+    bool help = false;
+    int helpOpen = -1;
+    double helpCopied = -10.0;
     bool maps = false;
     bool mapsWanted = false;
     bool mapsReload = false;
@@ -85,6 +88,7 @@ private:
     void DrawGameCards(float top, float w, ImVec2 o, const inject::Paths& paths, inject::GameState state, const char* folderName, const char* dllName);
     void DrawMinecraftCards(float top, float w, ImVec2 o);
     void DrawMaps();
+    void DrawHelp();
     void DrawMapList();
     void DrawMapView();
     const Art* Find(int appId, int kind) const;

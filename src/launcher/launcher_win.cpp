@@ -355,6 +355,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->homePage = [&home, mm] {
             home.mine = mm->ActiveHome() == 1;
             home.maps = mm->ActiveHome() == 2;
+            home.help = mm->ActiveHome() == 3;
             home.Draw();
         };
         mm->homeName = "Games";
@@ -623,6 +624,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 mainMenu.homeTabs.push_back({ "My games", ICON_GAMEPAD_2 });
                 mainMenu.homeTabs.push_back({ "Maps", ICON_MAP });
+                mainMenu.homeTabs.push_back({ "Help", ICON_CIRCLE_HELP });
             }
             const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : gdOpen ? gdModel : model;
             home.openKey = core::KeyName(keyModel.keyOpen);

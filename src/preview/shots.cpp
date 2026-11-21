@@ -356,6 +356,21 @@ int main(int argc, char** argv) {
              u.homeIndex = 2;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"46-launcher-help", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.helpOpen = 1;
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.help = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}, {"Help", ICON_CIRCLE_HELP}};
+             u.homeIndex = 3;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
         {"41-launcher-map-subnautica", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              home.game = -1;
