@@ -22,7 +22,6 @@ Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* l
     f.id = id;
     f.label = label;
     f.hint = hint;
-    f.building = true;
     m.features.push_back(std::move(f));
     return m.features.back();
 }
@@ -63,7 +62,7 @@ void BuildFeatures(Model& m) {
                    {Weapons, "Weapons", ICON_CROSSHAIR}};
 
     Toggle(m, Player, "Health", "godmode", "God mode", "Nothing can hurt or kill you");
-    Toggle(m, Player, "Health", "unlimited_health", "Unlimited health", "Health refills as soon as it drops");
+    Toggle(m, Player, "Health", "unlimited_health", "Unlimited health", "Health refills as soon as it drops, but instant kills still kill");
     Action(m, Player, "Health", "refill_health", "Refill health", "Health back to full once", "Refill");
     Slider(m, Player, "Time", "game_speed", "Game speed", "Speeds up or slows down the whole game", 0.1f, 3.0f, 1.0f, 0.1f);
 
@@ -72,7 +71,7 @@ void BuildFeatures(Model& m) {
     Toggle(m, Movement, "Dash & jumps", "unlimited_walljumps", "Unlimited wall jumps", "Wall jump as many times as you want before you land");
     Slider(m, Movement, "Speed", "player_speed", "Player speed", "How fast you move", 1.0f, 5.0f, 1.0f, 0.1f);
     Toggle(m, Movement, "Flying", "fly", "Fly", "Fly in any direction, set how fast with Fly speed");
-    Slider(m, Movement, "Flying", "fly_speed", "Fly speed", "How fast Fly moves you", 1.0f, 10.0f, 1.0f, 0.5f, false);
+    Slider(m, Movement, "Flying", "fly_speed", "Fly speed", "Fly and noclip speed", 1.0f, 10.0f, 1.0f, 0.5f, false);
     Toggle(m, Movement, "Flying", "noclip", "Noclip", "Move through walls, floors and ceilings");
 
     Toggle(m, Weapons, "Shooting", "unlimited_shots", "Unlimited shots", "Every gun keeps firing with no ammo limit or cooldown, as fast as Fire rate");
