@@ -24,6 +24,7 @@
 #include <tchar.h>
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -152,43 +153,8 @@ static SIZE ClientSize(float scale)
 }
 
 static float g_uiScale = 1.0f;
-
-static std::string McGoal(const std::string& goal)
-{
-    auto num = [&](const char* key, std::string& out) {
-        size_t at = goal.find(key);
-        if (at == std::string::npos)
-            return false;
-        size_t s = at + strlen(key), e = s;
-        while (e < goal.size() && (isdigit((unsigned char)goal[e]) || goal[e] == '-'))
-            ++e;
-        out = goal.substr(s, e - s);
-        return e > s;
-    };
-    std::string x, y, z;
-    bool hx = num("x=", x), hy = num("y=", y), hz = num("z=", z);
-    if (hx && hz)
-        return hy ? x + " " + y + " " + z : x + " " + z;
-    if (hy)
-        return "height " + y;
-    return goal;
-}
-
-static std::string McTask(bool linked, const launcher::mclink::State& st)
-{
-    if (!linked)
-        return "Start Minecraft from Fathom to use Baritone";
-    if (!st.baritone)
-        return "Baritone is not in this Minecraft install";
-    std::string task = st.task;
-    if (task.empty() || task == "INACTIVE")
-        task = st.pathing && !st.goal.empty() ? "Walking to " + McGoal(st.goal) : "Baritone is idle";
-    else if (task.rfind("Custom Goal", 0) == 0)
-        task = "Walking to " + McGoal(st.goal.empty() ? task : st.goal);
-    if (st.eta > 0 && task != "Baritone is idle")
-        task += ", about " + std::to_string((st.eta + 19) / 20) + " s left";
-    return task;
-}
+static float g_dpi = 1.0f;
+static bool g_dpiMoved = false;
 
 static void FitWindow(HWND hwnd, float from, float to)
 {
@@ -286,32 +252,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         f.available = false;
         f.apply = [&mcPending, &mcSliders](core::Feature& f) {
             ULONGLONG t = GetTickCount64();
-            if (mc::IsHack(f))
-                mcPending[f.id] = { launcher::mclink::Send({ { "op", "hack" }, { "name", f.id }, { "on", f.on } }), t };
-            else if (const char* name = mc::BaritoneSetting(f))
+            if (f.kind == core::Kind::Slider)
             {
-                if (f.kind == core::Kind::Slider)
-                    mcSliders[f.id] = t;
-                else
-                    mcPending[f.id] = { launcher::mclink::Send({ { "op", "bset" }, { "name", name }, { "value", f.on ? "true" : "false" } }), t };
+                mcSliders[f.id] = t;
+                return;
             }
-            else
-            {
-                std::string error;
-                std::string cmd = mc::BaritoneCommand(f, error);
-                if (cmd.empty())
-                {
-                    f.result = error;
-                    return;
-                }
-                launcher::mclink::Send({ { "op", "baritone" }, { "text", cmd } });
-                f.result = "Sent to Baritone: " + cmd;
-            }
+            nlohmann::json cmd = mc::Command(f);
+            if (cmd.is_null())
+                return;
+            long long seq = launcher::mclink::Send(cmd);
+            if (f.kind == core::Kind::Toggle)
+                mcPending[f.id] = { seq, t };
         };
     }
     const std::string gotoHint = mcModel.find("b_goto") ? mcModel.find("b_goto")->hint : std::string();
     const std::filesystem::path mcJar = std::filesystem::path(ExeDir()) / L"fathom_mc.jar";
-    launcher::mclink::AddMod(mcJar, true);
+    const std::string mcAgent = std::string("Fathom/") + FATHOM_VERSION + " (github.com/Sniko94pig/Fathom)";
     core::Model ukModel;
     uk::BuildFeatures(ukModel);
     ukModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"ultrakill-settings.json").wstring());
@@ -328,9 +284,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ui::LoaderSettings applied = loader.s;
     std::string prefsText = launcher::PrefsText(loader.s);
 
-    SIZE cs = ClientSize(loader.s.scale);
+    g_dpi = std::clamp(ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY)), 1.0f, 4.0f);
+    SIZE cs = ClientSize(loader.s.scale * g_dpi);
     DWORD style = WS_OVERLAPPEDWINDOW;
-    g_uiScale = loader.s.scale;
+    g_uiScale = loader.s.scale * g_dpi;
     RECT wr = { 0, 0, cs.cx, cs.cy };
     AdjustWindowRectEx(&wr, style, FALSE, 0);
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), LoadIconW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(1)), LoadCursor(nullptr, IDC_ARROW), nullptr, nullptr, L"FathomLauncher", nullptr };
@@ -338,6 +295,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Fathom", style, CW_USEDEFAULT, CW_USEDEFAULT, wr.right - wr.left, wr.bottom - wr.top, nullptr, nullptr, wc.hInstance, nullptr);
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
+    {
+        float actual = std::clamp(ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd), 1.0f, 4.0f);
+        if (std::fabs(actual - g_dpi) > 0.01f)
+        {
+            FitWindow(hwnd, loader.s.scale * g_dpi, loader.s.scale * actual);
+            g_dpi = actual;
+            g_uiScale = loader.s.scale * g_dpi;
+        }
+    }
 
     if (!CreateDeviceD3D(hwnd))
     {
@@ -377,7 +343,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->showGameTabs = false;
         mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; };
         mm->loader = &loader;
-        mm->uiScale = loader.s.scale;
+        mm->uiScale = loader.s.scale * g_dpi;
     }
     ui::T().accent = ui::AccentColor(loader.s.accent);
     bool artRefresh = false, artWipe = false, downloading = false, updateAsked = false;
@@ -491,14 +457,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     launcher::mclink::State mcState;
     bool mcLinked = false, mcWindow = false;
     ULONGLONG lastMc = 0, lastMcWindow = 0, lastMcInstalls = 0;
+    std::thread mcWorker;
+    std::atomic<bool> mcWorkerDone{ false };
+    launcher::mclink::Profile mcResult;
     auto refreshMc = [&home] {
-        home.mcInstalls.clear();
-        for (const launcher::mclink::Install& in : launcher::mclink::FabricInstalls())
-            home.mcInstalls.push_back({ in.name, in.mods.wstring(), in.night, in.fathom });
+        launcher::mclink::Profile p = launcher::mclink::Current();
+        home.mcReady = p.ok;
+        home.mcNeedFabric = p.needFabric;
+        home.mcGame = p.mc;
+        home.mcApi = p.api;
+        home.mcMods = p.mods.wstring();
     };
     refreshMc();
     home.mcLog = launcher::mclink::LogFile().wstring();
-    float shownScale = loader.s.scale;
+    float shownScale = loader.s.scale * g_dpi;
 
     bool done = false;
     while (!done)
@@ -573,14 +545,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 }
                 if (f && f->available)
                 {
-                    char buf[32];
-                    std::snprintf(buf, sizeof(buf), f->step >= 1.0f ? "%.0f" : "%.2f", f->value);
-                    mcPending[f->id] = { launcher::mclink::Send({ { "op", "bset" }, { "name", mc::BaritoneSetting(*f) }, { "value", buf } }), now };
+                    nlohmann::json cmd = mc::SliderCommand(*f);
+                    if (!cmd.is_null())
+                        mcPending[f->id] = { launcher::mclink::Send(cmd), now };
                 }
                 it = mcSliders.erase(it);
             }
             bool sameSession = mcLinked && mcState.session == launcher::mclink::Session();
-            auto waiting = [&](const std::string& id) {
+            auto hold = [&](const std::string& id) {
+                if (mcSliders.count(id))
+                    return true;
                 auto it = mcPending.find(id);
                 if (it == mcPending.end())
                     return false;
@@ -591,59 +565,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 }
                 return true;
             };
-            const char* offline = "Start Minecraft from Fathom to use this";
-            for (core::Feature& f : mcModel.features)
-            {
-                if (mc::IsHack(f))
-                {
-                    auto it = mcState.hacks.find(f.id);
-                    bool exists = mcLinked && it != mcState.hacks.end();
-                    f.available = exists && mcState.world && mcState.nightOn;
-                    f.missing = !mcLinked ? offline
-                              : !mcState.night ? "Night Client is not in this Minecraft install"
-                              : !exists ? "Not in this version of Night Client"
-                              : !mcState.nightOn ? "Night Client is switched off in the game"
-                                                 : "Join a world first";
-                    if (!mcLinked)
-                        f.on = false;
-                    else if (exists && !waiting(f.id))
-                        f.on = it->second;
-                }
-                else if (const char* name = mc::BaritoneSetting(f))
-                {
-                    f.available = mcLinked && mcState.baritone;
-                    f.missing = !mcLinked ? offline : "Baritone is not in this Minecraft install";
-                    if (mcLinked && !waiting(f.id) && !mcSliders.count(f.id))
-                    {
-                        if (f.kind == core::Kind::Toggle)
-                        {
-                            auto b = mcState.flags.find(name);
-                            if (b != mcState.flags.end())
-                                f.on = b->second;
-                        }
-                        else
-                        {
-                            auto v = mcState.numbers.find(name);
-                            if (v != mcState.numbers.end())
-                                f.value = (float)v->second;
-                        }
-                    }
-                }
-                else
-                {
-                    f.available = mcLinked && mcState.baritone && mcState.world;
-                    f.missing = !mcLinked ? offline : !mcState.baritone ? "Baritone is not in this Minecraft install" : "Join a world first";
-                }
-            }
-            if (core::Feature* f = mcModel.find("b_stop"))
-                f->hint = McTask(mcLinked, mcState);
-            if (core::Feature* f = mcModel.find("b_goto"))
-                f->hint = mcLinked && mcState.hasPos ? "You are at " + std::to_string(mcState.pos[0]) + " " + std::to_string(mcState.pos[1]) + " " + std::to_string(mcState.pos[2]) : gotoHint;
+            mc::ApplyLive(mcModel, mcLinked, mcState, hold, gotoHint);
             home.mcOpen = mcWindow;
             home.mcLinked = mcLinked;
             home.mcWorld = mcLinked && mcState.world;
+            home.mcMenu = mcLinked && mcState.menu;
             home.mcVersion = mcState.mc;
-            if (mcOpen && now - lastMcInstalls >= 5000)
+            if (mcOpen && !home.mcBusy && now - lastMcInstalls >= 5000)
             {
                 lastMcInstalls = now;
                 refreshMc();
@@ -749,15 +677,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             home.startNow = false;
             if (mcOpen)
             {
-                int n = launcher::mclink::AddMod(mcJar, false);
-                refreshMc();
-                launcher::StartGame(games[home.game]);
-                if (n < 0)
-                    menu.Notify("fathom_mc.jar is missing, update Fathom with the installer", ICON_TRIANGLE_ALERT);
-                else if (n == 0)
-                    menu.Notify("No Fabric install found, opening the launcher", ICON_TRIANGLE_ALERT);
-                else
-                    menu.Notify("Fathom mod is in " + std::to_string(n) + (n == 1 ? " Fabric install" : " Fabric installs"), ICON_CHECK);
+                if (!home.mcBusy)
+                {
+                    if (mcWorker.joinable())
+                        mcWorker.join();
+                    home.mcBusy = true;
+                    home.mcStep = "Setting up\xe2\x80\xa6";
+                    mcWorkerDone = false;
+                    mcWorker = std::thread([&] {
+                        mcResult = launcher::mclink::Prepare(mcJar, mcAgent, nullptr);
+                        mcWorkerDone = true;
+                    });
+                }
             }
             else
             {
@@ -768,6 +699,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 else
                     inject::StartGame();
                 menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6" : sotfOpen ? "Starting Sons of the Forest\xe2\x80\xa6" : "Starting Subnautica 2\xe2\x80\xa6", ICON_PLAY);
+            }
+        }
+        if (home.mcBusy && mcWorkerDone)
+        {
+            mcWorker.join();
+            home.mcBusy = false;
+            refreshMc();
+            if (mcResult.needFabric)
+                menu.Ask("Install Fabric first",
+                    "Fathom runs Minecraft through Fabric. Install Fabric for Minecraft 1.20.1 or newer with the Fabric installer, then press Start game again.",
+                    "Open fabricmc.net", [] { ShellExecuteW(nullptr, L"open", L"https://fabricmc.net/use/installer/", nullptr, nullptr, SW_SHOWNORMAL); });
+            else if (!mcResult.ok)
+                menu.Notify(mcResult.error, ICON_TRIANGLE_ALERT);
+            else
+            {
+                launcher::StartGame(games[launcher::FindGame("minecraft")]);
+                menu.Notify("Pick Fathom in the Minecraft Launcher and press Play", ICON_PLAY);
             }
         }
         if (home.injectNow && !home.busy)
@@ -856,11 +804,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 applied = loader.s;
             }
         }
-        menu.uiScale = loader.s.scale;
-        if (std::fabs(shownScale - loader.s.scale) > 0.001f)
+        float wantScale = loader.s.scale * g_dpi;
+        menu.uiScale = wantScale;
+        if (std::fabs(shownScale - wantScale) > 0.001f)
         {
-            FitWindow(hwnd, shownScale, loader.s.scale);
-            shownScale = loader.s.scale;
+            if (g_dpiMoved)
+                g_dpiMoved = false;
+            else
+                FitWindow(hwnd, shownScale, wantScale);
+            shownScale = wantScale;
             g_uiScale = shownScale;
         }
         if (artRefresh)
@@ -941,6 +893,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
 
     if (worker.joinable())
         worker.join();
+    if (mcWorker.joinable())
+        mcWorker.join();
     if (core::SettingsText(model) != lastText)
         core::SaveSettings(model);
     if (core::SettingsText(sn1Model) != sn1LastText)
@@ -1193,6 +1147,14 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             CreateRenderTarget();
         }
         return 0;
+    case WM_DPICHANGED:
+    {
+        g_dpi = std::clamp(HIWORD(wParam) / 96.0f, 1.0f, 4.0f);
+        const RECT* r = (const RECT*)lParam;
+        SetWindowPos(hWnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        g_dpiMoved = true;
+        return 0;
+    }
     case WM_GETMINMAXINFO:
     {
         RECT r = { 0, 0, (LONG)std::lround(820.0f * g_uiScale), (LONG)std::lround(540.0f * g_uiScale) };

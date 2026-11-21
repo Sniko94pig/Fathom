@@ -12,13 +12,6 @@ struct Art {
     float w = 0, h = 0;
 };
 
-struct McInstall {
-    std::string name;
-    std::wstring mods;
-    bool night = false;
-    bool fathom = false;
-};
-
 struct Home {
     inject::Paths paths;
     inject::GameState state = inject::GameState::NotRunning;
@@ -45,8 +38,15 @@ struct Home {
     bool mcOpen = false;
     bool mcLinked = false;
     bool mcWorld = false;
+    bool mcMenu = false;
+    bool mcBusy = false;
+    bool mcReady = false;
+    bool mcNeedFabric = false;
     std::string mcVersion;
-    std::vector<McInstall> mcInstalls;
+    std::string mcGame;
+    std::string mcApi;
+    std::string mcStep;
+    std::wstring mcMods;
     std::wstring mcLog;
     std::unordered_map<long long, Art> art;
     void Draw();

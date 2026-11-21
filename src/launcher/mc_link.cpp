@@ -1,5 +1,8 @@
 #include "launcher/mc_link.h"
 #include <windows.h>
+#include <bcrypt.h>
+#include <tlhelp32.h>
+#include <wininet.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -10,12 +13,18 @@
 #include <random>
 #include <set>
 
+extern const unsigned char logo_png[];
+extern const unsigned int logo_png_size;
+
 namespace fs = std::filesystem;
 using nlohmann::json;
 
 namespace launcher::mclink {
 
 namespace {
+
+const char* kSupported[] = {"1.20.1", "1.20.2", "1.20.4", "1.20.6", "1.21.1", "1.21.3", "1.21.4",
+                            "1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1.2", "26.2", "26.3"};
 
 fs::path Game() {
     wchar_t buf[MAX_PATH];
@@ -31,10 +40,11 @@ fs::path Wide(const std::string& s) {
     return fs::path(w);
 }
 
-json ReadJson(const fs::path& p) {
-    std::ifstream in(p, std::ios::binary);
-    if (!in) return json();
-    return json::parse(in, nullptr, false);
+std::string Utf8(const std::wstring& w) {
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
+    return s;
 }
 
 std::string ReadAll(const fs::path& p) {
@@ -42,19 +52,15 @@ std::string ReadAll(const fs::path& p) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
+json ReadJson(const fs::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    if (!in) return json();
+    return json::parse(in, nullptr, false);
+}
+
 std::string Str(const json& o, const char* key) {
     auto it = o.find(key);
     return it != o.end() && it->is_string() ? it->get<std::string>() : std::string();
-}
-
-bool Bool(const json& o, const char* key, bool def) {
-    auto it = o.find(key);
-    return it != o.end() && it->is_boolean() ? it->get<bool>() : def;
-}
-
-long long Int(const json& o, const char* key, long long def) {
-    auto it = o.find(key);
-    return it != o.end() && it->is_number() ? it->get<long long>() : def;
 }
 
 bool WriteFile(const fs::path& p, const std::string& text) {
@@ -72,7 +78,294 @@ bool WriteFile(const fs::path& p, const std::string& text) {
         if (MoveFileExW(tmp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING)) return true;
         Sleep(10);
     }
+    fs::remove(tmp, ec);
     return false;
+}
+
+std::string Base64(const unsigned char* data, size_t len) {
+    static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((len + 2) / 3 * 4);
+    for (size_t i = 0; i < len; i += 3) {
+        unsigned v = (unsigned)data[i] << 16;
+        if (i + 1 < len) v |= (unsigned)data[i + 1] << 8;
+        if (i + 2 < len) v |= data[i + 2];
+        out.push_back(t[(v >> 18) & 63]);
+        out.push_back(t[(v >> 12) & 63]);
+        out.push_back(i + 1 < len ? t[(v >> 6) & 63] : '=');
+        out.push_back(i + 2 < len ? t[v & 63] : '=');
+    }
+    return out;
+}
+
+std::string Sha512(const std::string& data) {
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    BCRYPT_HASH_HANDLE h = nullptr;
+    unsigned char out[64] = {};
+    bool ok = BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA512_ALGORITHM, nullptr, 0) == 0 &&
+              BCryptCreateHash(alg, &h, nullptr, 0, nullptr, 0, 0) == 0 &&
+              BCryptHashData(h, (PUCHAR)data.data(), (ULONG)data.size(), 0) == 0 && BCryptFinishHash(h, out, sizeof(out), 0) == 0;
+    if (h) BCryptDestroyHash(h);
+    if (alg) BCryptCloseAlgorithmProvider(alg, 0);
+    if (!ok) return {};
+    std::string hex;
+    char b[3];
+    for (unsigned char c : out) {
+        std::snprintf(b, sizeof(b), "%02x", c);
+        hex += b;
+    }
+    return hex;
+}
+
+bool HttpGet(const std::wstring& url, const std::string& agent, std::string& body, size_t limit) {
+    body.clear();
+    HINTERNET net = InternetOpenA(agent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!net) return false;
+    DWORD timeout = 20000;
+    InternetSetOptionW(net, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
+    InternetSetOptionW(net, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+    HINTERNET req = InternetOpenUrlW(net, url.c_str(), nullptr, 0, INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_COOKIES, 0);
+    bool ok = false;
+    if (req) {
+        DWORD status = 0, size = sizeof(status);
+        if (HttpQueryInfoW(req, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status, &size, nullptr) && status == 200) {
+            char buf[65536];
+            DWORD got = 0;
+            ok = true;
+            while (InternetReadFile(req, buf, sizeof(buf), &got) && got > 0) {
+                body.append(buf, got);
+                if (body.size() > limit) {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        InternetCloseHandle(req);
+    }
+    InternetCloseHandle(net);
+    return ok && !body.empty();
+}
+
+std::vector<int> Parts(const std::string& v) {
+    std::vector<int> out;
+    int cur = 0;
+    bool any = false;
+    for (char c : v) {
+        if (c >= '0' && c <= '9') {
+            cur = cur * 10 + (c - '0');
+            any = true;
+        } else if (c == '.') {
+            out.push_back(cur);
+            cur = 0;
+            any = false;
+        } else {
+            break;
+        }
+    }
+    if (any) out.push_back(cur);
+    return out;
+}
+
+bool Older(const std::string& a, const std::string& b) {
+    std::vector<int> x = Parts(a), y = Parts(b);
+    for (size_t i = 0; i < std::max(x.size(), y.size()); ++i) {
+        int p = i < x.size() ? x[i] : 0, q = i < y.size() ? y[i] : 0;
+        if (p != q) return p < q;
+    }
+    return false;
+}
+
+bool Supported(const std::string& mc) {
+    for (const char* s : kSupported)
+        if (mc == s) return true;
+    return false;
+}
+
+struct Loader {
+    std::string id, mc, version;
+};
+
+Loader FindLoader(const fs::path& root) {
+    Loader best;
+    std::error_code ec;
+    for (auto it = fs::directory_iterator(root / L"versions", ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        if (!it->is_directory(ec)) continue;
+        std::string id = Utf8(it->path().filename().wstring());
+        const std::string prefix = "fabric-loader-";
+        if (id.rfind(prefix, 0) != 0) continue;
+        json v = ReadJson(it->path() / (it->path().filename().wstring() + L".json"));
+        if (!v.is_object() || Str(v, "mainClass").find("KnotClient") == std::string::npos) continue;
+        std::string mc = Str(v, "inheritsFrom");
+        if (!Supported(mc)) continue;
+        std::string version = id.substr(prefix.size());
+        size_t dash = version.find('-');
+        if (dash != std::string::npos) version = version.substr(0, dash);
+        if (best.id.empty() || Older(best.mc, mc) || (best.mc == mc && Older(best.version, version))) best = {id, mc, version};
+    }
+    return best;
+}
+
+std::string FindApi(const fs::path& mods) {
+    std::error_code ec;
+    for (auto it = fs::directory_iterator(mods, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        std::string n = Utf8(it->path().filename().wstring());
+        if (n.rfind("fabric-api-", 0) == 0 && n.size() > 4 && n.compare(n.size() - 4, 4, ".jar") == 0) return n;
+    }
+    return {};
+}
+
+std::string EnsureApi(const fs::path& mods, const std::string& mc, const std::string& agent, std::string& error) {
+    std::string have = FindApi(mods);
+    std::string list;
+    std::wstring url = L"https://api.modrinth.com/v2/project/fabric-api/version?loaders=%5B%22fabric%22%5D&game_versions=%5B%22" +
+                       Wide(mc).wstring() + L"%22%5D";
+    if (!HttpGet(url, agent, list, 8 << 20)) {
+        if (!have.empty()) return have;
+        error = "Could not reach Modrinth to get Fabric API. Check your internet and try again.";
+        return {};
+    }
+    json versions = json::parse(list, nullptr, false);
+    const json* pick = nullptr;
+    std::string pickDate;
+    if (versions.is_array())
+        for (int pass = 0; pass < 2 && !pick; ++pass)
+            for (const json& v : versions) {
+                if (!v.is_object() || (pass == 0 && Str(v, "version_type") != "release")) continue;
+                std::string date = Str(v, "date_published");
+                if (!pick || date > pickDate) {
+                    pick = &v;
+                    pickDate = date;
+                }
+            }
+    const json* file = nullptr;
+    if (pick) {
+        auto files = pick->find("files");
+        if (files != pick->end() && files->is_array())
+            for (const json& f : *files)
+                if (f.is_object() && (!file || f.value("primary", false))) file = &f;
+    }
+    std::string name = file ? Str(*file, "filename") : std::string();
+    std::string link = file ? Str(*file, "url") : std::string();
+    std::string sha;
+    if (file && file->contains("hashes") && (*file)["hashes"].is_object()) sha = Str((*file)["hashes"], "sha512");
+    if (name.empty() || link.rfind("https://", 0) != 0 || sha.empty() || name.find_first_of("/\\:") != std::string::npos ||
+        name.rfind("fabric-api-", 0) != 0) {
+        if (!have.empty()) return have;
+        error = "Modrinth has no Fabric API for Minecraft " + mc + " yet.";
+        return {};
+    }
+    fs::path dest = mods / Wide(name);
+    std::error_code ec;
+    bool good = fs::exists(dest, ec) && Sha512(ReadAll(dest)) == sha;
+    if (!good) {
+        std::string data;
+        if (!HttpGet(Wide(link).wstring(), agent, data, 64 << 20) || Sha512(data) != sha) {
+            if (!have.empty()) return have;
+            error = "The Fabric API download did not work. Try again.";
+            return {};
+        }
+        if (!WriteFile(dest, data)) {
+            error = "Could not save Fabric API in the Fathom mods folder.";
+            return {};
+        }
+    }
+    for (auto it = fs::directory_iterator(mods, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        std::string n = Utf8(it->path().filename().wstring());
+        if (n != name && n.rfind("fabric-api-", 0) == 0) fs::remove(it->path(), ec);
+    }
+    return name;
+}
+
+bool WriteVersion(const fs::path& root, const Loader& loader, const std::string& id, const fs::path& mods, std::string& error) {
+    fs::path from = root / L"versions" / Wide(loader.id);
+    json v = ReadJson(from / (Wide(loader.id).wstring() + L".json"));
+    if (!v.is_object()) {
+        error = "Could not read the Fabric files for Minecraft " + loader.mc + ".";
+        return false;
+    }
+    v["id"] = id;
+    if (!v.contains("arguments") || !v["arguments"].is_object()) v["arguments"] = json::object();
+    json& args = v["arguments"];
+    if (!args.contains("jvm") || !args["jvm"].is_array()) args["jvm"] = json::array();
+    json jvm = json::array();
+    for (const json& a : args["jvm"])
+        if (!a.is_string() || a.get<std::string>().rfind("-Dfabric.modsFolder=", 0) != 0) jvm.push_back(a);
+    jvm.push_back("-Dfabric.modsFolder=" + Utf8(mods.wstring()));
+    args["jvm"] = jvm;
+    fs::path dir = root / L"versions" / Wide(id);
+    fs::path file = dir / (Wide(id).wstring() + L".json");
+    std::string text = v.dump(2);
+    if (ReadAll(file) != text && !WriteFile(file, text)) {
+        error = "Could not write the Fathom install files.";
+        return false;
+    }
+    std::error_code ec;
+    fs::path jar = dir / (Wide(id).wstring() + L".jar");
+    fs::path src = from / (Wide(loader.id).wstring() + L".jar");
+    if (!fs::exists(src, ec)) src = root / L"versions" / Wide(loader.mc) / (Wide(loader.mc).wstring() + L".jar");
+    if (fs::exists(src, ec) && (!fs::exists(jar, ec) || fs::file_size(jar, ec) != fs::file_size(src, ec)))
+        fs::copy_file(src, jar, fs::copy_options::overwrite_existing, ec);
+    return true;
+}
+
+std::string Now() {
+    SYSTEMTIME t;
+    GetSystemTime(&t);
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
+    return buf;
+}
+
+bool ProfileReady(const json& j, const std::string& id) {
+    if (!j.is_object()) return false;
+    auto profiles = j.find("profiles");
+    if (profiles == j.end() || !profiles->is_object()) return false;
+    auto p = profiles->find("fathom");
+    return p != profiles->end() && p->is_object() && Str(*p, "lastVersionId") == id && Str(*p, "name") == "Fathom";
+}
+
+bool WriteProfile(const fs::path& root, const std::string& id, std::string& error) {
+    fs::path file = root / L"launcher_profiles.json";
+    std::error_code ec;
+    if (!fs::exists(file, ec)) {
+        error = "Open the Minecraft Launcher once, then press Start game again.";
+        return false;
+    }
+    json j = ReadJson(file);
+    if (!j.is_object()) {
+        error = "Could not read the Minecraft Launcher's installations.";
+        return false;
+    }
+    if (ProfileReady(j, id)) return true;
+    fs::path backup = root / L"launcher_profiles.json.fathom-backup";
+    if (!fs::exists(backup, ec)) fs::copy_file(file, backup, ec);
+    if (!j.contains("profiles") || !j["profiles"].is_object()) j["profiles"] = json::object();
+    json& p = j["profiles"]["fathom"];
+    if (!p.is_object()) p = json::object();
+    std::string now = Now();
+    p["name"] = "Fathom";
+    p["type"] = "custom";
+    p["lastVersionId"] = id;
+    p["icon"] = "data:image/png;base64," + Base64(logo_png, logo_png_size);
+    if (!p.contains("created")) p["created"] = now;
+    p["lastUsed"] = now;
+    if (!WriteFile(file, j.dump(2))) {
+        error = "Could not save the Fathom install in the Minecraft Launcher.";
+        return false;
+    }
+    return true;
+}
+
+void Scan(Install& in) {
+    std::error_code ec;
+    for (auto it = fs::directory_iterator(in.mods, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        std::wstring n = it->path().filename().wstring();
+        for (wchar_t& c : n) c = (wchar_t)std::towlower(c);
+        if (n.size() < 4 || n.compare(n.size() - 4, 4, L".jar") != 0) continue;
+        if (n == L"fathom_mc.jar") in.fathom = true;
+        else if (n.find(L"night") != std::wstring::npos) in.night = true;
+    }
 }
 
 std::string ModsArg(const std::string& args) {
@@ -102,21 +395,16 @@ std::string VersionMods(const json& v) {
     return {};
 }
 
-void Scan(Install& in) {
-    std::error_code ec;
-    for (auto it = fs::directory_iterator(in.mods, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
-        if (!it->is_regular_file(ec)) continue;
-        std::wstring n = it->path().filename().wstring();
-        for (wchar_t& c : n) c = (wchar_t)std::towlower(c);
-        if (n.size() < 4 || n.compare(n.size() - 4, 4, L".jar") != 0) continue;
-        if (n == L"fathom_mc.jar") in.fathom = true;
-        else if (n.find(L"night") != std::wstring::npos) in.night = true;
-    }
+std::wstring Key(const fs::path& p) {
+    std::wstring k = p.lexically_normal().wstring();
+    for (wchar_t& c : k) c = (wchar_t)std::towlower(c);
+    while (!k.empty() && (k.back() == L'\\' || k.back() == L'/')) k.pop_back();
+    return k;
 }
 
 BOOL CALLBACK FindGame(HWND h, LPARAM found) {
     wchar_t cls[32];
-    if (!GetClassNameW(h, cls, 32) || wcscmp(cls, L"GLFW30") != 0) return TRUE;
+    if (!GetClassNameW(h, cls, 32) || (wcscmp(cls, L"GLFW30") != 0 && wcscmp(cls, L"SDL_app") != 0)) return TRUE;
     wchar_t title[64];
     if (GetWindowTextW(h, title, 64) >= 9 && wcsncmp(title, L"Minecraft", 9) == 0) {
         *(bool*)found = true;
@@ -154,37 +442,9 @@ bool Read(State& out) {
     if (ec) return false;
     auto age = fs::file_time_type::clock::now() - t;
     if (age > std::chrono::seconds(3) || age < -std::chrono::seconds(60)) return false;
-    json j = ReadJson(p);
-    if (!j.is_object()) {
+    if (!mc::ParseLive(ReadAll(p), out)) {
         if (haveLast) out = last;
         return haveLast;
-    }
-    out.session = Str(j, "session");
-    out.ack = Int(j, "ack", 0);
-    out.mc = Str(j, "mc");
-    out.client = Str(j, "client");
-    out.night = Bool(j, "night", false);
-    out.nightOn = Bool(j, "nightOn", true);
-    out.world = Bool(j, "world", false);
-    out.baritone = Bool(j, "baritone", false);
-    out.pathing = Bool(j, "pathing", false);
-    out.task = Str(j, "task");
-    out.goal = Str(j, "goal");
-    out.eta = Int(j, "eta", -1);
-    auto hacks = j.find("hacks");
-    if (hacks != j.end() && hacks->is_object())
-        for (const auto& e : hacks->items())
-            if (e.value().is_boolean()) out.hacks[e.key()] = e.value().get<bool>();
-    auto settings = j.find("settings");
-    if (settings != j.end() && settings->is_object())
-        for (const auto& e : settings->items()) {
-            if (e.value().is_boolean()) out.flags[e.key()] = e.value().get<bool>();
-            else if (e.value().is_number()) out.numbers[e.key()] = e.value().get<double>();
-        }
-    auto pos = j.find("pos");
-    if (pos != j.end() && pos->is_array() && pos->size() == 3 && (*pos)[0].is_number() && (*pos)[1].is_number() && (*pos)[2].is_number()) {
-        out.hasPos = true;
-        for (int i = 0; i < 3; ++i) out.pos[i] = (*pos)[i].get<int>();
     }
     last = out;
     haveLast = true;
@@ -206,6 +466,17 @@ long long Send(json cmd) {
 bool GameOpen() {
     bool found = false;
     EnumWindows(FindGame, (LPARAM)&found);
+    return found;
+}
+
+bool LauncherOpen() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+    PROCESSENTRY32W e{sizeof(e)};
+    bool found = false;
+    for (BOOL ok = Process32FirstW(snap, &e); ok && !found; ok = Process32NextW(snap, &e))
+        found = _wcsicmp(e.szExeFile, L"MinecraftLauncher.exe") == 0 || _wcsicmp(e.szExeFile, L"Minecraft.exe") == 0;
+    CloseHandle(snap);
     return found;
 }
 
@@ -237,34 +508,87 @@ std::vector<Install> FabricInstalls() {
             std::string dir = Str(p, "gameDir");
             in.mods = (dir.empty() ? root : Wide(dir)) / L"mods";
         }
-        std::wstring key = in.mods.lexically_normal().wstring();
-        for (wchar_t& c : key) c = (wchar_t)std::towlower(c);
-        while (!key.empty() && (key.back() == L'\\' || key.back() == L'/')) key.pop_back();
-        if (!seen.insert(key).second) continue;
+        if (!seen.insert(Key(in.mods)).second) continue;
         Scan(in);
         out.push_back(std::move(in));
     }
-    std::stable_sort(out.begin(), out.end(), [](const Install& a, const Install& b) { return a.night && !b.night; });
     return out;
 }
 
-int AddMod(const fs::path& jar, bool onlyUpdate) {
-    std::error_code ec;
-    if (!fs::exists(jar, ec)) return -1;
-    std::string want = ReadAll(jar);
-    if (want.empty()) return -1;
+int RemoveOldMod() {
+    std::wstring ours = Key(Dir());
     int n = 0;
+    std::error_code ec;
     for (const Install& in : FabricInstalls()) {
-        if (onlyUpdate && !in.fathom) continue;
-        fs::path dest = in.mods / L"fathom_mc.jar";
-        if (in.fathom && ReadAll(dest) == want) {
-            ++n;
-            continue;
-        }
-        fs::create_directories(in.mods, ec);
-        if (fs::copy_file(jar, dest, fs::copy_options::overwrite_existing, ec)) ++n;
+        if (!in.fathom || Key(in.mods).rfind(ours, 0) == 0) continue;
+        if (fs::remove(in.mods / L"fathom_mc.jar", ec)) ++n;
     }
     return n;
+}
+
+Profile Current() {
+    Profile p;
+    fs::path root = Game();
+    if (root.empty()) return p;
+    Loader loader = FindLoader(root);
+    if (loader.id.empty()) {
+        p.needFabric = true;
+        return p;
+    }
+    p.mc = loader.mc;
+    p.loader = loader.id;
+    p.mods = Dir() / L"mods" / Wide(loader.mc);
+    p.api = FindApi(p.mods);
+    std::error_code ec;
+    p.ok = !p.api.empty() && fs::exists(p.mods / L"fathom_mc.jar", ec) && ProfileReady(ReadJson(root / L"launcher_profiles.json"), "fathom-" + loader.mc);
+    return p;
+}
+
+Profile Prepare(const fs::path& jar, const std::string& agent, const std::function<void(const std::string&)>& step) {
+    Profile p;
+    fs::path root = Game();
+    std::error_code ec;
+    if (root.empty() || !fs::is_directory(root / L"versions", ec)) {
+        p.needFabric = true;
+        return p;
+    }
+    Loader loader = FindLoader(root);
+    if (loader.id.empty()) {
+        p.needFabric = true;
+        return p;
+    }
+    p.mc = loader.mc;
+    p.loader = loader.id;
+    p.mods = Dir() / L"mods" / Wide(loader.mc);
+    fs::create_directories(p.mods, ec);
+    if (!fs::exists(jar, ec)) {
+        p.error = "fathom_mc.jar is missing. Update Fathom with the installer.";
+        return p;
+    }
+    fs::path mod = p.mods / L"fathom_mc.jar";
+    if (!fs::exists(mod, ec) || fs::file_size(mod, ec) != fs::file_size(jar, ec) || ReadAll(mod) != ReadAll(jar)) {
+        if (!fs::copy_file(jar, mod, fs::copy_options::overwrite_existing, ec)) {
+            p.error = "Could not copy the Fathom mod. Close Minecraft, then press Start game again.";
+            return p;
+        }
+    }
+    if (step) step("Getting Fabric API");
+    p.api = EnsureApi(p.mods, loader.mc, agent, p.error);
+    if (p.api.empty()) return p;
+    if (step) step("Making the Fathom install");
+    std::string id = "fathom-" + loader.mc;
+    if (!WriteVersion(root, loader, id, p.mods, p.error)) return p;
+    if (!ProfileReady(ReadJson(root / L"launcher_profiles.json"), id)) {
+        if (LauncherOpen()) {
+            p.launcherOpen = true;
+            p.error = "Close the Minecraft Launcher, then press Start game again.";
+            return p;
+        }
+        if (!WriteProfile(root, id, p.error)) return p;
+    }
+    RemoveOldMod();
+    p.ok = true;
+    return p;
 }
 
 }

@@ -1,27 +1,14 @@
 #pragma once
+#include "core/mc_features.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
+#include <functional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace launcher::mclink {
 
-struct State {
-    bool night = false;
-    bool nightOn = true;
-    bool world = false;
-    bool baritone = false;
-    bool pathing = false;
-    bool hasPos = false;
-    long long ack = 0;
-    long long eta = -1;
-    int pos[3] = {0, 0, 0};
-    std::string session, mc, client, task, goal;
-    std::unordered_map<std::string, bool> hacks;
-    std::unordered_map<std::string, bool> flags;
-    std::unordered_map<std::string, double> numbers;
-};
+using State = mc::Live;
 
 struct Install {
     std::string name;
@@ -30,13 +17,27 @@ struct Install {
     bool fathom = false;
 };
 
+struct Profile {
+    bool ok = false;
+    bool needFabric = false;
+    bool launcherOpen = false;
+    std::string error;
+    std::string mc;
+    std::string loader;
+    std::string api;
+    std::filesystem::path mods;
+};
+
 std::filesystem::path Dir();
 std::filesystem::path LogFile();
 bool Read(State& out);
 long long Send(nlohmann::json cmd);
 const std::string& Session();
 bool GameOpen();
+bool LauncherOpen();
 std::vector<Install> FabricInstalls();
-int AddMod(const std::filesystem::path& jar, bool onlyUpdate);
+int RemoveOldMod();
+Profile Current();
+Profile Prepare(const std::filesystem::path& jar, const std::string& agent, const std::function<void(const std::string&)>& step);
 
 }

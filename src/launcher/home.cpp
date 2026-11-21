@@ -295,10 +295,13 @@ void Home::DrawGame() {
     bool injected = gs == inject::GameState::Injected;
     std::string line;
     if (mc)
-        line = mcLinked ? (mcWorld ? "Connected. The buttons on the left change the game right away."
-                                   : "Connected. Join a world, then use the buttons on the left.")
-               : mcOpen ? "Minecraft is open without the Fathom mod. Close it, press Start game and play a Fabric install."
-                        : "Press Start game, then play a Fabric install that has Night Client.";
+        line = mcBusy ? "Setting up the Fathom install in the Minecraft Launcher."
+               : mcLinked && !mcWorld ? "Connected. Join a world, then press " + openKey + " in the game for the Fathom menu."
+               : mcLinked && mcMenu ? "Connected. Press " + openKey + " in the game for the Fathom menu, or use the pages on the left."
+               : mcLinked ? "Connected. If the menu does not open, set Graphics API to Prefer OpenGL in Video Settings."
+               : mcOpen ? "Minecraft is open without Fathom. Close it, press Start game and play the Fathom install."
+               : mcNeedFabric ? "Install Fabric first, then press Start game."
+                              : "Press Start game. Fathom makes its own install in the Minecraft Launcher.";
     else if (g.building) line = "The menu for this game is being built. Look at the modules on the left.";
     else if (!g.ready) line = "Coming soon. Fathom does not support this game yet.";
     else if (injected) line = "The menu is running. Press " + openKey + " in the game to open it, " + unloadKey + " to unload it.";
@@ -311,7 +314,8 @@ void Home::DrawGame() {
     ImVec2 bs(S(196), S(50));
     ImVec2 bp(b.x - S(28) - bs.x, b.y - S(28) - bs.y);
     if (mc) {
-        if (mcLinked) Button("main", "Connected", bp, bs, Btn::Tint, ICON_CHECK, false);
+        if (mcBusy) Button("main", mcStep.c_str(), bp, bs, Btn::Primary, ICON_REFRESH_CW, false);
+        else if (mcLinked) Button("main", "Connected", bp, bs, Btn::Tint, ICON_CHECK, false);
         else if (mcOpen) Button("main", "Running", bp, bs, Btn::Tint, ICON_PLAY, false);
         else if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) startNow = true;
     } else if (g.building) {
@@ -364,44 +368,34 @@ void Home::DrawGame() {
 void Home::DrawMinecraftCards(float y, float w, ImVec2 o) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float colW = std::floor((w - S(16)) * 0.5f);
-    size_t shown = std::min<size_t>(mcInstalls.size(), 4);
-    float ch = std::max(S(220), S(46) + (float)std::max<size_t>(shown, 1) * S(44) + S(64));
+    float ch = S(220);
     ImVec2 c1(o.x, y), c2(o.x + colW + S(16), y);
-    bool added = std::any_of(mcInstalls.begin(), mcInstalls.end(), [](const McInstall& i) { return i.fathom; });
     Card(dl, c1, ImVec2(c1.x + colW, y + ch), true);
     Caption(dl, ImVec2(c1.x + S(16), y + S(15)), "How it works");
-    Step(dl, ImVec2(c1.x + S(16), y + S(44)), colW - S(32), 1, "Press Start game", "Fathom adds its mod to your Fabric installs.", added);
-    Step(dl, ImVec2(c1.x + S(16), y + S(98)), colW - S(32), 2, "Play a Fabric install", "Pick one with Night Client in the launcher.", mcLinked);
-    Step(dl, ImVec2(c1.x + S(16), y + S(152)), colW - S(32), 3, "Join a world", "Then use the pages on the left.", mcLinked && mcWorld);
+    Step(dl, ImVec2(c1.x + S(16), y + S(44)), colW - S(32), 1, "Press Start game", "Fathom makes a Fathom install with Fabric API.", mcReady);
+    Step(dl, ImVec2(c1.x + S(16), y + S(98)), colW - S(32), 2, "Play Fathom", "Pick Fathom in the Minecraft Launcher.", mcLinked);
+    std::string last = "Press " + openKey + " in a world";
+    Step(dl, ImVec2(c1.x + S(16), y + S(152)), colW - S(32), 3, last.c_str(), "The Fathom menu opens in the game.", mcLinked && mcWorld && mcMenu);
 
     Card(dl, c2, ImVec2(c2.x + colW, y + ch));
-    Caption(dl, ImVec2(c2.x + S(16), y + S(15)), "Fabric installs");
-    float ry = y + S(46), rw = colW - S(32);
-    if (mcInstalls.empty())
-        Text(dl, T().regular, 12.5f, ImVec2(c2.x + S(16), ry), White(0.55f), "No Fabric install found. Add one with the Fabric installer first.", rw);
-    for (size_t i = 0; i < shown; ++i) {
-        const McInstall& in = mcInstalls[i];
-        bool good = in.night && in.fathom;
-        const char* status = good ? "Night Client and Fathom are in" : in.night ? "Night Client is in, Start game adds Fathom" : "No Night Client in this install";
-        TextFit(dl, T().medium, 13, ImVec2(c2.x + S(16), ry), rw - S(28), White(0.92f), in.name.c_str());
-        TextFit(dl, T().regular, 11.5f, ImVec2(c2.x + S(16), ry + S(18)), rw - S(28), White(0.48f), status);
-        Icon(dl, ImVec2(c2.x + S(16) + rw - S(8), ry + S(13)), S(14), good ? Good() : in.night ? Accent() : White(0.3f),
-             good ? ICON_CIRCLE_CHECK : in.night ? ICON_CIRCLE : ICON_X);
-        if (ImGui::IsMouseHoveringRect(ImVec2(c2.x, ry - S(4)), ImVec2(c2.x + colW, ry + S(38)))) Tip(Narrow(in.mods).c_str());
-        dl->AddLine(ImVec2(c2.x + S(16), ry + S(38)), ImVec2(c2.x + S(16) + rw, ry + S(38)), White(0.06f));
-        ry += S(44);
-    }
+    Caption(dl, ImVec2(c2.x + S(16), y + S(15)), "Fathom install");
+    std::string api = mcApi;
+    if (api.rfind("fabric-api-", 0) == 0) api = api.substr(11);
+    if (api.size() > 4 && api.compare(api.size() - 4, 4, ".jar") == 0) api.resize(api.size() - 4);
+    Row(dl, ImVec2(c2.x + S(16), y + S(46)), colW - S(32), "Minecraft", mcGame.empty() ? (mcNeedFabric ? "Needs Fabric" : "-") : mcGame, !mcGame.empty());
+    Row(dl, ImVec2(c2.x + S(16), y + S(74)), colW - S(32), "Fabric API", api.empty() ? "Added on Start game" : api, !api.empty());
+    Row(dl, ImVec2(c2.x + S(16), y + S(102)), colW - S(32), "Fathom mod", mcReady ? "Ready" : "Added on Start game", mcReady);
+    if (!mcMods.empty() && ImGui::IsMouseHoveringRect(ImVec2(c2.x, y + S(40)), ImVec2(c2.x + colW, y + S(124)))) Tip(Narrow(mcMods).c_str());
     float bw = std::floor((colW - S(40)) * 0.5f);
-    std::wstring folder;
-    for (const McInstall& in : mcInstalls)
-        if (in.night) {
-            folder = in.mods;
-            break;
-        }
-    if (folder.empty() && !mcInstalls.empty()) folder = mcInstalls[0].mods;
-    if (Button("mcmods", "Open mods folder", ImVec2(c2.x + S(16), y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_FOLDER_OPEN, !folder.empty()))
-        ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     std::error_code ec;
+    if (mcNeedFabric) {
+        if (Button("mcfabric", "Get Fabric", ImVec2(c2.x + S(16), y + ch - S(52)), ImVec2(bw, S(34)), Btn::Tint, ICON_DOWNLOAD, true))
+            ShellExecuteW(nullptr, L"open", L"https://fabricmc.net/use/installer/", nullptr, nullptr, SW_SHOWNORMAL);
+    } else {
+        bool hasMods = !mcMods.empty() && std::filesystem::is_directory(mcMods, ec);
+        if (Button("mcmods", "Open mods folder", ImVec2(c2.x + S(16), y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_FOLDER_OPEN, hasMods))
+            ShellExecuteW(nullptr, L"open", mcMods.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
     bool hasLog = !mcLog.empty() && std::filesystem::exists(mcLog, ec);
     if (Button("mclog", "Open log", ImVec2(c2.x + S(24) + bw, y + ch - S(52)), ImVec2(bw, S(34)), Btn::Ghost, ICON_INFO, hasLog)) {
         logPath = mcLog;

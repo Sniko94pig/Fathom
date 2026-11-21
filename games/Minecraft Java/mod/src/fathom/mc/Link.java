@@ -50,6 +50,10 @@ final class Link implements Runnable {
     private Object night;
     private Field playerField;
     private boolean playerChecked;
+    private Object mouseHandler;
+    private Method mouseGrabbed;
+    private Method mouseRelease;
+    private Method mouseGrab;
     private String game = "";
     private int hackCount = -1;
     private FileTime controlTime;
@@ -130,9 +134,107 @@ final class Link implements Runnable {
         client = (Executor) mc;
         game = gameVersion();
         log("Connected to Minecraft " + game
-                + (night != null ? ", Night Client " + staticField(nc, "VERSION") : ", Night Client not found")
+                + (night != null ? ", cheats " + staticField(nc, "VERSION") : ", cheats not found")
                 + (load(API) != null ? ", Baritone found" : ", Baritone not found"));
+        log(Overlay.load(this, dir) ? "Fathom menu loaded" : "Fathom menu could not be loaded");
+        client.execute(this::hideNightLogo);
         return true;
+    }
+
+    private void hideNightLogo() {
+        try {
+            if (night == null) return;
+            Object otfs = method(NIGHT, "getOtfs").invoke(night);
+            Object logo = otfs.getClass().getField("wurstLogoOtf").get(otfs);
+            Object vis = ((Map<?, ?>) logo.getClass().getMethod("getSettings").invoke(logo)).get("Visibility");
+            if (vis == null) return;
+            Object selected = vis.getClass().getMethod("getSelected").invoke(vis);
+            if (selected != null && selected.toString().equals("Always"))
+                vis.getClass().getMethod("setSelected", String.class).invoke(vis, "Only when outdated");
+        } catch (Throwable t) {
+            problem(t);
+        }
+    }
+
+    String snapshotNow() {
+        String s = build();
+        if (s == null) return "";
+        snapshot = s;
+        return s;
+    }
+
+    void menuCommand(String json) {
+        try {
+            Object o = Json.parse(json);
+            if (o instanceof Map && client != null) {
+                Map<?, ?> c = (Map<?, ?>) o;
+                client.execute(() -> run(c));
+            }
+        } catch (RuntimeException e) {
+            problem(e);
+        }
+    }
+
+    boolean releaseMouse() {
+        try {
+            Object h = mouse();
+            if (h == null) return false;
+            boolean grabbed = Boolean.TRUE.equals(mouseGrabbed.invoke(h));
+            if (grabbed) mouseRelease.invoke(h);
+            return grabbed;
+        } catch (Throwable t) {
+            problem(t);
+            return false;
+        }
+    }
+
+    boolean isGrabbed() {
+        try {
+            Object h = mouse();
+            return h != null && Boolean.TRUE.equals(mouseGrabbed.invoke(h));
+        } catch (Throwable t) {
+            problem(t);
+            return false;
+        }
+    }
+
+    void grabMouse() {
+        try {
+            Object h = mouse();
+            if (h != null && !Boolean.TRUE.equals(mouseGrabbed.invoke(h))) mouseGrab.invoke(h);
+        } catch (Throwable t) {
+            problem(t);
+        }
+    }
+
+    private Object mouse() throws Exception {
+        if (mouseHandler != null || mc == null) return mouseHandler;
+        Field f = null;
+        for (String n : new String[] {"mouseHandler", "field_1729"}) {
+            try {
+                f = mc.getClass().getField(n);
+                break;
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        if (f == null) return null;
+        Object h = f.get(mc);
+        if (h == null) return null;
+        mouseGrabbed = find(h.getClass(), "isMouseGrabbed", "method_1613");
+        mouseRelease = find(h.getClass(), "releaseMouse", "method_1610");
+        mouseGrab = find(h.getClass(), "grabMouse", "method_1612");
+        if (mouseGrabbed != null && mouseRelease != null && mouseGrab != null) mouseHandler = h;
+        return mouseHandler;
+    }
+
+    private static Method find(Class<?> c, String... names) {
+        for (String n : names) {
+            try {
+                return c.getMethod(n);
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return null;
     }
 
     private void readControl() {
@@ -198,6 +300,11 @@ final class Link implements Runnable {
     }
 
     private void capture() {
+        String s = build();
+        if (s != null) snapshot = s;
+    }
+
+    private String build() {
         try {
             StringBuilder b = new StringBuilder(8192);
             b.append("{\"version\":1,\"session\":").append(Json.quote(session)).append(",\"ack\":").append(ack);
@@ -208,6 +315,7 @@ final class Link implements Runnable {
                 b.append(",\"nightOn\":").append(Boolean.TRUE.equals(method(NIGHT, "isEnabled").invoke(night)));
             }
             b.append(",\"world\":").append(player() != null);
+            b.append(",\"menu\":").append(Overlay.isRendering());
             b.append(",\"hacks\":{");
             Method enabled = night != null ? method(HACK, "isEnabled") : null;
             boolean first = true;
@@ -221,9 +329,10 @@ final class Link implements Runnable {
             b.append(",\"baritone\":").append(bar != null);
             if (bar != null) baritoneState(b, bar);
             b.append('}');
-            snapshot = b.toString();
+            return b.toString();
         } catch (Throwable t) {
             problem(t);
+            return null;
         }
     }
 
@@ -422,7 +531,7 @@ final class Link implements Runnable {
         }
     }
 
-    private void problem(Throwable t) {
+    void problem(Throwable t) {
         while (t instanceof InvocationTargetException && t.getCause() != null) t = t.getCause();
         StackTraceElement[] st = t.getStackTrace();
         String line = t + (st.length > 0 ? " at " + st[0] : "");

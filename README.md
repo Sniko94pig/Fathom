@@ -29,7 +29,7 @@ Every game has its own folder in [games](games).
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
 
-Minecraft: Java Edition works with a Fabric install that has Night Client. Press **Start game** on its page and Fathom adds its small mod, `fathom_mc.jar`, to your Fabric installs. While you play, the buttons in Fathom turn Night Client hacks on and off, and the Baritone page sends Baritone commands and changes its settings.
+Minecraft: Java Edition needs Fabric. Press **Start game** on its page and Fathom makes a **Fathom** install in the Minecraft Launcher, with the newest Fabric API and the Fathom mod, `fathom_mc.jar`, which has all the cheats and Baritone inside. In the game, **Right Shift** opens the Fathom menu while you play. The menu needs OpenGL, so leave Graphics API on Default or Prefer OpenGL.
 
 ![Survival page](<games/Subnautica 2/shots/1-survival.png>)
 

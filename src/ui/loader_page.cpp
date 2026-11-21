@@ -54,7 +54,7 @@ void Menu::LoaderPage() {
         float y = CardBegin(p, w, h, "Appearance");
         if (appScaleEdit < 0) appScaleEdit = s.scale;
         bool active = false;
-        SliderRow("appscale", ImVec2(p.x + S(8), y), w - S(16), "App size", &appScaleEdit, 0.8f, 1.4f, 1.0f, 0.05f, "%.0f%%", 100.0f, true,
+        SliderRow("appscale", ImVec2(p.x + S(8), y), w - S(16), "App size", &appScaleEdit, 0.7f, 2.0f, 1.0f, 0.05f, "%.0f%%", 100.0f, true,
                   0.0f, &active);
         if (!active) s.scale = appScaleEdit;
         y += S(60);

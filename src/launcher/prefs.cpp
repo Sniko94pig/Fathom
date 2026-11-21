@@ -68,7 +68,7 @@ bool LoadPrefs(ui::LoaderSettings& s, const std::wstring& file) {
     Read(j, "installedFirst", d.installedFirst);
     Read(j, "webArt", d.webArt);
     Read(j, "checkUpdates", d.checkUpdates);
-    d.scale = std::clamp(d.scale, 0.8f, 1.4f);
+    d.scale = std::clamp(d.scale, 0.7f, 2.0f);
     d.accent = std::clamp(d.accent, 0, ui::AccentCount() - 1);
     s = d;
     return true;

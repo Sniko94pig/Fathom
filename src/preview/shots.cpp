@@ -432,9 +432,11 @@ int main(int argc, char** argv) {
              home.mcOpen = true;
              home.mcLinked = true;
              home.mcWorld = true;
-             home.mcInstalls = {{"Fabric 1.26.2 (Mod Menu)", L"C:/mods/1.26.2", true, true},
-                                {"Fabric 1.20.1 (Mod Menu)", L"C:/mods/1.20.1", true, false},
-                                {"Fabric 1.21.4 (Mod Menu)", L"C:/mods/1.21.4", false, false}};
+             home.mcMenu = true;
+             home.mcReady = true;
+             home.mcGame = "26.2";
+             home.mcApi = "fabric-api-0.161.0+26.2.jar";
+             home.mcMods = L"C:/mods/26.2";
              u.embedded = true;
              u.backName = "All games";
              u.onBack = [] {};

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.8.1)
+set(FATHOM_VERSION 1.9.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,7 +70,7 @@ target_include_directories(fathom_ui PUBLIC
   ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src ${SN2})
 target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS)
 
-add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${UK}/core/ultrakill_features.cpp)
+add_executable(fathom_shots src/preview/shots.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp)
 target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF} ${MC} ${UK})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
@@ -102,6 +102,7 @@ if(WIN32)
     ${SN1}/core/sn1_features.cpp
     ${SOTF}/core/sotf_features.cpp
     ${MC}/core/mc_features.cpp
+    ${MC}/core/mc_live.cpp
     ${UK}/core/ultrakill_features.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
@@ -110,7 +111,7 @@ if(WIN32)
   set_target_properties(fathom_launcher PROPERTIES OUTPUT_NAME Fathom)
   target_include_directories(fathom_launcher PRIVATE ${SN1} ${SOTF} ${MC} ${UK})
   target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING FATHOM_VERSION="${FATHOM_VERSION}")
-  target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32 wininet advapi32)
+  target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32 wininet advapi32 bcrypt)
 
   add_executable(fathom_setup WIN32 src/setup/setup.cpp src/setup/setup.rc)
   set_target_properties(fathom_setup PROPERTIES OUTPUT_NAME FathomSetup)
@@ -164,11 +165,30 @@ if(WIN32)
     add_subdirectory("${UK}")
   endif()
 
-  find_package(Java 17 COMPONENTS Development)
+  find_package(Java 17 COMPONENTS Development Runtime)
+  if(EXISTS "${MC}/CMakeLists.txt")
+    add_subdirectory("${MC}")
+  endif()
   if(Java_JAVAC_EXECUTABLE AND Java_JAR_EXECUTABLE)
     set(MCMOD "${CMAKE_SOURCE_DIR}/games/Minecraft Java/mod")
     set(MCOUT ${GEN}/mcmod)
     file(GLOB_RECURSE MCMOD_SRC CONFIGURE_DEPENDS "${MCMOD}/src/*.java")
+    set(MCMOD_STEPS)
+    set(MCMOD_DEPS)
+    if(TARGET fathom_mcnative)
+      list(APPEND MCMOD_STEPS COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:fathom_mcnative> ${MCOUT}/classes/fathom/native/fathom_mc.dll)
+      list(APPEND MCMOD_DEPS fathom_mcnative)
+    endif()
+    set(NIGHT_JAR ${CMAKE_SOURCE_DIR}/third_party/night/Night-Client.jar)
+    set(FATHOM_MC_JARS "")
+    if(EXISTS ${NIGHT_JAR} AND Java_JAVA_EXECUTABLE)
+      list(APPEND MCMOD_STEPS
+        COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -nowarn -d ${MCOUT}/tools "${MCMOD}/tools/Rebrand.java"
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${MCOUT}/classes/META-INF/jars
+        COMMAND ${Java_JAVA_EXECUTABLE} -cp ${MCOUT}/tools Rebrand ${NIGHT_JAR} ${MCOUT}/classes/META-INF/jars/fathom-engine.jar)
+      list(APPEND MCMOD_DEPS ${NIGHT_JAR} "${MCMOD}/tools/Rebrand.java")
+      set(FATHOM_MC_JARS "{\"file\": \"META-INF/jars/fathom-engine.jar\"}")
+    endif()
     configure_file("${MCMOD}/fabric.mod.json.in" ${MCOUT}/fabric.mod.json @ONLY)
     add_custom_command(
       OUTPUT ${MCOUT}/fathom_mc.jar
@@ -177,8 +197,9 @@ if(WIN32)
       COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -Xlint:all -Werror -cp ${MCOUT}/stub -d ${MCOUT}/classes ${MCMOD_SRC}
       COMMAND ${CMAKE_COMMAND} -E copy ${MCOUT}/fabric.mod.json ${MCOUT}/classes/fabric.mod.json
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/logo.png ${MCOUT}/classes/assets/fathom/icon.png
+      ${MCMOD_STEPS}
       COMMAND ${Java_JAR_EXECUTABLE} --create --file ${MCOUT}/fathom_mc.jar --date=2024-01-01T00:00:00Z -C ${MCOUT}/classes .
-      DEPENDS ${MCMOD_SRC} "${MCMOD}/stub/net/fabricmc/api/ClientModInitializer.java" ${MCOUT}/fabric.mod.json ${CMAKE_SOURCE_DIR}/assets/logo.png
+      DEPENDS ${MCMOD_SRC} "${MCMOD}/stub/net/fabricmc/api/ClientModInitializer.java" ${MCOUT}/fabric.mod.json ${CMAKE_SOURCE_DIR}/assets/logo.png ${MCMOD_DEPS}
       VERBATIM)
     add_custom_target(fathom_mc ALL
       DEPENDS ${MCOUT}/fathom_mc.jar

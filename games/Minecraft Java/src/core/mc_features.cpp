@@ -482,7 +482,7 @@ void BuildFeatures(Model& m) {
     Action(m, "Control", "b_pause", "Pause", "Pauses what Baritone is doing", "Pause");
     Action(m, "Control", "b_resume", "Resume", "Carries on after a pause", "Resume");
     Action(m, "Control", "b_forcecancel", "Force stop", "Stops everything, even when Baritone is stuck", "Force");
-    Toggle(m, Baritone, "Control", "baritonepanel", "Baritone panel", "Opens Night Client's own Baritone panel in the game");
+    Toggle(m, Baritone, "Control", "baritonepanel", "Baritone panel", "Opens the Baritone panel in the game, Right Ctrl also opens it");
 
     Input(m, "Travel", "b_goto", "Go to coordinates", "Leave Y empty to go to X and Z, or type only Y", "Go", {"X", "Y", "Z"});
     Input(m, "Travel", "b_gotoblock", "Go to a block", "Walks to the closest block of that kind", "Go", {"Block, like crafting_table"});
