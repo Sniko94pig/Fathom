@@ -85,15 +85,15 @@ void BuildFeatures(Model& m) {
     Toggle(m, Weapons, "Shooting", "no_reload", "No reload", "Weapons never reload or recharge, like coins and the Railcannon");
     Action(m, Weapons, "Unlocks", "unlock_all_weapons", "Unlock all weapons", "Unlocks every weapon and every weapon variant in your save", "Unlock", true);
     Toggle(m, Weapons, "Unlocks", "free_shop", "Free shop", "Weapons and variants in the shop cost 0 P");
-    Toggle(m, Weapons, "Aiming", "softaim", "Softaim", "While you shoot, your aim pulls to the head of the closest enemy you can see").building = true;
-    Slider(m, Weapons, "Aiming", "aim_strength", "Aim strength", "How hard Softaim pulls your aim, 10 locks on", 1.0f, 10.0f, 10.0f, 1.0f, false, "%.0f").building = true;
-    Slider(m, Weapons, "Aiming", "aim_area", "Aim area", "How far from the crosshair Softaim grabs an enemy, in degrees", 5.0f, 90.0f, 30.0f, 5.0f, false, "%.0f").building = true;
+    Toggle(m, Weapons, "Aiming", "softaim", "Softaim", "While you hold Fire or Alt fire, your aim pulls to the head of the visible enemy closest to your crosshair");
+    Slider(m, Weapons, "Aiming", "aim_strength", "Aim strength", "How hard Softaim pulls your aim, 10 locks on", 1.0f, 10.0f, 10.0f, 1.0f, false, "%.0f");
+    Slider(m, Weapons, "Aiming", "aim_area", "Aim area", "How far from the crosshair Softaim grabs an enemy, in degrees", 5.0f, 90.0f, 30.0f, 5.0f, false, "%.0f");
 
-    Toggle(m, Level, "Orbs", "orb_esp", "Orb ESP", "Shows secret orbs and red soul orbs through walls, with their distance").building = true;
-    Action(m, Level, "Orbs", "collect_all_orbs", "Collect all orbs", "Collects every secret orb in this level, your saves are backed up first", "Collect", true).building = true;
-    Action(m, Level, "Enemies", "kill_enemies_in_range", "Kill all enemies in range", "Kills every enemy within Kill range", "Kill").building = true;
-    Slider(m, Level, "Enemies", "kill_range", "Kill range", "How far Kill all enemies in range reaches", 5.0f, 1000.0f, 50.0f, 5.0f, false, "%.0f m").building = true;
-    Toggle(m, Level, "Challenge", "challenge_shower", "Challenge shower", "Shows each level's challenge before you beat it").building = true;
+    Toggle(m, Level, "Orbs", "orb_esp", "Orb ESP", "Shows secret orbs and red soul orbs through walls, with their distance");
+    Action(m, Level, "Orbs", "collect_all_orbs", "Collect all orbs", "Collects every secret orb still to find in this level (red soul orbs stay), your saves are backed up first", "Collect", true);
+    Action(m, Level, "Enemies", "kill_enemies_in_range", "Kill all enemies in range", "Kills every enemy within Kill range", "Kill");
+    Slider(m, Level, "Enemies", "kill_range", "Kill range", "How far Kill all enemies in range reaches", 5.0f, 1000.0f, 50.0f, 5.0f, false, "%.0f m");
+    Toggle(m, Level, "Challenge", "challenge_shower", "Challenge shower", "Shows every unlocked level's challenge in the level select before you beat it, and as a note when the level starts");
 
     m.gameName = "ULTRAKILL";
     m.keyOpen = ImGuiKey_RightShift;
