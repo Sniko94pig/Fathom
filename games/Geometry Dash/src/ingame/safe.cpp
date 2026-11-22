@@ -78,7 +78,7 @@ int snapLevel[3] = {};
 std::string why;
 int blockedCount = 0;
 
-const char* const kStatKeys[] = {"3", "4", "5", "6", "8", "12", "13", "14", "22", "28"};
+const char* const kStatKeys[] = {"3", "4", "5", "6", "7", "8", "12", "13", "14", "15", "21", "22", "28", "40", "41", "42"};
 
 bool ActiveNow() {
     gd::Cfg& c = gd::C();
