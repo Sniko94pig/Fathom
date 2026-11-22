@@ -39,7 +39,7 @@ bool IsFunctionStart(uint32_t rva);
 bool Hook(void* target, void* detour, void** orig, const char* name);
 bool HookExe(uint32_t rva, void* detour, void** orig, const char* name);
 
-void Queue(std::function<void()> fn);
+bool Queue(std::function<void()> fn);
 void RunQueue();
 void Note(const std::string& text);
 std::vector<std::string> TakeNotes();

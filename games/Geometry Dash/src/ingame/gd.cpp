@@ -120,9 +120,11 @@ bool HookExe(uint32_t rva, void* detour, void** orig, const char* name) {
     return Hook(Exe(rva), detour, orig, name);
 }
 
-void Queue(std::function<void()> fn) {
+bool Queue(std::function<void()> fn) {
     std::lock_guard<std::mutex> g(qLock);
-    if (queued.size() < 64) queued.push_back(std::move(fn));
+    if (queued.size() >= 512) return false;
+    queued.push_back(std::move(fn));
+    return true;
 }
 
 void RunQueue() {

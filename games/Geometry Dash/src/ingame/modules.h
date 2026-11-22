@@ -13,6 +13,7 @@ bool Cheated();
 bool Holding();
 bool Locked();
 void MarkCheated(const char* why);
+void ArmComplete();
 const char* Status(bool& good);
 
 struct Protect {
@@ -22,6 +23,7 @@ struct Protect {
     Protect& operator=(const Protect&) = delete;
     bool active = false;
     bool was = false;
+    bool wasTrack = false;
     void* obj = nullptr;
 };
 
