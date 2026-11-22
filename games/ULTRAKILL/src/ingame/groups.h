@@ -11,6 +11,7 @@ void Tick(const uk::Ctx& c);
 void Release(const uk::Ctx& c);
 void Action(const std::string& id, const uk::Ctx& c);
 bool Busy();
+bool Outside();
 
 }
 

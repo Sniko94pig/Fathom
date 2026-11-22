@@ -37,7 +37,7 @@ struct Group {
 };
 
 const Group kGroups[] = {
-    {"player", "player", ukplayer::Resolve, ukplayer::Supported, ukplayer::Tick, ukplayer::Release, ukplayer::Action, ukplayer::Busy, nullptr},
+    {"player", "player", ukplayer::Resolve, ukplayer::Supported, ukplayer::Tick, ukplayer::Release, ukplayer::Action, ukplayer::Busy, ukplayer::Outside},
     {"movement", "movement", ukmove::Resolve, ukmove::Supported, ukmove::Tick, ukmove::Release, ukmove::Action, ukmove::Busy, nullptr},
     {"weapons_a", "weapon", ukweapa::Resolve, ukweapa::Supported, ukweapa::Tick, ukweapa::Release, ukweapa::Action, ukweapa::Busy, nullptr},
     {"weapons_b", "weapon", ukweapb::Resolve, ukweapb::Supported, ukweapb::Tick, ukweapb::Release, ukweapb::Action, ukweapb::Busy, nullptr},

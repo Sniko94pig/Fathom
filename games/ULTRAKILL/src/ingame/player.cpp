@@ -15,7 +15,7 @@ namespace {
 
 struct Game {
     Class *nm = nullptr, *inv = nullptr, *zone = nullptr, *stats = nullptr, *checkpoint = nullptr, *door = nullptr;
-    Class *grenade = nullptr, *portal = nullptr, *hud = nullptr, *tracker = nullptr, *tc = nullptr;
+    Class *grenade = nullptr, *portal = nullptr, *hud = nullptr, *tracker = nullptr, *tc = nullptr, *plat = nullptr;
     Fld hp, antiHp, antiCooldown, difficulty, restarts, rb, rocket;
     Method *resetHard = nullptr, *fullHeal = nullptr;
     Fld invLast, invActive;
@@ -24,8 +24,10 @@ struct Game {
     int enemiesOnly = -1;
     Fld statsCheckpoint, statsSpawn, cpActivate, cpDoors;
     Method *doorUnlock = nullptr, *rideEnd = nullptr, *traveller = nullptr, *hudMessage = nullptr;
-    Fld playerType;
-    int fps = -1;
+    Fld playerType, pmov;
+    int fps = -1, platformer = -1;
+    Fld platDead;
+    Method *platRespawn = nullptr, *platSnap = nullptr, *activeSelf = nullptr;
     Fld timeScale, timeModifier, slowDown;
 };
 
@@ -39,9 +41,10 @@ struct Zone {
 const double kScanEvery = 0.25;
 const size_t kMaxFlips = 3;
 const float kLift = 1.25f;
+const double kCatchGap = 0.5;
 
 Game G;
-bool canHealth = false, canGod = false, canRescue = false, canRefill = false, canSpeed = false;
+bool canHealth = false, canGod = false, canRescue = false, canRefill = false, canSpeed = false, canPlat = false, canCatch = false;
 
 Hold mine, prev;
 bool flagOn = false;
@@ -50,6 +53,10 @@ std::vector<Zone> zones;
 double nextScan = 0;
 int scanRestarts = -1;
 int scanPlayer = 0;
+
+int platId = 0;
+bool platDead = false;
+double lastCatch = -1e9;
 
 int tcId = 0;
 bool speedOn = false;
@@ -155,19 +162,10 @@ void Scan() {
     zones = std::move(keep);
 }
 
-void Rescue(Object* nm, Object* zone) {
-    Object* rb = Ref(nm, G.rb);
-    if (Alive(rb)) SetVelocity(rb, Vec3{});
-    Object* rocket = Ref(nm, G.rocket);
-    if (Alive(rocket) && G.rideEnd) Call(G.rideEnd, rocket);
-    Vec3 lift{0.0f, kLift, 0.0f};
-    Vec3 target = Val<Vec3>(zone, G.zoneTarget);
-    Object* stats = Single(G.stats);
+void Home(Object* body, Object* stats) {
     Object* cp = stats ? Ref(stats, G.statsCheckpoint) : nullptr;
-    if (target.x != 0.0f || target.y != 0.0f || target.z != 0.0f) {
-        SetPosition(nm, Add(target, lift));
-    } else if (Alive(cp)) {
-        SetPosition(nm, Add(Position(cp), lift));
+    if (Alive(cp)) {
+        SetPosition(body, Add(Position(cp), Vec3{0.0f, kLift, 0.0f}));
         Object* act = Ref(cp, G.cpActivate);
         if (Alive(act)) SetActive(act, true);
         Object* doors = Ref(cp, G.cpDoors);
@@ -177,16 +175,30 @@ void Rescue(Object* nm, Object* zone) {
             if (Alive(d)) Call(G.doorUnlock, d);
         }
     } else if (stats) {
-        SetPosition(nm, Val<Vec3>(stats, G.statsSpawn));
+        SetPosition(body, Val<Vec3>(stats, G.statsSpawn));
     }
+}
+
+void Whoops() {
+    Object* hud = G.hudMessage ? Single(G.hud) : nullptr;
+    if (!hud) return;
+    int delay = 0;
+    bool no = false, yes = true;
+    Call(G.hudMessage, hud, {mono::NewString("Whoops, sorry about that."), mono::NewString(""), mono::NewString(""), &delay, &no, &no, &yes});
+}
+
+void Rescue(Object* nm, Object* zone) {
+    Object* rb = Ref(nm, G.rb);
+    if (Alive(rb)) SetVelocity(rb, Vec3{});
+    Object* rocket = Ref(nm, G.rocket);
+    if (Alive(rocket) && G.rideEnd) Call(G.rideEnd, rocket);
+    Vec3 target = Val<Vec3>(zone, G.zoneTarget);
+    Object* stats = Single(G.stats);
+    if (target.x != 0.0f || target.y != 0.0f || target.z != 0.0f) SetPosition(nm, Add(target, Vec3{0.0f, kLift, 0.0f}));
+    else Home(nm, stats);
     Object* portal = G.traveller ? Single(G.portal) : nullptr;
     if (portal) Call(G.traveller, portal, {nm});
-    Object* hud = G.hudMessage ? Single(G.hud) : nullptr;
-    if (hud) {
-        int delay = 0;
-        bool no = false, yes = true;
-        Call(G.hudMessage, hud, {mono::NewString("Whoops, sorry about that."), mono::NewString(""), mono::NewString(""), &delay, &no, &no, &yes});
-    }
+    Whoops();
     LOG("player: god mode caught an instant-kill trap and put you back");
 }
 
@@ -227,6 +239,53 @@ void Zones(const Ctx& c) {
         scanPlayer = c.playerId;
     }
     Watch(c);
+}
+
+Object* Platformer(const Ctx& c) {
+    if (c.inLevel || c.loading || c.scene != Scene::Other) return nullptr;
+    Object* t = Single(G.tracker);
+    if (!t || Val<int>(t, G.playerType, G.fps) != G.platformer) return nullptr;
+    Object* p = Ref(t, G.pmov);
+    return Alive(p) ? p : nullptr;
+}
+
+void Unwatch() {
+    platId = 0;
+    platDead = false;
+}
+
+bool Revive(Object* pm, const Ctx& c) {
+    Object* stats = Single(G.stats);
+    Object* go = GameObjectOf(pm);
+    if (!stats || !go || c.now - lastCatch < kCatchGap) return false;
+    bool self = CallBool(G.activeSelf, go, {}, true);
+    if (!self) SetActive(go, true);
+    if (!ActiveInHierarchy(go)) {
+        if (!self) SetActive(go, false);
+        return false;
+    }
+    bool ok = false;
+    Call(G.platRespawn, pm, {}, &ok);
+    if (!ok || Val<uint8_t>(pm, G.platDead) != 0) return false;
+    lastCatch = c.now;
+    Home(pm, stats);
+    if (G.platSnap) Call(G.platSnap, pm);
+    Whoops();
+    LOG("player: god mode caught a deadly fall in a platformer part and put you back");
+    return true;
+}
+
+bool Catch(Object* pm, const Ctx& c) {
+    int id = InstanceId(pm);
+    bool dead = Val<uint8_t>(pm, G.platDead) != 0;
+    if (id != platId) {
+        platId = id;
+        platDead = dead;
+        return !dead;
+    }
+    if (dead && !platDead && canCatch && Revive(pm, c)) dead = false;
+    platDead = dead;
+    return !dead;
 }
 
 float Wanted(const Ctx& c) {
@@ -333,7 +392,15 @@ bool Resolve() {
 
     G.tracker = Cls("PlayerTracker");
     G.playerType = F(G.tracker, "playerType");
-    G.fps = Enum(Cls("PlayerType"), "FPS");
+    G.pmov = F(G.tracker, "pmov");
+    Class* type = Cls("PlayerType");
+    G.fps = Enum(type, "FPS");
+    G.platformer = Enum(type, "Platformer");
+    G.plat = Cls("PlatformerMovement");
+    G.platDead = F(G.plat, "dead");
+    G.platRespawn = M(G.plat, "Respawn", 0);
+    G.platSnap = M(G.plat, "SnapCamera", 0);
+    G.activeSelf = M(R.gameObject, "get_activeSelf", 0);
 
     G.zone = Cls("DeathZone");
     G.zoneSafe = F(G.zone, "notInstakill");
@@ -365,12 +432,17 @@ bool Resolve() {
     canGod = canHealth && G.inv && G.invLast && G.invEnable && G.invDisable;
     canRescue = canGod && G.zone && G.zoneSafe && G.stats && G.statsCheckpoint && G.statsSpawn && G.rb && R.findObjectsOfType &&
                 R.getEnabled && R.setEnabled && R.trSetPosition;
+    canPlat = canGod && G.tracker && G.playerType && G.pmov && G.fps >= 0 && G.platformer >= 0;
+    canCatch = canPlat && G.plat && G.platDead && G.platRespawn && G.activeSelf && G.stats && G.statsCheckpoint && G.statsSpawn &&
+               R.goSetActive && R.goActiveInHierarchy && R.compGameObject && R.trSetPosition;
     canRefill = G.nm && G.resetHard && G.fullHeal;
     canSpeed = G.tc && G.timeScale && G.timeModifier && R.getTimeScale && R.setTimeScale;
 
     if (!canHealth) LOG("player: unlimited health is off (health fields not found)");
     if (!canGod) LOG("player: god mode is off (the game's invincibility flag was not found)");
     else if (!canRescue) LOG("player: god mode works, but instant-kill traps will not put you back at the checkpoint");
+    if (canGod && !canPlat) LOG("player: god mode does not cover the platformer parts");
+    else if (canPlat && !canCatch) LOG("player: god mode covers the platformer parts, but falls and traps there still kill");
     if (!canRefill) LOG("player: refill health is off (heal methods not found)");
     if (!canSpeed) LOG("player: game speed is off (TimeController fields not found)");
     else if (!G.slowDown) LOG("player: game speed works, but slow-motion recoveries may change the sound pitch");
@@ -390,7 +462,10 @@ void Tick(const Ctx& c) {
     bool god = canGod && live && c.on("godmode");
     bool health = canHealth && live && c.on("unlimited_health");
     bool fps = (god || health) && IsFps();
-    if (god && fps) FlagOn();
+    Object* plat = canPlat && c.on("godmode") ? Platformer(c) : nullptr;
+    bool platLive = plat && Catch(plat, c);
+    if (!plat) Unwatch();
+    if ((god && fps) || platLive) FlagOn();
     else FlagOff();
     if ((god || health) && fps) KeepFull(c.player);
     if (god && fps && canRescue) Zones(c);
@@ -401,6 +476,7 @@ void Tick(const Ctx& c) {
 void Release(const Ctx& c) {
     FlagOff();
     DropZones();
+    Unwatch();
     SpeedRelease(c);
     if (c.stopping) mine.reset();
 }
@@ -421,5 +497,7 @@ void Action(const std::string& id, const Ctx& c) {
 }
 
 bool Busy() { return flagOn || speedOn || !zones.empty(); }
+
+bool Outside() { return true; }
 
 }
