@@ -17,7 +17,6 @@
 #include <cwchar>
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <iterator>
 #include <memory>
 #include <sstream>
@@ -161,7 +160,14 @@ void* notedLayer = nullptr;
 bool playWas = false;
 void* cbsLayer = nullptr;
 uint8_t cbsOld = 0;
-std::future<SaveResult> saving;
+struct SaveJob {
+    HANDLE handle = nullptr;
+    fs::path dir;
+    Level level;
+    std::string text;
+    SaveResult result;
+};
+SaveJob* saving = nullptr;
 
 Queue& Q(void* gl) { return gd::F<Queue>(gl, kQueue); }
 
@@ -285,6 +291,7 @@ std::shared_ptr<const Macro> Parse(const std::string& text, const Level& want) {
         m->level.platformer = lv.value("platformer", false);
         if (m->level.id != want.id || m->level.platformer != want.platformer) return nullptr;
         if (want.id <= 0 && m->level.name != want.name) return nullptr;
+        if (list.size() > kMaxEvents) return nullptr;
         m->events.reserve(list.size());
         for (const nlohmann::json& e : list) {
             if (!e.is_array() || e.size() < 4) return nullptr;
@@ -293,7 +300,7 @@ std::shared_ptr<const Macro> Parse(const std::string& text, const Level& want) {
             ev.button = Num(e[1]);
             int down = Num(e[2]);
             int p2 = Num(e[3]);
-            if (ev.step < 0 || ev.button < 0 || ev.button > 255 || down < 0 || p2 < 0) return nullptr;
+            if (ev.step < 0 || ev.button < 0 || ev.button > 3 || down < 0 || p2 < 0) return nullptr;
             ev.down = down != 0;
             ev.p2 = p2 != 0;
             if (ev.step & 1) m->halfSteps = true;
@@ -315,11 +322,21 @@ std::shared_ptr<const Macro> Load(const Level& l, bool& bad) {
         return nullptr;
     }
     for (const fs::path& p : files) {
-        std::ifstream in(p, std::ios::binary);
-        if (!in) continue;
-        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        std::shared_ptr<const Macro> m = Parse(text, l);
         std::string name = gd::Narrow(p.filename().wstring());
+        std::shared_ptr<const Macro> m;
+        try {
+            std::error_code ec;
+            auto size = fs::file_size(p, ec);
+            if (!ec && size <= 64ull * 1024 * 1024) {
+                std::ifstream in(p, std::ios::binary);
+                if (in) {
+                    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    m = Parse(text, l);
+                }
+            }
+        } catch (...) {
+            m = nullptr;
+        }
         if (m) {
             LOG("macro loaded: %s (%d inputs)", name.c_str(), static_cast<int>(m->events.size()));
             return m;
@@ -393,7 +410,12 @@ SaveResult Store(const fs::path& dir, const Level& level, const std::string& tex
             bak += L".bak";
             bool kept = p == target ? CopyFileW(p.c_str(), bak.c_str(), FALSE) != 0
                                     : MoveFileExW(p.c_str(), bak.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
-            if (!kept) LOG("macro: %s could not be kept as a backup", gd::Narrow(p.filename().wstring()).c_str());
+            if (!kept) {
+                LOG("macro: %s could not be kept as a backup", gd::Narrow(p.filename().wstring()).c_str());
+                r.error = "the old macro could not be kept as a backup";
+                fs::remove(tmp, ec);
+                return r;
+            }
         }
         if (!MoveFileExW(tmp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             r.error = "the file could not be replaced";
@@ -417,14 +439,20 @@ void Report(const SaveResult& r) {
     }
 }
 
+DWORD WINAPI SaveThread(void* arg) {
+    SaveJob* job = static_cast<SaveJob*>(arg);
+    job->result = Store(job->dir, job->level, job->text);
+    return 0;
+}
+
 void PollSave(bool wait) {
-    if (!saving.valid()) return;
-    if (!wait && saving.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
-    try {
-        Report(saving.get());
-    } catch (...) {
-        LOG("macro save failed");
-    }
+    if (!saving) return;
+    if (saving->handle && WaitForSingleObject(saving->handle, wait ? INFINITE : 0) != WAIT_OBJECT_0) return;
+    if (saving->handle) CloseHandle(saving->handle);
+    SaveJob* job = saving;
+    saving = nullptr;
+    Report(job->result);
+    delete job;
 }
 
 bool Flip(void* gl) {
@@ -515,9 +543,13 @@ void Save() {
     loadedKey = Key(m->level);
     loadedBad = false;
     PollSave(true);
-    fs::path dir = folder;
-    Level level = m->level;
-    saving = std::async(std::launch::async, [dir, level, text = std::move(text)]() { return Store(dir, level, text); });
+    SaveJob* job = new SaveJob();
+    job->dir = folder;
+    job->level = m->level;
+    job->text = std::move(text);
+    job->handle = CreateThread(nullptr, 0, SaveThread, job, 0, nullptr);
+    if (!job->handle) job->result = Store(job->dir, job->level, job->text);
+    saving = job;
     LOG("level beaten while recording, saving the macro (%d inputs)", static_cast<int>(m->events.size()));
 }
 
@@ -573,15 +605,28 @@ bool Room() {
     return false;
 }
 
+bool queueCalled = false;
+bool pauseCalled = false;
+
+void CallQueue(void* gl, float dt, bool clear) {
+    queueCalled = true;
+    oQueue(gl, dt, clear);
+}
+
+void CallPause(void* pl, bool unfocused) {
+    pauseCalled = true;
+    oPause(pl, unfocused);
+}
+
 void RecordStep(void* gl, float dt, bool clear, int step) {
     if (dt <= 0.0f) return;
     size_t before = Size(gl);
     if (!before) {
-        oQueue(gl, dt, clear);
+        CallQueue(gl, dt, clear);
         return;
     }
     Snapshot(gl, before);
-    oQueue(gl, dt, clear);
+    CallQueue(gl, dt, clear);
     size_t after = Size(gl);
     size_t used = after <= before ? before - after : 0;
     if (!used) return;
@@ -631,7 +676,7 @@ void Schedule(void* gl, int next, double start) {
 
 void BotStep(void* gl, float dt, bool clear, int step) {
     DropAll(gl);
-    oQueue(gl, dt, clear);
+    CallQueue(gl, dt, clear);
     if (dt <= 0.0f || !att.macro) return;
     if (!att.played) {
         att.played = true;
@@ -651,10 +696,9 @@ void BotStep(void* gl, float dt, bool clear, int step) {
     Schedule(gl, between ? step + 1 : step + 2, gd::F<double>(gl, kTimestamp) + span);
 }
 
-void __fastcall hkQueue(void* gl, float dt, bool clear) {
-    gd::Busy busy;
+void QueueBody(void* gl, float dt, bool clear) {
     if (stopped || !gl || gl != gdx::PlayLayer()) {
-        oQueue(gl, dt, clear);
+        CallQueue(gl, dt, clear);
         return;
     }
     int step = gd::F<int>(gl, kStepIndex);
@@ -671,31 +715,31 @@ void __fastcall hkQueue(void* gl, float dt, bool clear) {
         RecordStep(gl, dt, clear, step);
         return;
     }
-    oQueue(gl, dt, clear);
+    CallQueue(gl, dt, clear);
 }
 
-void __fastcall hkPause(void* pl, bool unfocused) {
-    gd::Busy busy;
+void PauseBody(void* pl, bool unfocused) {
     if (stopped || !pl || pl != gdx::PlayLayer()) {
-        oPause(pl, unfocused);
+        CallPause(pl, unfocused);
         return;
     }
     int step = gd::F<int>(pl, kCommandIndex);
     Sync(pl, step);
+    DropSynthetic(pl);
     if (att.bot && gd::C().play.load()) {
         DropAll(pl);
-        oPause(pl, unfocused);
+        CallPause(pl, unfocused);
         return;
     }
     if (!Recording()) {
-        oPause(pl, unfocused);
+        CallPause(pl, unfocused);
         return;
     }
     size_t before = Size(pl);
     std::vector<Cmd> queued;
     if (before) queued.assign(Q(pl).first, Q(pl).first + before);
     size_t mark = att.events.size();
-    oPause(pl, unfocused);
+    CallPause(pl, unfocused);
     size_t after = Size(pl);
     size_t used = after <= before ? before - after : 0;
     if (!used || !att.rec || mark > att.events.size()) return;
@@ -710,6 +754,28 @@ void __fastcall hkPause(void* pl, bool unfocused) {
         return;
     }
     att.events.insert(att.events.begin() + static_cast<std::ptrdiff_t>(mark), flushed.begin(), flushed.end());
+}
+
+void __fastcall hkQueue(void* gl, float dt, bool clear) {
+    gd::Busy busy;
+    queueCalled = false;
+    try {
+        QueueBody(gl, dt, clear);
+    } catch (...) {
+        LOG("macro: error during a game step");
+        if (!queueCalled) oQueue(gl, dt, clear);
+    }
+}
+
+void __fastcall hkPause(void* pl, bool unfocused) {
+    gd::Busy busy;
+    pauseCalled = false;
+    try {
+        PauseBody(pl, unfocused);
+    } catch (...) {
+        LOG("macro: error while pausing");
+        if (!pauseCalled) oPause(pl, unfocused);
+    }
 }
 
 bool PauseRelease(uintptr_t from) {
@@ -735,13 +801,21 @@ void __fastcall hkRelease(void* player) {
     }
     if (who >= 0 && PauseRelease(from)) {
         int step = gd::F<int>(pl, kCommandIndex);
-        Sync(pl, step);
+        try {
+            Sync(pl, step);
+        } catch (...) {
+            LOG("macro: error while tracking the attempt");
+        }
         if (att.bot && gd::C().play.load()) return;
         if (Recording() && Room()) {
             Ev e;
             e.step = step;
             e.p2 = who == 1;
-            att.events.push_back(e);
+            try {
+                att.events.push_back(e);
+            } catch (...) {
+                Mark(Why::Full);
+            }
         }
     }
     oRelease(player);
@@ -765,14 +839,22 @@ void Ended(void* pl, uintptr_t from, bool starting) {
 void __fastcall hkEnd(void* pl, const void* pos) {
     gd::Busy busy;
     uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress());
-    Ended(pl, from, pl && gd::F<uint8_t>(pl, kEndStarted) == 0);
+    try {
+        Ended(pl, from, pl && gd::F<uint8_t>(pl, kEndStarted) == 0);
+    } catch (...) {
+        LOG("macro: error at the level end");
+    }
     oEnd(pl, pos);
 }
 
 void __fastcall hkPlatformerEnd(void* pl, const void* pos, bool instant) {
     gd::Busy busy;
     uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress());
-    Ended(pl, from, true);
+    try {
+        Ended(pl, from, true);
+    } catch (...) {
+        LOG("macro: error at the level end");
+    }
     oPlatformerEnd(pl, pos, instant);
 }
 
@@ -967,6 +1049,11 @@ void Frame() {
 
 void Off() {
     if (hooked.load() && !stopped) {
+        try {
+            if (att.rec && att.won && !att.saved) Save();
+        } catch (...) {
+            LOG("macro could not be saved while closing");
+        }
         void* pl = gdx::PlayLayer();
         if (pl && pl == att.layer) {
             StopBot(pl);
