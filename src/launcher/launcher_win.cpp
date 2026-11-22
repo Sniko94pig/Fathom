@@ -13,6 +13,7 @@
 #include "core/ultrakill_features.h"
 #include "core/gd_features.h"
 #include "launcher/prefs.h"
+#include "launcher/backups.h"
 #include "ui/icons.h"
 #include "ui/atlas.h"
 #include "common/dx12_texture.h"
@@ -323,6 +324,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         }
     }
 
+    if (!(cmd && strstr(cmd, "--minimized")))
+    {
+        MONITORINFO mi{ sizeof(mi) };
+        if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi))
+        {
+            RECT work = mi.rcWork;
+            RECT cur;
+            GetWindowRect(hwnd, &cur);
+            LONG ww = work.right - work.left, wh = work.bottom - work.top;
+            LONG nw = std::max<LONG>(cur.right - cur.left, (LONG)std::lround(ww * 0.8)), nh = std::max<LONG>(cur.bottom - cur.top, (LONG)std::lround(wh * 0.8));
+            nw = std::min(nw, ww);
+            nh = std::min(nh, wh);
+            SetWindowPos(hwnd, nullptr, work.left + (ww - nw) / 2, work.top + (wh - nh) / 2, nw, nh, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
     if (!CreateDeviceD3D(hwnd))
     {
         CleanupDeviceD3D();
@@ -393,6 +410,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 last = p;
         return last;
     };
+    auto backupRoots = [&home] {
+        std::vector<launcher::backups::Root> roots{ { (std::filesystem::path(ExeDir()) / L"save-backups").wstring(), nullptr } };
+        if (home.ukPaths.found)
+            roots.push_back({ (std::filesystem::path(home.ukPaths.folder) / L"save_backup").wstring(), "ULTRAKILL" });
+        return roots;
+    };
+    loader.listBackups = [backupRoots] { return launcher::backups::List(backupRoots()); };
+    loader.recycleBackups = [backupRoots](const std::vector<std::wstring>& paths) { return launcher::backups::Recycle(backupRoots(), paths); };
     loader.refreshArt = [&] { artRefresh = true; artWipe = true; };
     loader.checkUpdates = [] { launcher::update::Check(); };
     loader.installUpdate = [&] { downloading = true; launcher::update::Download(); };
@@ -856,7 +881,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             workerDone = false;
             inject::Paths paths = target == 1 ? home.sn1Paths : target == 2 ? home.sotfPaths : target == 3 ? home.ukPaths : home.paths;
             std::string key = core::KeyName(target == 2 ? sotfModel.keyOpen : target == 3 ? ukModel.keyOpen : sn1Model.keyOpen);
-            worker = std::thread([&, paths, target, key] {
+            bool backupFirst = loader.s.backupOnInject;
+            worker = std::thread([&, paths, target, key, backupFirst] {
+                if (backupFirst)
+                {
+                    if (target == 1)
+                        gameinject::BackupSaves(gameinject::kSubnautica, paths);
+                    else if (target == 2)
+                        gameinject::BackupSaves(gameinject::kSonsOfTheForest, paths);
+                    else if (target == 3)
+                        gameinject::BackupSaves(gameinject::kUltrakill, paths);
+                    else
+                        inject::BackupSaves();
+                }
                 workerResult = target == 1 ? gameinject::Inject(gameinject::kSubnautica, paths, workerOk, key)
                              : target == 2 ? gameinject::Inject(gameinject::kSonsOfTheForest, paths, workerOk, key)
                              : target == 3 ? gameinject::Inject(gameinject::kUltrakill, paths, workerOk, key)
@@ -869,6 +906,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             worker.join();
             home.busy = false;
             menu.Notify(workerResult, workerOk ? ICON_CHECK : ICON_TRIANGLE_ALERT);
+            loader.backupsTime = -100.0;
             lastPoll = 0;
             if (workerOk && loader.s.closeAfterInject)
                 closeAt = now + 2000;

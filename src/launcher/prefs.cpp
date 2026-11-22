@@ -37,7 +37,8 @@ json ToJson(const ui::LoaderSettings& s) {
                 {"autoInject", s.autoInject},             {"onTop", s.onTop},
                 {"scale", s.scale},                       {"accent", s.accent},
                 {"showSoon", s.showSoon},                 {"installedFirst", s.installedFirst},
-                {"webArt", s.webArt},                     {"checkUpdates", s.checkUpdates}};
+                {"webArt", s.webArt},                     {"checkUpdates", s.checkUpdates},
+                {"backupOnInject", s.backupOnInject}};
 }
 
 template <typename T>
@@ -68,6 +69,7 @@ bool LoadPrefs(ui::LoaderSettings& s, const std::wstring& file) {
     Read(j, "installedFirst", d.installedFirst);
     Read(j, "webArt", d.webArt);
     Read(j, "checkUpdates", d.checkUpdates);
+    Read(j, "backupOnInject", d.backupOnInject);
     d.scale = std::clamp(d.scale, 0.7f, 2.0f);
     d.accent = std::clamp(d.accent, 0, ui::AccentCount() - 1);
     s = d;

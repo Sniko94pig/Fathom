@@ -2,6 +2,7 @@
 #include "imgui.h"
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace ui {
 
@@ -16,6 +17,18 @@ struct LoaderSettings {
     bool installedFirst = false;
     bool webArt = true;
     bool checkUpdates = true;
+    bool backupOnInject = true;
+};
+
+struct BackupEntry {
+    std::wstring path;
+    std::string game;
+    std::string when;
+    std::string note;
+    std::string size;
+    long long sortKey = 0;
+    unsigned long long bytes = 0;
+    bool picked = false;
 };
 
 struct Loader {
@@ -33,6 +46,10 @@ struct Loader {
     std::function<void()> openBackups;
     std::function<void()> openGame;
     std::function<std::string()> backupSaves;
+    std::vector<BackupEntry> backups;
+    double backupsTime = -100.0;
+    std::function<std::vector<BackupEntry>()> listBackups;
+    std::function<int(const std::vector<std::wstring>&)> recycleBackups;
 };
 
 int AccentCount();

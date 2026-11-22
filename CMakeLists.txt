@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.13.0)
+set(FATHOM_VERSION 1.13.1)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -109,6 +109,7 @@ if(WIN32)
     ${MC}/core/mc_live.cpp
     ${UK}/core/ultrakill_features.cpp
     ${GD}/core/gd_features.cpp
+    src/launcher/backups.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp

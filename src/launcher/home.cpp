@@ -135,20 +135,20 @@ struct Faq {
 };
 
 const Faq kFaq[] = {
-    {"Is Fathom free?", "Yes. Fathom is free and open source. You can read all of its code on GitHub, and every update is free too."},
+    {"Is Fathom free?", "Yes. For now Fathom is also open source, so you can read all of its code on GitHub. Updates are free too."},
     {"How do I open the menu in a game?",
      "Open the game's page in Fathom and press Start game. When the game has loaded, press Inject. Then press the open key in the game. The game's page shows which key that is, and you can change it in the menu's Settings."},
     {"The menu doesn't show up. What can I do?",
-     "Wait until the game's main menu or your save has fully loaded, then press Inject again. If it still doesn't show, press Open log on the game's page and send the log to us by email."},
+     "Wait until the game's main menu or your save has fully loaded, then press Inject again. If it still doesn't show, press Open log on the game's page and send the log to us by email, or join our Discord and ask there."},
     {"Can I get banned?",
      "Fathom is made for single-player and co-op games you play with friends. Never use cheats in online matches, ranked modes or on public servers. Where a game has leaderboards, Fathom tries to keep cheated runs off them, but using cheats online is always at your own risk."},
     {"Will cheats break my save?",
-     "Every cheat switches off cleanly when you turn it off or close the menu. To be safe, press Back up saves now in Settings before you try something big."},
+     "Every cheat switches off cleanly when you turn it off or close the menu. Fathom also backs up a game's saves every time you inject, and you can find every backup with its date and time in Settings."},
     {"My antivirus warns about Fathom.",
      "Mod menus load a menu file into the game, and some antivirus apps flag anything that does that. Fathom is open source, so anyone can check what it does. Only download Fathom from its GitHub releases page."},
     {"How do I update Fathom?", "Fathom checks for updates when it starts. You can also look for one yourself under Settings, Updates."},
     {"My game says Coming soon.",
-     "More games are added all the time. Games marked Being built already show the modules that are coming. Send us an email if you want a game added."},
+     "More games are added all the time. Games marked Being built already show the modules that are coming. Want a game added? Send us an email or ask on our Discord."},
     {"How do I uninstall Fathom?",
      "Use Uninstall Fathom in the Fathom folder, or find Fathom in Windows Settings, Apps. Your game saves are not touched."},
 };

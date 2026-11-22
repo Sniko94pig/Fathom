@@ -456,6 +456,26 @@ int main(int argc, char** argv) {
              loader.openGame = [] {};
              loader.refreshArt = [] {};
              loader.backupSaves = [] { return std::string(); };
+             loader.listBackups = [] {
+                 std::vector<ui::BackupEntry> v;
+                 auto add = [&v](const char* game, const char* when, const char* note, const char* size, const wchar_t* path, bool picked) {
+                     ui::BackupEntry e;
+                     e.game = game;
+                     e.when = when;
+                     e.note = note;
+                     e.size = size;
+                     e.path = path;
+                     e.picked = picked;
+                     v.push_back(e);
+                 };
+                 add("Sons of the Forest", "21 Nov 2026, 22:14", "", "48.2 MB", L"a", false);
+                 add("Sons of the Forest", "20 Nov 2026, 18:02", "Before a revive", "47.9 MB", L"b", true);
+                 add("Subnautica", "22 Nov 2026, 01:12", "", "6.4 MB", L"c", false);
+                 add("Subnautica 2", "21 Nov 2026, 23:40", "", "12.8 MB", L"d", true);
+                 add("Subnautica 2", "19 Nov 2026, 16:05", "", "12.1 MB", L"e", false);
+                 return v;
+             };
+             loader.recycleBackups = [](const std::vector<std::wstring>&) { return 0; };
              ui::T().accent = ui::AccentColor(loader.s.accent);
              u.embedded = true;
              u.showGameTabs = false;
@@ -691,6 +711,17 @@ int main(int argc, char** argv) {
              m.session = core::Session::Client;
          }, ImVec2(0, 0), nullptr},
     };
+    for (size_t i = 0; i < shots.size(); ++i) {
+        if (std::string(shots[i].name) != "15-launcher-settings") continue;
+        Shot down = shots[i];
+        down.name = "47-launcher-backups";
+        down.mouse = ImVec2(560, 420);
+        down.during = [](core::Model&, ui::Menu&, int f) {
+            if (f > 4 && f < 40) ImGui::GetIO().AddMouseWheelEvent(0.0f, -3.0f);
+        };
+        shots.push_back(down);
+        break;
+    }
 
     for (const Shot& shot : shots) {
         ImGui::CreateContext();
