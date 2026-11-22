@@ -199,9 +199,11 @@ bool Unload() {
         core::SaveSettings(model);
     }
     overlay::Stop();
-    MH_DisableHook(MH_ALL_HOOKS);
-    Sleep(150);
-    MH_Uninitialize();
+    if (!ukgame::HoldsHooks()) {
+        MH_DisableHook(MH_ALL_HOOKS);
+        Sleep(150);
+        MH_Uninitialize();
+    }
     menu.reset();
     if (ImGui::GetCurrentContext()) ImGui::DestroyContext();
     Sleep(300);
@@ -215,8 +217,10 @@ bool Unload() {
 DWORD WINAPI MainThread(void*) {
     slog::Open(dir + L"\\fathom.log");
     LOG("Fathom for ULTRAKILL starting");
+    MH_Initialize();
     if (!WaitForGame()) {
         LOG("gave up waiting for the game");
+        MH_Uninitialize();
         if (monoThread) mono::Detach(monoThread);
         slog::Close();
         FreeLibraryAndExitThread(self, 0);
@@ -250,7 +254,6 @@ DWORD WINAPI MainThread(void*) {
         menu->open = false;
     }
 
-    MH_Initialize();
     overlay::Callbacks cb;
     cb.frame = [] { Frame(); };
     cb.wantsInput = [] { return menu && menu->open && menu->focused; };

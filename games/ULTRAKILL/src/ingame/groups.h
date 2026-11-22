@@ -57,3 +57,37 @@ void Action(const std::string& id, const uk::Ctx& c);
 bool Busy();
 
 }
+
+namespace ukaim {
+
+bool Resolve();
+bool Supported(const std::string& id);
+void Tick(const uk::Ctx& c);
+void Release(const uk::Ctx& c);
+void Action(const std::string& id, const uk::Ctx& c);
+bool Busy();
+
+}
+
+namespace ukorbs {
+
+bool Resolve();
+bool Supported(const std::string& id);
+void Tick(const uk::Ctx& c);
+void Release(const uk::Ctx& c);
+void Action(const std::string& id, const uk::Ctx& c);
+bool Busy();
+
+}
+
+namespace uklevel {
+
+bool Resolve();
+bool Supported(const std::string& id);
+void Tick(const uk::Ctx& c);
+void Release(const uk::Ctx& c);
+void Action(const std::string& id, const uk::Ctx& c);
+bool Busy();
+bool Outside();
+
+}

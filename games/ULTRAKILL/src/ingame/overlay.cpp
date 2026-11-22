@@ -1,8 +1,10 @@
 #include "ingame/overlay.h"
+#include "ingame/cheats.h"
 #include "ingame/log.h"
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
 #include "ui/atlas.h"
+#include "ui/ui.h"
 #include "MinHook.h"
 #include <windows.h>
 #include <d3d11.h>
@@ -10,6 +12,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cfloat>
+#include <cmath>
+#include <cstdio>
 #include <mutex>
 #include <vector>
 
@@ -320,6 +324,30 @@ ID3D11ShaderResourceView* MakeTexture(const uint8_t* rgba, int w, int h) {
     return srv;
 }
 
+void DrawMarks() {
+    std::vector<uk::Marker> list = uk::Marks();
+    if (list.empty()) return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    ImVec2 ds = ImGui::GetIO().DisplaySize;
+    ImFont* font = ui::T().medium ? ui::T().medium : ImGui::GetFont();
+    float k = std::clamp(ds.y / 1080.0f, 1.0f, 3.0f);
+    float r = 4.0f * k, size = 13.0f * k;
+    char text[160];
+    for (const uk::Marker& m : list) {
+        if (!(m.x >= 0.0f && m.x <= 1.0f && m.y >= 0.0f && m.y <= 1.0f)) continue;
+        ImVec2 p(std::floor(m.x * ds.x) + 0.5f, std::floor(m.y * ds.y) + 0.5f);
+        dl->AddCircleFilled(p, r, (ImU32)m.color, 16);
+        dl->AddCircle(p, r, IM_COL32(0, 0, 0, 220), 16, 1.5f * k);
+        if (m.dist >= 0.0f && std::isfinite(m.dist)) std::snprintf(text, sizeof(text), "%s  %.0f m", m.label.c_str(), m.dist);
+        else std::snprintf(text, sizeof(text), "%s", m.label.c_str());
+        if (!text[0]) continue;
+        ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+        ImVec2 tp(std::floor(p.x - ts.x * 0.5f), std::floor(p.y + r + 3.0f * k));
+        dl->AddText(font, size, ImVec2(tp.x + k, tp.y + k), IM_COL32(0, 0, 0, 200), text);
+        dl->AddText(font, size, tp, IM_COL32(255, 255, 255, 235), text);
+    }
+}
+
 bool Init(IDXGISwapChain* sc) {
     if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), (void**)&device)) || !device) {
         LOG("the game is not using DirectX 11, the menu cannot be shown");
@@ -373,6 +401,12 @@ void Render(IDXGISwapChain* sc) {
     } catch (...) {
         static int reported = 0;
         if (reported++ < 5) LOG("error while drawing the menu");
+    }
+    try {
+        DrawMarks();
+    } catch (...) {
+        static int marksReported = 0;
+        if (marksReported++ < 5) LOG("error while drawing the screen markers");
     }
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();

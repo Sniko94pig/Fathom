@@ -100,6 +100,9 @@ void ResolveEngine() {
     R.removeWillRender = M(R.canvas, "remove_willRenderCanvases", 1);
     R.willRenderType = mono::ParamClass(R.addWillRender, 0);
     R.delegateForPointer = MT(R.marshal, "GetDelegateForFunctionPointer", {"System.IntPtr", "System.Type"});
+    R.camera = C(core, "UnityEngine", "Camera");
+    R.camMain = M(R.camera, "get_main", 0);
+    R.camToViewport = MT(R.camera, "WorldToViewportPoint", {"UnityEngine.Vector3"});
 }
 
 void ResolveGame() {
@@ -144,6 +147,11 @@ void ResolveGame() {
     R.shCurrent = F(R.sceneHelper, "<CurrentScene>k__BackingField");
     R.acCheats = F(R.assistController, "cheatsEnabled");
     R.smAsscon = F(R.statsManager, "asscon");
+    R.leaderboard = C(game, "", "LeaderboardController");
+    R.lbLevel = MT(R.leaderboard, "SubmitLevelScore",
+                   {"System.String", "System.Int32", "System.Single", "System.Int32", "System.Int32", "System.Int32", "System.Boolean"});
+    R.lbCyber = MT(R.leaderboard, "SubmitCyberGrindScore", {"System.Int32", "System.Single", "System.Int32", "System.Int32", "System.Single"});
+    R.lbFish = MT(R.leaderboard, "SubmitFishSize", {"System.Int32"});
 }
 
 }
@@ -451,6 +459,23 @@ std::vector<Object*> ListItems(Object* list) {
     size_t len = mono::Length(arr);
     for (int i = 0; i < n && (size_t)i < len; ++i) out.push_back(mono::At(arr, (size_t)i));
     return out;
+}
+
+Object* MainCamera() {
+    Object* cam = R.camMain ? Call(R.camMain, nullptr) : nullptr;
+    return Alive(cam) && IsA(cam, R.camera) ? cam : nullptr;
+}
+
+bool Viewport(Vec3 world, Vec2& out, Object* camera) {
+    Object* cam = camera ? camera : MainCamera();
+    if (!R.camToViewport || !Alive(cam) || !IsA(cam, R.camera)) return false;
+    bool ok = false;
+    Object* r = Call(R.camToViewport, cam, {&world}, &ok);
+    if (!ok || !r) return false;
+    Vec3 v = mono::Result<Vec3>(r);
+    if (!(v.z > 0.0f) || !std::isfinite(v.x) || !std::isfinite(v.y)) return false;
+    out = {v.x, 1.0f - v.y};
+    return true;
 }
 
 }

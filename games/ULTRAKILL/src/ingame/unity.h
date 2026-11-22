@@ -43,9 +43,12 @@ struct Refs {
     Method *rbGetVelocity, *rbSetVelocity;
     Method *addWillRender, *removeWillRender, *delegateForPointer;
     Class* willRenderType;
+    Class* camera;
+    Method *camMain, *camToViewport;
 
     Class *monoSingleton, *newMovement, *optionsManager, *cameraController, *gameStateManager, *gameState, *lockMode, *sceneHelper,
-        *assistController, *statsManager;
+        *assistController, *statsManager, *leaderboard;
+    Method *lbLevel, *lbCyber, *lbFish;
     Method* msGetInstance;
     Fld nmDead, nmActivated, nmLevelOver;
     Fld omMainMenu, omPaused, omInIntro, omFrozen;
@@ -143,6 +146,8 @@ int FrameCount();
 int InstanceId(Object* o);
 std::string Name(Object* o);
 std::vector<Object*> ListItems(Object* list);
+Object* MainCamera();
+bool Viewport(Vec3 world, Vec2& out, Object* camera = nullptr);
 
 inline Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
 inline Vec3 Sub(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }

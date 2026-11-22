@@ -14,6 +14,9 @@ add_library(fathom_ultrakill SHARED
   ${UK_SRC}/ingame/weapons_a.cpp
   ${UK_SRC}/ingame/weapons_b.cpp
   ${UK_SRC}/ingame/shop.cpp
+  ${UK_SRC}/ingame/aim.cpp
+  ${UK_SRC}/ingame/orbs.cpp
+  ${UK_SRC}/ingame/level.cpp
   ${UK_SRC}/ingame/overlay.cpp
   ${UK_SRC}/ingame/log.cpp
   ${UK_SRC}/core/ultrakill_features.cpp
