@@ -7,5 +7,6 @@ bool Ready() { return false; }
 void Set(bool) {}
 void Tick() {}
 void Off() {}
+bool BlockUpload(const char*) { return false; }
 
 }

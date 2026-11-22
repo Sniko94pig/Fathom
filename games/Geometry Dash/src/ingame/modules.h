@@ -22,7 +22,7 @@ struct Protect {
     Protect& operator=(const Protect&) = delete;
     bool active = false;
     bool was = false;
-    void* layer = nullptr;
+    void* obj = nullptr;
 };
 
 }
@@ -50,6 +50,15 @@ void Off();
 
 }
 
+namespace jumps {
+
+bool Install();
+bool Ready();
+void Tick();
+void Off();
+
+}
+
 namespace icons {
 
 bool Install();
@@ -57,6 +66,7 @@ bool Ready();
 void Set(bool on);
 void Tick();
 void Off();
+bool BlockUpload(const char* url);
 
 }
 

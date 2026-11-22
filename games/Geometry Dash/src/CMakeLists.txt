@@ -13,6 +13,7 @@ add_library(fathom_gd SHARED
   ${GD_SRC}/ingame/safe.cpp
   ${GD_SRC}/ingame/speed.cpp
   ${GD_SRC}/ingame/player.cpp
+  ${GD_SRC}/ingame/jumps.cpp
   ${GD_SRC}/ingame/icons.cpp
   ${GD_SRC}/ingame/macro.cpp
   ${GD_SRC}/ingame/rgb.cpp
