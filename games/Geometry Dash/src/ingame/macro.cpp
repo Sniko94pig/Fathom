@@ -374,7 +374,7 @@ std::string Serialize(const Macro& m, int steps) {
     o << "  \"steps\": " << steps << ",\n";
     o << "  \"stepsPerSecond\": 480,\n";
     o << "  \"buttons\": [\"release all\", \"jump\", \"left\", \"right\"],\n";
-    o << "  \"splitMarkers\": \"buttons 11 to 13 only make the game split that step, like jump, left and right would\",\n";
+    o << "  \"splitMarkers\": \"button 11 only makes the game split that step, like a jump would\",\n";
     o << "  \"eventFields\": [\"step\", \"button\", \"down\", \"player2\"],\n";
     o << "  \"events\": [";
     for (size_t i = 0; i < m.events.size(); ++i) {
@@ -647,14 +647,14 @@ void RecordStep(void* gl, float dt, bool clear, int step) {
     size_t after = Size(gl);
     size_t used = after <= before ? before - after : 0;
     if (!used) {
-        if ((step & 1) == 0 || !Room()) return;
+        if ((step & 1) == 0) return;
+        bool markFlip = Flip(gl);
         for (const Cmd& c : scratch) {
-            if (c.button != 1 || c.step == kSynthetic) continue;
+            if (c.button != 1 || c.step == kSynthetic || !Room()) continue;
             Ev e;
-            if (!MakeEv(step, c, Flip(gl), e)) break;
+            if (!MakeEv(step, c, markFlip, e)) continue;
             e.button += kMarkerBase;
             att.events.push_back(e);
-            break;
         }
         return;
     }

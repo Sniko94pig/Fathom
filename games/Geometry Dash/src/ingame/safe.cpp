@@ -41,6 +41,7 @@ constexpr uint32_t kCommitPlaytime = 0x51E8E0;
 constexpr uint32_t kManagerSave = 0x77530;
 constexpr uint32_t kWriteAtomic = 0x73820;
 constexpr uint32_t kSetStat = 0x2DB290;
+constexpr uint32_t kCommitJumps = 0x519F80;
 
 constexpr uintptr_t kTrackOff = 0x39FA;
 constexpr uintptr_t kPlaytimeNow = 0x3C18;
@@ -87,6 +88,7 @@ WriteAtomicFn oWriteAtomic = nullptr;
 
 GetStatFn getStat = nullptr;
 SetStatFn setStat = nullptr;
+VoidFn commitJumps = nullptr;
 UrlFn getUrl = nullptr;
 RespCtorFn respCtor = nullptr;
 RespBoolFn respSucceed = nullptr;
@@ -277,8 +279,8 @@ void Track() {
 bool __fastcall hkInit(void* pl, void* level, bool dontCreate) {
     gd::Busy busy;
     bool ok = oInit(pl, level, dontCreate);
-    if (ok) {
-        if (layer.load() && layer.load() != pl) EndSession();
+    if (ok && layer.load() != pl) {
+        if (layer.load()) EndSession();
         BeginSession(pl);
     }
     return ok;
@@ -301,6 +303,8 @@ void __fastcall hkReset(void* pl) {
     bool now = ActiveNow();
     bool was = cheated.load();
     bool next = resume ? (was || now) : now;
+    if (was) gd::F<int>(pl, gdx::off::PL_uncommittedJumps) = 0;
+    else if (next && commitJumps) commitJumps(pl);
     cheated = next;
     if (next) {
         tainted = true;
@@ -547,6 +551,7 @@ bool Install() {
     }
     getStat = (GetStatFn)gd::Exe(gdx::rva::GSM_getStat);
     setStat = gd::IsFunctionStart(kSetStat) ? (SetStatFn)gd::Exe(kSetStat) : nullptr;
+    commitJumps = gd::IsFunctionStart(kCommitJumps) ? (VoidFn)gd::Exe(kCommitJumps) : nullptr;
     namespace r = gdx::rva;
     bool ok = setStat != nullptr;
     ok &= HookOne(kManagerSave, &hkManagerSave, &oManagerSave, "game save");
