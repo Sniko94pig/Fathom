@@ -48,6 +48,7 @@ int ValueSize(Field* f);
 const char* FieldName(Field* f);
 
 Object* Invoke(Method* m, void* self, void** args, bool* ok = nullptr);
+void* Compile(Method* m);
 void* Unbox(Object* o);
 Object* Box(Class* valueClass, void* value);
 Object* TypeObject(Class* c);

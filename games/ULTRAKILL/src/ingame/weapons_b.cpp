@@ -1,5 +1,6 @@
 #include "ingame/groups.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
@@ -14,25 +15,40 @@ using uk::Ctx;
 
 const int kRocketCap = 100;
 const size_t kTrackCap = 64;
+const float kNailTop = 500.0f;
+const int kNailFrame = 10;
+const int kNailCap = 3000;
+const double kNailCount = 1.5;
 
-Class *gcCls, *wcCls, *dwCls, *nailCls, *zapCls, *railCls, *rocketCls, *imCls;
+Class *gcCls, *wcCls, *dwCls, *nailCls, *zapCls, *railCls, *rocketCls, *imCls, *projCls;
 Fld gcActivated, gcCurrent, gcDuals, dwCurrent, widDelay;
-Fld nVar, nAlt, nRate, nCurRate, nCooldown, nHeat, nBurn, nSinks, nZapper, zCharge, zAttached;
+Fld nVar, nAlt, nRate, nCurRate, nCooldown, nHeat, nBurn, nSinks, nZapper, nReady, zCharge, zAttached;
 Fld rWid, rReady, lVar, lCooldown, lCharge, lRate;
 Fld wSinks, wSawSinks, wAmmo, wSaws, wMagnets, wZapper, wRail, wRailPlayed, wStored, wRockets, wFreeze, wCannon, wFuel;
 Fld imSource, piFire1, isPressed, isFrame;
-Method *rShoot, *mbInvoke, *imCombo, *fixedStep;
-bool okFind, okShots, okCharge, okReload, okAuto;
+Method *rShoot, *nShoot, *mbInvoke, *imCombo, *fixedStep;
+bool okFind, okShots, okCharge, okReload, okAuto, okMore;
 
 struct Guns {
     std::vector<Object*> nails, rails, rockets;
     Object* mainRail = nullptr;
 };
 
+struct Pull {
+    const Ctx* c = nullptr;
+    Object* gc = nullptr;
+    Object* wc = nullptr;
+    int held = -1;
+    float step = -1.0f;
+};
+
 float railAcc = 0;
 int railId = 0, railBroken = 0;
 std::unordered_map<int, bool> burst;
-std::unordered_set<int> told;
+std::unordered_map<int, float> owed;
+std::unordered_set<int> told, jammed;
+int nailsLive = 0;
+double nextCount = 0;
 bool stepTold = false;
 
 bool Is(Object* o, const Fld& f) { return Val<uint8_t>(o, f) != 0; }
@@ -50,6 +66,9 @@ void Forget() {
     StopRail();
     railBroken = 0;
     burst.clear();
+    owed.clear();
+    jammed.clear();
+    nextCount = 0;
 }
 
 float Rate(const Ctx& c) {
@@ -72,7 +91,12 @@ void TellStep() {
     if (stepTold || !fixedStep) return;
     stepTold = true;
     float s = CallFloat(fixedStep, nullptr);
-    if (s > 0) LOG("weapons_b: physics step %.4f s, a nailgun fires at most %.0f times per second", s, 1.0f / s);
+    if (!(s > 0)) return;
+    if (okMore)
+        LOG("weapons_b: physics step %.4f s, a nailgun fires up to %.0f times per second by itself and gets extra shots above that", s,
+            1.0f / s);
+    else
+        LOG("weapons_b: physics step %.4f s, a nailgun fires at most %.0f times per second", s, 1.0f / s);
 }
 
 void KeepRail(Object* wc) {
@@ -134,7 +158,92 @@ void Overheat(Object* ng, bool burn) {
     burst[id] = burn;
 }
 
-void Nail(Object* ng, bool shots, bool charge, bool reload, float m) {
+bool Held(Pull& p) {
+    if (p.held < 0) {
+        Object* im = Single(imCls);
+        Object* src = Ref(im, imSource);
+        Object* fire = src ? Ref(src, piFire1) : nullptr;
+        bool on = fire && Is(fire, isPressed);
+        if (on && imCombo && CallBool(imCombo, im)) on = false;
+        p.held = on ? 1 : 0;
+    }
+    return p.held == 1;
+}
+
+float Step(Pull& p) {
+    if (p.step < 0.0f) {
+        float s = CallFloat(fixedStep, nullptr, {}, 0.0f);
+        p.step = std::isfinite(s) && s > 0.0f ? s : 0.0f;
+    }
+    return p.step;
+}
+
+bool Firing(Object* ng, bool burn, float m, Pull& p) {
+    const Ctx& c = *p.c;
+    if (!okMore || !(m > 1.0f) || !(c.dt > 0.0f) || c.paused || c.menuFocused) return false;
+    if (!Is(ng, nReady) || !Is(p.gc, gcActivated)) return false;
+    Object* gsm = Static(R.gsmInstance);
+    if (!Alive(gsm) || Is(gsm, R.gsmInputLocked)) return false;
+    return burn || Held(p);
+}
+
+float Steps(float wait, float per) {
+    float n = std::floor((wait - 0.01f) / per) + 1.0f;
+    return n > 1.0f ? n : 1.0f;
+}
+
+bool Crowded(const Ctx& c) {
+    if (c.now >= nextCount) {
+        nailsLive = (int)FindAll(projCls).size();
+        nextCount = c.now + kNailCount;
+    }
+    return nailsLive >= kNailCap;
+}
+
+void More(Object* ng, int var, bool alt, bool burn, float rate, float want, float m, Pull& p) {
+    int id = InstanceId(ng);
+    float s = id && !jammed.count(id) && std::isfinite(rate) && Firing(ng, burn, m, p) ? Step(p) : 0.0f;
+    float add = 0.0f;
+    if (s > 0.0f) {
+        float per = 100.0f * s;
+        add = std::min(m / (Steps(rate, per) * s), kNailTop) - 1.0f / (Steps(want, per) * s);
+    }
+    if (!(add > 0.0f)) {
+        owed.erase(id);
+        return;
+    }
+    if (owed.size() >= kTrackCap && !owed.count(id)) owed.clear();
+    float due = owed[id] + add * p.c->dt;
+    int n = (int)due;
+    if (n > kNailFrame) {
+        n = kNailFrame;
+        due = (float)n;
+    }
+    owed[id] = due - (float)n;
+    if (n <= 0) return;
+    if (Crowded(*p.c)) {
+        owed[id] = 0.0f;
+        return;
+    }
+    const Fld& ammo = alt ? wSaws : wAmmo;
+    float full = alt ? 10.0f : 100.0f;
+    float cd = Val<float>(ng, nCooldown);
+    for (int i = 0; i < n; ++i) {
+        if (var == 1) Fill(p.wc, ammo, full);
+        bool ok = false;
+        Call(nShoot, ng, {}, &ok);
+        if (!ok) {
+            jammed.insert(id);
+            owed.erase(id);
+            LOG("weapons_b: a nailgun did not take its extra shots, it stays at one nail per physics step until the next level or death");
+            break;
+        }
+    }
+    SetVal<float>(ng, nCooldown, cd);
+    if (var == 1) Fill(p.wc, ammo, full);
+}
+
+void Nail(Object* ng, bool shots, bool charge, bool reload, float m, Pull& p) {
     int var = Val<int>(ng, nVar, -1);
     bool alt = Is(ng, nAlt);
     bool burn = Is(ng, nBurn);
@@ -146,6 +255,7 @@ void Nail(Object* ng, bool shots, bool charge, bool reload, float m) {
         float want = std::max(0.0f, rate / m);
         SetVal<float>(ng, nCurRate, want);
         if (Val<float>(ng, nCooldown) > want) SetVal<float>(ng, nCooldown, want);
+        More(ng, var, alt, burn, rate, want, m, p);
     }
     if (!charge) return;
     if (var == 2 && nZapper) {
@@ -240,6 +350,9 @@ bool Resolve() {
     nBurn = F(nailCls, "burnOut");
     nSinks = F(nailCls, "heatSinks");
     nZapper = F(nailCls, "currentZapper");
+    nReady = F(nailCls, "canShoot");
+    nShoot = M(nailCls, "Shoot", 0);
+    projCls = Cls("Nail");
     zapCls = Cls("Zapper");
     zCharge = F(zapCls, "charge");
     zAttached = F(zapCls, "attached");
@@ -287,6 +400,8 @@ bool Resolve() {
     bool ammo = wcCls && (wAmmo || wSaws);
     okShots = (okFind && (nailRate || rocketRate)) || railKeep || ammo;
     okAuto = okFind && railKeep && railCls && rShoot && rReady && imCls && imSource && piFire1 && isPressed && isFrame && gcActivated;
+    okMore = okFind && nailRate && nReady && nShoot && projCls && gcActivated && imCls && imSource && piFire1 && isPressed && fixedStep &&
+             R.gsmInstance && R.gsmInputLocked;
     bool cannon = rocketCls && lVar && lCharge;
     bool zap = nailCls && nVar && nZapper && zCharge && zAttached;
     bool heat = nailCls && nVar && nAlt && nBurn && nHeat && nSinks;
@@ -294,6 +409,7 @@ bool Resolve() {
     bool meters = wcCls && (wSinks || wSawSinks || wAmmo || wSaws || wMagnets || wZapper || wRail || wFreeze || wCannon || wFuel);
     okReload = meters || (okFind && nailCls && nVar && nAlt && nSinks);
     if (okShots && !okAuto) LOG("weapons_b: the railcannon will not fire by itself while the button is held");
+    if (okShots && nailRate && !okMore) LOG("weapons_b: the nailgun will not fire faster than one nail per physics step");
     return okShots || okCharge || okReload;
 }
 
@@ -309,6 +425,7 @@ void Tick(const uk::Ctx& c) {
     bool charge = okCharge && c.on("instant_charge");
     bool reload = okReload && c.on("no_reload");
     if (!shots) StopRail();
+    if (!shots && !owed.empty()) owed.clear();
     if (!charge && !burst.empty()) burst.clear();
     if ((!shots && !charge && !reload) || !c.inLevel || c.dead) return;
     TellStep();
@@ -318,7 +435,11 @@ void Tick(const uk::Ctx& c) {
     Object* gc = okFind ? Single(gcCls) : nullptr;
     if (!gc) return;
     Guns g = Collect(gc);
-    for (Object* n : g.nails) Nail(n, shots, charge, reload, m);
+    Pull p;
+    p.c = &c;
+    p.gc = gc;
+    p.wc = wc;
+    for (Object* n : g.nails) Nail(n, shots, charge, reload, m, p);
     for (Object* l : g.rockets) Rocket(l, wc, shots, charge, m, c.dt);
     if (shots) AutoRail(c, gc, g, m);
 }

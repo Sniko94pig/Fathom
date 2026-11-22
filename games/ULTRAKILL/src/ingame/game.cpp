@@ -3,10 +3,12 @@
 #include "ingame/groups.h"
 #include "ingame/log.h"
 #include "ingame/unity.h"
+#include "MinHook.h"
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <iterator>
 #include <unordered_map>
 
 namespace uk {
@@ -31,27 +33,34 @@ struct Group {
     void (*release)(const Ctx&);
     void (*action)(const std::string&, const Ctx&);
     bool (*busy)();
+    bool (*outside)();
 };
 
 const Group kGroups[] = {
-    {"player", "player", ukplayer::Resolve, ukplayer::Supported, ukplayer::Tick, ukplayer::Release, ukplayer::Action, ukplayer::Busy},
-    {"movement", "movement", ukmove::Resolve, ukmove::Supported, ukmove::Tick, ukmove::Release, ukmove::Action, ukmove::Busy},
-    {"weapons_a", "weapon", ukweapa::Resolve, ukweapa::Supported, ukweapa::Tick, ukweapa::Release, ukweapa::Action, ukweapa::Busy},
-    {"weapons_b", "weapon", ukweapb::Resolve, ukweapb::Supported, ukweapb::Tick, ukweapb::Release, ukweapb::Action, ukweapb::Busy},
-    {"shop", "shop", ukshop::Resolve, ukshop::Supported, ukshop::Tick, ukshop::Release, ukshop::Action, ukshop::Busy},
+    {"player", "player", ukplayer::Resolve, ukplayer::Supported, ukplayer::Tick, ukplayer::Release, ukplayer::Action, ukplayer::Busy, ukplayer::Outside},
+    {"movement", "movement", ukmove::Resolve, ukmove::Supported, ukmove::Tick, ukmove::Release, ukmove::Action, ukmove::Busy, nullptr},
+    {"weapons_a", "weapon", ukweapa::Resolve, ukweapa::Supported, ukweapa::Tick, ukweapa::Release, ukweapa::Action, ukweapa::Busy, nullptr},
+    {"weapons_b", "weapon", ukweapb::Resolve, ukweapb::Supported, ukweapb::Tick, ukweapb::Release, ukweapb::Action, ukweapb::Busy, nullptr},
+    {"shop", "shop", ukshop::Resolve, ukshop::Supported, ukshop::Tick, ukshop::Release, ukshop::Action, ukshop::Busy, nullptr},
+    {"aim", "aiming", ukaim::Resolve, ukaim::Supported, ukaim::Tick, ukaim::Release, ukaim::Action, ukaim::Busy, nullptr},
+    {"orbs", "orb", ukorbs::Resolve, ukorbs::Supported, ukorbs::Tick, ukorbs::Release, ukorbs::Action, ukorbs::Busy, nullptr},
+    {"level", "level", uklevel::Resolve, uklevel::Supported, uklevel::Tick, uklevel::Release, uklevel::Action, uklevel::Busy, uklevel::Outside},
 };
 
 const int kMaxFaults = 25;
+const char* const kQuiet[] = {"orb_esp", "challenge_shower"};
 
 struct Slot {
     const Group* g = nullptr;
     bool ok = false;
     bool dropped = false;
+    bool outside = false;
     int faults = 0;
 };
 
 struct World {
     int frame = -1;
+    Scene scene = Scene::Other;
     bool loading = false, mainMenu = true, paused = false, inIntro = false;
     bool inLevel = false, dead = false, activated = false, levelOver = false;
     Object* nm = nullptr;
@@ -59,6 +68,26 @@ struct World {
     Object* gsm = nullptr;
     int nmId = 0;
 };
+
+struct MarkSet {
+    std::string owner;
+    int tick = 0;
+    ULONGLONG at = 0;
+    std::vector<Marker> list;
+};
+
+enum class Way { None, Hooks, Flag, Lost };
+
+struct Upload {
+    const char* name;
+    void* code;
+    bool on;
+    bool stuck;
+};
+
+const int kMarkFrames = 3;
+const ULONGLONG kMarkMs = 1000;
+const size_t kMaxMarks = 256;
 
 core::Model* model = nullptr;
 std::mutex* modelLock = nullptr;
@@ -94,10 +123,21 @@ const char* faultWhere = "the game update";
 
 bool wasInLevel = false, wasDead = false;
 int lastNmId = 0;
+Scene lastScene = Scene::Other;
 
 bool tainted = false;
 int runId = 0;
 bool warned = false;
+bool flagReady = false, hooksReady = false;
+std::atomic<bool> keepHooks{false};
+Way way = Way::None;
+Upload uploads[] = {{"SubmitLevelScore", nullptr, false, false},
+                    {"SubmitCyberGrindScore", nullptr, false, false},
+                    {"SubmitFishSize", nullptr, false, false}};
+
+std::mutex markLock;
+std::vector<MarkSet> markSets;
+std::atomic<int> tickNo{0};
 
 struct Locks {
     bool held = false;
@@ -175,6 +215,24 @@ bool GuardBusy(const Group* g, bool* busy) {
     }
 }
 
+bool GuardOutside(const Group* g) {
+    __try {
+        return g->outside && g->outside();
+    } __except (Filter(GetExceptionCode())) {
+        return false;
+    }
+}
+
+bool GuardCompile(mono::Method* m, void** code) {
+    __try {
+        *code = mono::Compile(m);
+        return *code != nullptr;
+    } __except (Filter(GetExceptionCode())) {
+        *code = nullptr;
+        return false;
+    }
+}
+
 bool Owns(const Slot& sl, const std::string& id) {
     if (!sl.ok) return false;
     faultWhere = sl.g->name;
@@ -206,6 +264,12 @@ void ApplyOff() {
     pendingOff.clear();
 }
 
+bool Quiet(const std::string& id) {
+    for (const char* q : kQuiet)
+        if (id == q) return true;
+    return false;
+}
+
 void TakeSnap() {
     if (!modelLock || !model) return;
     std::unique_lock<std::mutex> g(*modelLock, std::try_to_lock);
@@ -217,7 +281,7 @@ void TakeSnap() {
         if (f.kind == core::Kind::Toggle) {
             bool on = live && f.on;
             snap.on[f.id] = on;
-            inUse = inUse || on;
+            inUse = inUse || (on && !Quiet(f.id));
         } else if (f.kind == core::Kind::Slider) {
             float v = live ? f.value : f.def;
             snap.value[f.id] = v;
@@ -246,10 +310,12 @@ World ReadWorld(int frame) {
     w.mainMenu = !w.om || Bit(w.om, R.omMainMenu);
     w.paused = Bit(w.om, R.omPaused);
     w.inIntro = Bit(w.om, R.omInIntro);
+    if (!w.loading && w.om && w.mainMenu) w.scene = Scene::MainMenu;
     if (w.loading || w.mainMenu) return w;
     Object* nm = un::Single(R.newMovement);
     if (!nm || !un::ActiveInHierarchy(nm)) return w;
     w.inLevel = true;
+    w.scene = Scene::Level;
     w.nm = nm;
     w.nmId = un::InstanceId(nm);
     w.dead = Bit(nm, R.nmDead);
@@ -263,6 +329,7 @@ Ctx MakeCtx(const Snap& s, const World& w, bool stopping) {
     c.snap = &s;
     c.player = w.inLevel ? w.nm : nullptr;
     c.playerId = w.inLevel ? w.nmId : 0;
+    c.scene = w.scene;
     c.inLevel = w.inLevel;
     c.dead = w.dead;
     c.activated = w.activated;
@@ -429,32 +496,147 @@ void MenuInput(const World& w, bool stopping) {
     MenuCursor(focus);
 }
 
-void SafetyPreTick(bool inUse, bool oneShot, bool inLevel) {
+void Skip() {}
+
+void FreeUploads() {
+    for (Upload& u : uploads) {
+        MH_STATUS st = u.code ? MH_RemoveHook(u.code) : MH_OK;
+        if (st != MH_OK && st != MH_ERROR_NOT_CREATED) {
+            LOG("leaderboard guard: LeaderboardController.%s could not be unhooked, the menu file stays loaded", u.name);
+            keepHooks = true;
+            continue;
+        }
+        u.code = nullptr;
+        u.on = false;
+        u.stuck = false;
+    }
+    hooksReady = false;
+}
+
+void MakeUploads() {
+    mono::Method* methods[] = {R.lbLevel, R.lbCyber, R.lbFish};
+    bool all = R.statsManager && R.getInstanceID;
+    faultWhere = "the leaderboard guard";
+    for (size_t i = 0; i < std::size(uploads); ++i) {
+        void* code = nullptr;
+        bool ok = methods[i] && GuardCompile(methods[i], &code) && MH_CreateHook(code, (void*)&Skip, nullptr) == MH_OK;
+        if (ok) uploads[i].code = code;
+        else LOG("leaderboard guard: LeaderboardController.%s cannot be blocked", uploads[i].name);
+        all = all && ok;
+    }
+    faultWhere = "the game update";
+    hooksReady = all;
+    if (!all) FreeUploads();
+}
+
+bool Block() {
+    bool all = hooksReady;
+    for (Upload& u : uploads) {
+        if (!u.code || u.on) continue;
+        MH_STATUS st = MH_EnableHook(u.code);
+        u.on = st == MH_OK || st == MH_ERROR_ENABLED;
+        all = all && u.on;
+    }
+    return all;
+}
+
+void Unblock() {
+    for (Upload& u : uploads) {
+        if (!u.on || u.stuck) continue;
+        MH_STATUS st = MH_DisableHook(u.code);
+        if (st == MH_OK || st == MH_ERROR_DISABLED) {
+            u.on = false;
+        } else {
+            u.stuck = true;
+            LOG("leaderboard guard: LeaderboardController.%s stays blocked", u.name);
+        }
+    }
+}
+
+bool FlagRun(Object* sm) {
+    if (!flagReady) return false;
+    Object* ac = un::Single(R.assistController);
+    if (ac) un::SetVal<uint8_t>(ac, R.acCheats, 1);
+    Object* cached = un::Ref(sm, R.smAsscon);
+    bool other = cached != ac && un::Alive(cached);
+    if (other) un::SetVal<uint8_t>(cached, R.acCheats, 1);
+    return ac || other;
+}
+
+Way Protect() {
+    if (hooksReady && Block()) {
+        LOG("cheats in use, this run will not go to the leaderboards (Fathom blocks its uploads)");
+        return Way::Hooks;
+    }
+    if (hooksReady) LOG("leaderboard guard: the upload block could not be switched on");
+    if (flagReady) {
+        LOG("cheats in use, this run will not go to the leaderboards (the game marks it as cheated)");
+        return Way::Flag;
+    }
+    LOG("leaderboard guard: this run cannot be kept off the leaderboards");
+    return Way::Lost;
+}
+
+bool SafetyPreTick(bool inUse, bool oneShot, bool inLevel) {
     Object* sm = un::Single(R.statsManager);
     int smId = sm ? un::InstanceId(sm) : 0;
     if (inUse || oneShot) {
-        if (!tainted) LOG("cheats in use, this run will not go to the leaderboards");
         tainted = true;
         runId = smId;
-    } else if (tainted && (smId == 0 || smId != runId)) {
+    } else if (tainted && (smId ? smId != runId : !inLevel)) {
         tainted = false;
         runId = 0;
         LOG("every cheat is off, the next run can go to the leaderboards");
     }
-    if (!tainted || (!smId && !inLevel)) return;
-    Object* ac = un::Single(R.assistController);
-    if (ac) un::SetVal<uint8_t>(ac, R.acCheats, 1);
-    Object* cached = un::Ref(sm, R.smAsscon);
-    if (cached != ac && un::Alive(cached)) un::SetVal<uint8_t>(cached, R.acCheats, 1);
-    if (smId && !warned) {
+    if (!tainted) {
+        if (way != Way::None) Unblock();
+        way = Way::None;
+        return true;
+    }
+    if (!smId && !inLevel) return true;
+    if (way == Way::None) {
+        way = Protect();
+        if (way == Way::Lost) return false;
+    }
+    if (way == Way::Flag) FlagRun(sm);
+    if (way != Way::Lost && smId && !warned) {
         warned = true;
         Note("Scores from this run will not go to the leaderboards");
     }
+    return true;
 }
 
-void SafetyRelease() {
+void SafetyRelease(const World& w) {
+    bool hold = false;
+    if (tainted && (way == Way::Hooks || way == Way::Flag)) {
+        bool run = true, marked = false;
+        try {
+            Object* sm = un::Single(R.statsManager);
+            run = sm || w.inLevel;
+            marked = run && FlagRun(sm);
+        } catch (...) {
+        }
+        if (marked) LOG("the run is marked as cheated, so it stays off the leaderboards after unloading");
+        hold = run && !marked && way == Way::Hooks;
+    }
+    if (hold && !keepHooks) LOG("the upload block stays on until the game closes, this run could not be marked as cheated");
+    if (hold) keepHooks = true;
+    if (!keepHooks) FreeUploads();
     tainted = false;
     runId = 0;
+    way = Way::None;
+}
+
+void AgeMarks() {
+    int now = tickNo.load();
+    std::lock_guard<std::mutex> g(markLock);
+    markSets.erase(std::remove_if(markSets.begin(), markSets.end(), [now](const MarkSet& s) { return now - s.tick >= kMarkFrames; }),
+                   markSets.end());
+}
+
+void ClearMarks() {
+    std::lock_guard<std::mutex> g(markLock);
+    markSets.clear();
 }
 
 bool AnyBusy() {
@@ -470,9 +652,9 @@ bool AnyBusy() {
     return any;
 }
 
-void ReleaseGroups(const Ctx& c) {
+void ReleaseGroups(const Ctx& c, bool onlyOutside = false) {
     for (Slot& sl : slots) {
-        if (!sl.ok) continue;
+        if (!sl.ok || (onlyOutside && !sl.outside)) continue;
         faultWhere = sl.g->name;
         if (GuardRelease(sl.g, &c)) continue;
         ++sl.faults;
@@ -496,9 +678,18 @@ void Drop(Slot& sl, const Ctx& c) {
     Note(std::string("Some ") + sl.g->label + " cheats were switched off after an error");
 }
 
+void Unguarded(const Ctx& c) {
+    LOG("the leaderboard guard stopped working, every cheat is switched off");
+    for (const std::string& id : featureIds)
+        if (Owned(id)) pendingOff.push_back(id);
+    ReleaseGroups(c);
+    for (Slot& sl : slots) sl.ok = false;
+    Note("Every cheat was switched off because the leaderboard guard stopped working");
+}
+
 void TickGroups(const Ctx& c) {
     for (Slot& sl : slots) {
-        if (!sl.ok) continue;
+        if (!sl.ok || (!c.inLevel && !sl.outside)) continue;
         faultWhere = sl.g->name;
         if (!GuardTick(sl.g, &c)) ++sl.faults;
     }
@@ -546,12 +737,15 @@ void Transitions(const World& w, const Ctx& c) {
     if (wasInLevel && !w.inLevel) {
         LOG("no live player any more (level left, loading or player hidden)");
         ReleaseGroups(c);
+        ClearMarks();
     } else if (wasInLevel && w.nmId != lastNmId) {
         LOG("the player object changed");
         ReleaseGroups(c);
     } else if (wasInLevel && w.dead && !wasDead) {
         LOG("the player died");
         ReleaseGroups(c);
+    } else if (w.scene != lastScene) {
+        ReleaseGroups(c, true);
     }
     if (!wasInLevel && w.inLevel) LOG("in a level: %s", SceneName().c_str());
 }
@@ -560,20 +754,26 @@ void Remember(const World& w) {
     wasInLevel = w.inLevel;
     wasDead = w.dead;
     lastNmId = w.nmId;
+    lastScene = w.scene;
 }
 
 void Tick(int frame) {
     lastTick = GetTickCount64();
+    ++tickNo;
     TakeSnap();
     World w = ReadWorld(frame);
     MenuInput(w, false);
     std::vector<std::string> todo = TakeQueued();
     Ctx c = MakeCtx(snap, w, false);
-    SafetyPreTick(snap.inUse || AnyBusy(), AnyOneShot(todo), w.inLevel);
+    if (!SafetyPreTick(snap.inUse || AnyBusy(), AnyOneShot(todo), w.inLevel)) {
+        Unguarded(c);
+        todo.clear();
+    }
     Transitions(w, c);
     TickGroups(c);
     RunActions(todo, c);
     DropFaulty(c);
+    AgeMarks();
     Remember(w);
 }
 
@@ -608,12 +808,14 @@ void StopFrame() {
     Step([&] { c = MakeCtx(off, w, true); });
     Step([&] { MenuInput(w, true); });
     Step([&] { ReleaseGroups(c); });
-    Step([&] { SafetyRelease(); });
+    Step([&] { SafetyRelease(w); });
+    Step([&] { ClearMarks(); });
     Step([&] { FreeMenuKey(); });
     Step([&] { unsubscribed = Unsubscribe(); });
     wasInLevel = false;
     wasDead = false;
     lastNmId = 0;
+    lastScene = Scene::Other;
 }
 
 void FrameTick() {
@@ -670,6 +872,9 @@ void ResolveGroups() {
         for (const std::string& m : un::missing) LOG("%s: not found in the game: %s", g.name, m.c_str());
         if (!ok) LOG("%s cheats are not available", g.name);
         sl.ok = ok && guardOk;
+        faultWhere = g.name;
+        sl.outside = sl.ok && GuardOutside(&g);
+        faultWhere = "the game update";
         slots.push_back(sl);
     }
     un::missing.clear();
@@ -712,6 +917,33 @@ std::string LastBackup() {
     return lastBackup;
 }
 
+void Mark(const std::string& owner, std::vector<Marker> markers) {
+    std::lock_guard<std::mutex> g(markLock);
+    auto it = std::find_if(markSets.begin(), markSets.end(), [&](const MarkSet& s) { return s.owner == owner; });
+    if (markers.empty()) {
+        if (it != markSets.end()) markSets.erase(it);
+        return;
+    }
+    if (markers.size() > kMaxMarks) markers.resize(kMaxMarks);
+    if (it == markSets.end()) {
+        markSets.emplace_back();
+        it = markSets.end() - 1;
+        it->owner = owner;
+    }
+    it->tick = tickNo.load();
+    it->at = GetTickCount64();
+    it->list = std::move(markers);
+}
+
+std::vector<Marker> Marks() {
+    std::vector<Marker> out;
+    std::lock_guard<std::mutex> g(markLock);
+    ULONGLONG now = GetTickCount64();
+    for (const MarkSet& s : markSets)
+        if (now - s.at < kMarkMs) out.insert(out.end(), s.list.begin(), s.list.end());
+    return out;
+}
+
 }
 
 namespace ukgame {
@@ -721,9 +953,14 @@ using namespace uk;
 bool Prepare(std::string& err) {
     if (!un::Resolve(err)) return false;
     for (const std::string& m : un::missing) LOG("not found in the game: %s", m.c_str());
-    guardOk = R.assistController && R.acCheats && R.msGetInstance;
-    if (!guardOk) LOG("the leaderboard guard was not found, every cheat stays off");
-    if (slots.empty()) ResolveGroups();
+    if (!slots.empty()) return true;
+    flagReady = R.assistController && R.acCheats && R.msGetInstance;
+    MakeUploads();
+    guardOk = hooksReady || flagReady;
+    if (hooksReady) LOG("leaderboard guard: Fathom blocks the score uploads of cheated runs");
+    else if (flagReady) LOG("leaderboard guard: the upload block is not available, cheated runs are marked as cheated in the game");
+    else LOG("the leaderboard guard was not found, every cheat stays off");
+    ResolveGroups();
     return true;
 }
 
@@ -787,7 +1024,9 @@ void RequestStop() {
 
 bool Stopped() { return stop.load() >= 2 && ticking.load() == 0; }
 
-bool SafeToUnload() { return stop.load() == 2; }
+bool SafeToUnload() { return stop.load() == 2 && !keepHooks.load(); }
+
+bool HoldsHooks() { return keepHooks.load(); }
 
 bool Ticking() { return GetTickCount64() - lastTick.load() < 2000; }
 

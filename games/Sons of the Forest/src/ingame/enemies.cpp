@@ -25,6 +25,9 @@ const float kNoLimit = 1e9f;
 const float kMinRange = 5.0f;
 const float kMaxRange = 200.0f;
 const float kDefaultRange = 50.0f;
+const float kNetDamage = 4096.0f;
+const float kNetCut = 2048.0f;
+const double kCutDelay = 0.5;
 
 struct Refs {
     Class *manager = nullptr, *actor = nullptr, *types = nullptr, *typeIds = nullptr, *classIds = nullptr;
@@ -46,7 +49,15 @@ struct Refs {
     int invisibleBit = 256;
     std::vector<int> hiddenViews;
 
+    Class *boltEntity = nullptr, *hitEvent = nullptr, *damageController = nullptr, *damageNode = nullptr;
+    Fld acDamageCtrl, dmNodes;
+    Method *beAttached = nullptr, *hitCreate = nullptr, *hitTarget = nullptr, *hitDamage = nullptr, *hitNode = nullptr,
+           *hitImpact = nullptr, *hitDir = nullptr, *hitVelocity = nullptr, *evSend = nullptr, *nodeId = nullptr,
+           *nodeArmour = nullptr, *sendCut = nullptr;
+    int onlyServer = 6, reliable = 2, melee = 2;
+
     bool killOk = false, oneHitOk = false, dismemberOk = false, invisibleOk = false, ghostOk = false;
+    bool guestKillOk = false, guestCutOk = false;
 } R;
 
 bool enemyType[kTypeCount] = {};
@@ -72,6 +83,12 @@ patch::Forced<bool> invisState;
 patch::Hold visStim, visComp;
 double visRetry = 0;
 patch::Hold ghostHeld;
+
+struct PendingCut {
+    patch::Hold actor;
+    double at = 0;
+};
+std::vector<PendingCut> cuts;
 
 Method* StaticMethod(Class* c, const char* name, int args) {
     if (!c) return nullptr;
@@ -179,17 +196,53 @@ bool Resolve(std::string& err) {
     if (R.visibility) R.pvInvisible = un::F(R.visibility, "_invisible");
     R.cutscene = StaticMethod(un::C("Sons", "Sons.Cutscenes", "CutsceneManager"), "IsCutscenePlaying", 0);
 
+    R.boltEntity = un::C("bolt", "", "BoltEntity");
+    if (R.boltEntity) R.beAttached = un::M(R.boltEntity, "get_isAttached", 0);
+    R.hitEvent = un::C("bolt.user", "", "VailHitEvent");
+    if (R.hitEvent) {
+        R.hitCreate = un::M(R.hitEvent, "Create", std::vector<std::string>{"Bolt.GlobalTargets", "Bolt.ReliabilityModes"});
+        R.hitTarget = un::M(R.hitEvent, "set_Target", 1);
+        R.hitDamage = un::M(R.hitEvent, "set_Damage", std::vector<std::string>{"System.Single"});
+        R.hitNode = un::M(R.hitEvent, "set_DamageNodeId", std::vector<std::string>{"System.Int32"});
+        R.hitImpact = un::M(R.hitEvent, "set_ImpactType", std::vector<std::string>{"System.Int32"});
+        R.hitDir = un::M(R.hitEvent, "set_SenderDir", std::vector<std::string>{"UnityEngine.Vector3"});
+        R.hitVelocity = un::M(R.hitEvent, "set_Velocity", std::vector<std::string>{"UnityEngine.Vector3"});
+        R.evSend = un::M(R.hitEvent, "Send", 0);
+    }
+    R.onlyServer = Enum(un::C("bolt", "Bolt", "GlobalTargets"), "OnlyServer", 6);
+    R.reliable = Enum(un::C("bolt", "Bolt", "ReliabilityModes"), "ReliableOrdered", 2);
+    R.melee = Enum(un::C("Sons.Item", "", "ImpactType"), "Melee", 2);
+    R.damageController = un::C("Sons.Weapon", "Sons.Weapon", "DamageController");
+    R.damageNode = un::C("Sons.Weapon", "Sons.Weapon", "DamageNode");
+    if (R.actor) R.acDamageCtrl = un::F(R.actor, "_damageController");
+    if (R.damageController) R.dmNodes = un::F(R.damageController, "_damageNodes");
+    if (R.damageNode) {
+        R.nodeId = un::M(R.damageNode, "GetId", 0);
+        R.nodeArmour = un::M(R.damageNode, "IsArmour", 0);
+    }
+    if (R.dismember) {
+        R.sendCut = un::M(R.dismember, "SendImpactEventToServer", 2);
+        if (R.sendCut && il2::ParamTypeName(R.sendCut, 1) != "System.Single") {
+            un::Missing("DismembermentController.SendImpactEventToServer(DismemberPartId, float)");
+            R.sendCut = nullptr;
+        }
+    }
+
     bool actors = R.mgrInstance && R.mgrInstance.isStatic && R.mgrActors && !R.mgrActors.isStatic && R.acId && R.acDead &&
                   (R.actorClass || R.isEnemy);
     R.killOk = actors && (R.killActor || (R.forceDeath && R.ragdoll));
     R.oneHitOk = R.killOk && R.acDamageByPlayer;
     R.dismemberOk = actors && R.acDismember && R.dcDefinitions && R.dcLimit && R.dfPart && R.dfCut && R.cut;
+    bool events = R.boltEntity && R.beAttached && R.hitCreate && R.hitTarget && R.hitDamage && R.hitNode && R.hitImpact && R.evSend &&
+                  R.acDamageCtrl && !R.acDamageCtrl.isStatic && R.dmNodes && !R.dmNodes.isStatic && R.nodeId;
+    R.guestKillOk = actors && events;
+    R.guestCutOk = R.guestKillOk && R.acDismember && R.dcDefinitions && R.dfPart && R.dfCut && R.sendCut;
     bool player = R.getStimuli || R.lpStimuli;
     R.invisibleOk = player && R.visibility && R.pvInvisible;
     R.ghostOk = player && R.psFlags && R.invisibleBit > 0;
-    LOG("enemies: one hit %d, kill %d, dismember %d, invisibility %d, ghost %d", R.oneHitOk, R.killOk, R.dismemberOk,
-        R.invisibleOk, R.ghostOk);
-    if (!R.killOk && !R.dismemberOk && !R.invisibleOk && !R.ghostOk) {
+    LOG("enemies: one hit %d, kill %d, dismember %d, invisibility %d, ghost %d, guest kill %d, guest dismember %d", R.oneHitOk,
+        R.killOk, R.dismemberOk, R.invisibleOk, R.ghostOk, R.guestKillOk, R.guestCutOk);
+    if (!R.killOk && !R.dismemberOk && !R.invisibleOk && !R.ghostOk && !R.guestKillOk) {
         err = "the game's enemy functions were not found";
         return false;
     }
@@ -198,9 +251,9 @@ bool Resolve(std::string& err) {
 
 bool Supported(const std::string& id) {
     if (id == "one_hit_kill") return R.oneHitOk;
-    if (id == "enemy_range") return R.killOk || R.dismemberOk;
-    if (id == "kill_in_range") return R.killOk;
-    if (id == "dismember_in_range") return R.dismemberOk;
+    if (id == "enemy_range") return R.killOk || R.dismemberOk || R.guestKillOk;
+    if (id == "kill_in_range") return R.killOk || R.guestKillOk;
+    if (id == "dismember_in_range") return R.dismemberOk || R.guestCutOk;
     if (id == "invisibility") return R.invisibleOk;
     if (id == "ghost") return R.ghostOk;
     return false;
@@ -293,6 +346,8 @@ bool Candidate(Object* a) {
     return un::Val<bool>(a, R.acDamageEnabled, true);
 }
 
+bool Guest(const Ctx& c) { return c.session == core::Session::Client; }
+
 std::vector<Object*> Targets(const Ctx& c) {
     std::vector<Object*> out;
     Object* mgr = Manager();
@@ -303,7 +358,7 @@ std::vector<Object*> Targets(const Ctx& c) {
         if (!Candidate(a)) continue;
         un::Vec3 p;
         if (!PositionOf(a, p) || un::Dist(p, center) > range) continue;
-        if (Health(a) <= 0.0f) continue;
+        if (!Guest(c) && Health(a) <= 0.0f) continue;
         out.push_back(a);
     }
     return out;
@@ -401,8 +456,169 @@ void DismemberInRange(const Ctx& c) {
     else Note("Cut the limbs off " + Count(done, "enemy", "enemies"));
 }
 
+bool NodeIdOf(Object* a, int& id) {
+    Object* ctrl = un::Ref(a, R.acDamageCtrl);
+    if (!un::Alive(ctrl)) return false;
+    Object* pick = nullptr;
+    for (Object* n : il2::ListItems(un::Ref(ctrl, R.dmNodes))) {
+        if (!un::Alive(n)) continue;
+        if (!pick) pick = n;
+        if (!R.nodeArmour || !un::CallBool(R.nodeArmour, n, {}, false)) {
+            pick = n;
+            break;
+        }
+    }
+    if (!pick) return false;
+    bool ok = false;
+    Object* r = un::Call(R.nodeId, pick, {}, &ok);
+    if (!ok || !r) return false;
+    id = il2::Result<int>(r);
+    return true;
+}
+
+Object* EntityOf(Object* a) {
+    Object* be = un::Comp(a, R.boltEntity);
+    if (!un::Alive(be) || !un::CallBool(R.beAttached, be, {}, false)) return nullptr;
+    return be;
+}
+
+bool SendHit(Object* a, un::Vec3 from) {
+    Object* be = EntityOf(a);
+    int node = 0;
+    if (!be || !NodeIdOf(a, node)) return false;
+    uint8_t targets = (uint8_t)R.onlyServer, mode = (uint8_t)R.reliable;
+    bool ok = false;
+    Object* ev = un::Call(R.hitCreate, nullptr, {&targets, &mode}, &ok);
+    if (!ok || !ev) return false;
+    float damage = kNetDamage;
+    int impact = R.melee;
+    un::Call(R.hitTarget, ev, {be});
+    un::Call(R.hitDamage, ev, {&damage});
+    un::Call(R.hitNode, ev, {&node});
+    un::Call(R.hitImpact, ev, {&impact});
+    un::Vec3 at;
+    if (PositionOf(a, at)) {
+        un::Vec3 dir = un::Norm(un::Flat(un::Sub(at, from)));
+        if (R.hitDir) un::Call(R.hitDir, ev, {&dir});
+        if (R.hitVelocity) un::Call(R.hitVelocity, ev, {&dir});
+    }
+    ok = false;
+    un::Call(R.evSend, ev, {}, &ok);
+    return ok;
+}
+
+bool HasLimbs(Object* a) {
+    Object* dc = un::Ref(a, R.acDismember);
+    if (!un::Alive(dc) || un::Val<bool>(dc, R.dcDisabled)) return false;
+    for (Object* d : il2::ListItems(un::Ref(dc, R.dcDefinitions)))
+        if (d && !un::Val<bool>(d, R.dfCut) && IsLimb(un::Val<int>(d, R.dfPart, -1))) return true;
+    return false;
+}
+
+int SendCuts(Object* a) {
+    Object* dc = un::Ref(a, R.acDismember);
+    if (!un::Alive(dc)) return 0;
+    std::vector<int> parts;
+    for (Object* d : il2::ListItems(un::Ref(dc, R.dcDefinitions))) {
+        if (!d || un::Val<bool>(d, R.dfCut)) continue;
+        int part = un::Val<int>(d, R.dfPart, -1);
+        if (IsLimb(part) && std::find(parts.begin(), parts.end(), part) == parts.end()) parts.push_back(part);
+    }
+    int sent = 0;
+    for (int part : parts) {
+        if (!un::Alive(dc)) break;
+        int p = part;
+        float damage = kNetCut;
+        bool ok = false;
+        un::Call(R.sendCut, dc, {&p, &damage}, &ok);
+        if (ok) ++sent;
+    }
+    return sent;
+}
+
+void ClearCuts() {
+    for (PendingCut& p : cuts) p.actor.reset();
+    cuts.clear();
+}
+
+void RunCuts(const Ctx& c) {
+    int sent = 0;
+    for (size_t i = 0; i < cuts.size();) {
+        if (c.now < cuts[i].at) {
+            ++i;
+            continue;
+        }
+        Object* a = cuts[i].actor.get();
+        if (a && un::Alive(a)) sent += SendCuts(a);
+        cuts[i].actor.reset();
+        cuts.erase(cuts.begin() + (std::ptrdiff_t)i);
+    }
+    if (sent > 0) LOG("dismember in range (guest): %d limb requests sent", sent);
+}
+
+bool GuestReady(const Ctx& c, un::Vec3& from) {
+    if (CutscenePlaying()) {
+        Note("Not during a cutscene");
+        return false;
+    }
+    if (!PlayerPosition(c, from)) {
+        Note("Your position is not known yet, try again in a moment");
+        return false;
+    }
+    return true;
+}
+
+void GuestKill(const Ctx& c) {
+    un::Vec3 from;
+    if (!GuestReady(c, from)) return;
+    WarnAchievementsOnce();
+    std::vector<Object*> list = Targets(c);
+    if (list.empty()) {
+        Note("No enemies in range");
+        return;
+    }
+    int sent = 0;
+    for (Object* a : list)
+        if (un::Alive(a) && SendHit(a, from)) ++sent;
+    LOG("kill in range (guest): hits sent to %d of %d", sent, (int)list.size());
+    if (sent == 0) Note("Could not send the hits to the host");
+    else Note("Sent a killing hit to " + Count(sent, "enemy", "enemies") + ", the host applies it");
+}
+
+void GuestDismember(const Ctx& c) {
+    un::Vec3 from;
+    if (!GuestReady(c, from)) return;
+    WarnAchievementsOnce();
+    std::vector<Object*> list = Targets(c);
+    if (list.empty()) {
+        Note("No enemies in range");
+        return;
+    }
+    int queued = 0, limbless = 0;
+    for (Object* a : list) {
+        if (!un::Alive(a)) continue;
+        if (!HasLimbs(a)) {
+            ++limbless;
+            continue;
+        }
+        bool known = false;
+        for (const PendingCut& p : cuts)
+            if (p.actor.get() == a) known = true;
+        if (known || !SendHit(a, from)) continue;
+        PendingCut p;
+        p.actor.set(a);
+        p.at = c.now + kCutDelay;
+        cuts.push_back(p);
+        ++queued;
+    }
+    LOG("dismember in range (guest): %d of %d enemies, %d without limbs", queued, (int)list.size(), limbless);
+    if (queued > 0) Note("Cutting the limbs off " + Count(queued, "enemy", "enemies") + " through the host");
+    else if (limbless > 0) Note("No enemies in range could lose limbs");
+    else Note("Could not send the hits to the host");
+}
+
 void OneHit(const Ctx& c) {
-    bool on = R.oneHitOk && c.inWorld && c.s.On("one_hit_kill");
+    bool on = R.oneHitOk && c.inWorld && !Guest(c) && c.s.On("one_hit_kill");
     if (!on) {
         if (oneHitLive) {
             seen.clear();
@@ -512,25 +728,41 @@ void Release(const Ctx&) {
     visRetry = 0;
     seen.clear();
     oneHitLive = false;
+    ClearCuts();
 }
 
 void Tick(const Ctx& c) {
     if (!relaxed.empty()) Unrelax();
     if (!c.inWorld) {
-        if (oneHitLive || invisState.have || invisState.obj.held() || ghostHeld.held() || visStim.held()) Release(c);
+        if (oneHitLive || invisState.have || invisState.obj.held() || ghostHeld.held() || visStim.held() || !cuts.empty()) Release(c);
         return;
+    }
+    if (!cuts.empty()) {
+        if (Guest(c) && c.cheats) RunCuts(c);
+        else ClearCuts();
     }
     OneHit(c);
     Stealth(c);
 }
 
 bool Action(const std::string& id, const Ctx& c) {
-    if (id == "kill_in_range" && R.killOk) {
-        KillInRange(c);
+    bool guest = Guest(c);
+    if (id == "kill_in_range") {
+        if (guest ? !R.guestKillOk : !R.killOk) {
+            Note(guest ? "This only works when you host or play alone" : "That is not available right now");
+            return true;
+        }
+        if (guest) GuestKill(c);
+        else KillInRange(c);
         return true;
     }
-    if (id == "dismember_in_range" && R.dismemberOk) {
-        DismemberInRange(c);
+    if (id == "dismember_in_range") {
+        if (guest ? !R.guestCutOk : !R.dismemberOk) {
+            Note(guest ? "This only works when you host or play alone" : "That is not available right now");
+            return true;
+        }
+        if (guest) GuestDismember(c);
+        else DismemberInRange(c);
         return true;
     }
     return false;

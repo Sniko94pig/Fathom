@@ -113,6 +113,7 @@ private:
     void LoaderPage();
     void Teleport(float x, float y, float z, bool useZ, const std::string& name);
     void RunPermanent(core::Feature& f);
+    void RunAction(core::Feature& f);
     void WithBackup(std::function<void()> then);
     void PumpBackup();
     void Toggle(core::Feature& f, bool on);

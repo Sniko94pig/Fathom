@@ -123,13 +123,16 @@ void Menu::HandleKeys() {
             });
     }
     for (Feature& f : m.features) {
-        if (!f.key || f.kind != Kind::Toggle || !ImGui::IsKeyPressed((ImGuiKey)f.key, false)) continue;
+        bool action = f.kind == Kind::Action && !f.confirm && f.page.empty();
+        if (!f.key || (f.kind != Kind::Toggle && !action) || !ImGui::IsKeyPressed((ImGuiKey)f.key, false)) continue;
         if (f.building) {
             Notify(f.label + " is still being built", ICON_HAMMER);
         } else if (!f.available) {
             Notify(f.label + " is not available", ICON_LOCK);
         } else if (!m.cheatsAllowed()) {
             Notify("Cheats are off: you are not the host", ICON_USERS);
+        } else if (action) {
+            RunAction(f);
         } else {
             Toggle(f, !f.on);
         }
@@ -604,6 +607,16 @@ void Menu::RunPermanent(Feature& f) {
     });
 }
 
+void Menu::RunAction(Feature& f) {
+    if (f.confirm) {
+        RunPermanent(f);
+        return;
+    }
+    f.result.clear();
+    if (f.apply) f.apply(f);
+    Notify(f.result.empty() ? f.label + " done" : f.result, f.result.empty() ? ICON_CHECK : ICON_INFO);
+}
+
 void Menu::FeatureRow(Feature& f, ImVec2 pos, float w) {
     if (f.building) {
         float h = FeatureRowHeight(f);
@@ -655,12 +668,8 @@ void Menu::FeatureRow(Feature& f, ImVec2 pos, float w) {
             if (!f.page.empty()) {
                 page = f.page;
                 SetAnim(ImGui::GetID("pagefade"), 0.0f);
-            } else if (f.confirm) {
-                RunPermanent(f);
             } else {
-                f.result.clear();
-                if (f.apply) f.apply(f);
-                Notify(f.result.empty() ? f.label + " done" : f.result, f.result.empty() ? ICON_CHECK : ICON_INFO);
+                RunAction(f);
             }
         }
     }

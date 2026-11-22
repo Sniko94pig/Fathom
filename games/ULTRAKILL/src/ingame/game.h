@@ -13,6 +13,7 @@ bool Start(std::string& err);
 void RequestStop();
 bool Stopped();
 bool SafeToUnload();
+bool HoldsHooks();
 bool Ticking();
 std::vector<std::string> TakeNotes();
 void SetMenu(bool open, bool focused);

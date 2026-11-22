@@ -1105,13 +1105,16 @@ void Menu::SettingsPage() {
         TextFit(dl, T().regular, 11.5f, ImVec2(p.x + S(16), y + S(46)), w - S(32), White(0.38f), last.c_str());
     }
     {
+        auto listed = [](const Feature& f) {
+            return f.counts && (f.kind == Kind::Toggle || (f.kind == Kind::Action && !f.confirm && f.page.empty()));
+        };
         int n = 0;
-        for (const Feature& f : m.features) n += f.kind == Kind::Toggle && f.counts ? 1 : 0;
+        for (const Feature& f : m.features) n += listed(f) ? 1 : 0;
         float h = S(38) + n * S(38) + S(8);
         ImVec2 p = ms.Place(h);
         float y = CardBegin(p, w, h, "Feature hotkeys");
         for (Feature& f : m.features) {
-            if (f.kind != Kind::Toggle || !f.counts) continue;
+            if (!listed(f)) continue;
             std::string id = "hk_" + f.id;
             RowBase(id.c_str(), ImVec2(p.x + S(8), y), w - S(16), S(38), f.label.c_str(), "", true, nullptr, S(110));
             KeyChip(id.c_str(), ImVec2(p.x + w - S(16), y + S(19)), &f.key);

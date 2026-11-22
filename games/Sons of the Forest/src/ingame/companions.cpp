@@ -60,11 +60,14 @@ struct Refs {
     int robbyType = -1, virginiaType = -1;
     int burning = -1, bleeding = -1, poisoned = -1, gettingUp = -1;
     Object* healthType = nullptr;
+    Class *boltEntity = nullptr, *reviveEvent = nullptr;
+    Method *beAttached = nullptr, *revCreate = nullptr, *revTarget = nullptr, *evSend = nullptr;
+    int onlyServer = 6, reliable = 2;
 } R;
 
 struct Avail {
     bool find = false, health = false, heal = false, revive = false, bring = false, freeze = false, god = false;
-    bool flagKelvin = false, flagVirginia = false;
+    bool flagKelvin = false, flagVirginia = false, guestRevive = false;
 } A;
 
 struct StateIds {
@@ -867,10 +870,57 @@ void BringAction(Kind& k, const Ctx& c) {
     else Note(who + " is on the way and shows up right behind you");
 }
 
+bool Guest(const Ctx& c) { return c.session == core::Session::Client; }
+
+bool HostRevive(const Kind& k) { return A.revive && (k.kelvin ? A.flagKelvin : A.flagVirginia); }
+
+bool SendRevive(Object* a) {
+    Object* be = un::Comp(a, R.boltEntity);
+    if (!un::Alive(be) || !un::CallBool(R.beAttached, be, {}, false)) return false;
+    uint8_t targets = (uint8_t)R.onlyServer, mode = (uint8_t)R.reliable;
+    bool ok = false;
+    Object* ev = un::Call(R.revCreate, nullptr, {&targets, &mode}, &ok);
+    if (!ok || !ev) return false;
+    un::Call(R.revTarget, ev, {be});
+    ok = false;
+    un::Call(R.evSend, ev, {}, &ok);
+    return ok;
+}
+
+void GuestRevive(Kind& k, const Ctx& c) {
+    std::string who = k.name;
+    if (!c.inWorld || !c.player) {
+        Note("Load a save first");
+        return;
+    }
+    if (!States(c.now, true)) {
+        Note("The game is not ready yet, try again in a moment");
+        return;
+    }
+    if (c.now - k.lastRevive < kReviveEvery) return;
+    int alive = 0, sent = 0;
+    for (Object* a : RealActors(k.type)) {
+        if (un::Val<uint8_t>(a, R.acDead, 1) != 0) continue;
+        ++alive;
+        if (StateOf(a, R.acState) != S.dying) continue;
+        if (SendRevive(a)) ++sent;
+    }
+    LOG("Kelvin and Virginia: guest revive of %s, %d nearby, %d requests sent", k.name, alive, sent);
+    if (sent > 0) {
+        k.lastRevive = c.now;
+        WarnAchievementsOnce();
+        Note("Asked the host to revive " + who);
+    } else if (alive > 0) {
+        Note(who + " is not down, there is nothing to revive");
+    } else {
+        Note(who + " is not near you. A guest can only revive " + who + " while down, not after death");
+    }
+}
+
 bool Supported(const std::string& id) {
     for (const Kind& k : kinds) {
         if (id == k.heal) return A.heal;
-        if (id == k.revive) return A.revive && (k.kelvin ? A.flagKelvin : A.flagVirginia);
+        if (id == k.revive) return HostRevive(k) || A.guestRevive;
         if (id == k.bring) return A.bring;
         if (id == k.freeze) return A.freeze;
         if (id == k.god) return A.god;
@@ -975,6 +1025,16 @@ bool Resolve(std::string& err) {
     R.gameId = StaticM(R.setup, "GetGameId", 0);
     R.slotForGuid = un::M(R.coop, "GetSaveIdForGuid", std::vector<std::string>{"Sons.Save.SaveGameType", "System.String"});
     R.slotFolder = un::M(R.saves, "GetSaveFolderForId", std::vector<std::string>{"Sons.Save.SaveGameType", "System.Int32"});
+    R.boltEntity = un::C("bolt", "", "BoltEntity");
+    R.beAttached = un::M(R.boltEntity, "get_isAttached", 0);
+    R.reviveEvent = un::C("bolt.user", "", "VailReviveEvent");
+    R.revCreate = un::M(R.reviveEvent, "Create", std::vector<std::string>{"Bolt.GlobalTargets", "Bolt.ReliabilityModes"});
+    R.revTarget = un::M(R.reviveEvent, "set_Target", 1);
+    R.evSend = un::M(R.reviveEvent, "Send", 0);
+    Class* targets = un::C("bolt", "Bolt", "GlobalTargets");
+    Class* modes = un::C("bolt", "Bolt", "ReliabilityModes");
+    R.onlyServer = targets ? (int)il2::EnumValue(targets, "OnlyServer", 6) : 6;
+    R.reliable = modes ? (int)il2::EnumValue(modes, "ReliableOrdered", 2) : 2;
 
     R.robbyType = R.typeIds ? (int)il2::EnumValue(R.typeIds, "Robby", -1) : -1;
     R.virginiaType = R.typeIds ? (int)il2::EnumValue(R.typeIds, "Virginia", -1) : -1;
@@ -999,6 +1059,10 @@ bool Resolve(std::string& err) {
     A.freeze = A.find && R.animSetSpeed && R.animGetSpeed && (Inst(R.acAnimator) || R.acGetAnimator) && R.saSetPosition &&
                R.saSetDestination && (Inst(R.saPosition) || R.saGetPosition);
     A.god = A.heal && R.acSetDamage && Inst(R.acDamage) && R.acRevive;
+    A.guestRevive = Glob(R.mgInstance) && Inst(R.mgActive) && Inst(R.acId) && Inst(R.acState) && Inst(R.acDead) && Inst(R.stId) &&
+                    Glob(R.stDying) && Glob(R.stDead) && R.robbyType >= 0 && R.virginiaType >= 0 && R.robbyType != R.virginiaType &&
+                    R.boltEntity && R.beAttached && R.revCreate && R.revTarget && R.evSend;
+    LOG("Kelvin and Virginia: guest revive %d", A.guestRevive ? 1 : 0);
 
     bool any = false;
     for (const Kind& k : kinds)
@@ -1031,13 +1095,20 @@ void Tick(const Ctx& c) {
 
 bool Action(const std::string& id, const Ctx& c) {
     if (!Supported(id)) return false;
+    bool guest = Guest(c);
     for (Kind& k : kinds) {
-        if (id == k.heal) {
-            HealAction(k, c);
+        if (id == k.revive) {
+            if (guest && A.guestRevive) GuestRevive(k, c);
+            else if (!guest && HostRevive(k)) ReviveAction(k, c);
+            else Note(guest ? "This only works when you host or play alone" : "That is not available right now");
             return true;
         }
-        if (id == k.revive) {
-            ReviveAction(k, c);
+        if (guest && (id == k.heal || id == k.bring)) {
+            Note(std::string("Only the host can do that, ") + k.name + " is run by the host's game");
+            return true;
+        }
+        if (id == k.heal) {
+            HealAction(k, c);
             return true;
         }
         if (id == k.bring) {

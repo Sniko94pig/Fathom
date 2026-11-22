@@ -62,6 +62,7 @@ struct Api {
     int (*class_is_valuetype)(Class*);
     int (*type_size)(Type*, int*);
     const char* (*field_get_name)(Field*);
+    void* (*compile_method)(Method*);
 };
 
 Api api{};
@@ -158,6 +159,7 @@ bool Load(std::string& err) {
     Opt(m, api.class_is_valuetype, "mono_class_is_valuetype");
     Opt(m, api.type_size, "mono_type_size");
     Opt(m, api.field_get_name, "mono_field_get_name");
+    Opt(m, api.compile_method, "mono_compile_method");
     if (!api.get_root_domain()) {
         err = "the game's script runtime is still starting";
         return false;
@@ -304,6 +306,8 @@ Object* Invoke(Method* m, void* self, void** args, bool* ok) {
     if (ok) *ok = true;
     return r;
 }
+
+void* Compile(Method* m) { return m && loaded && api.compile_method ? api.compile_method(m) : nullptr; }
 
 void* Unbox(Object* o) { return o ? api.object_unbox(o) : nullptr; }
 

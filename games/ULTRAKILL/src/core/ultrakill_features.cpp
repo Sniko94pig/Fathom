@@ -14,6 +14,7 @@ namespace {
 const Tab Player = Tab::Survival;
 const Tab Movement = Tab::Crafting;
 const Tab Weapons = Tab::World;
+const Tab Level = Tab::Biomods;
 
 Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint) {
     Feature f;
@@ -26,12 +27,12 @@ Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* l
     return m.features.back();
 }
 
-void Toggle(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint) {
-    Add(m, tab, group, id, label, hint);
+Feature& Toggle(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint) {
+    return Add(m, tab, group, id, label, hint);
 }
 
-void Slider(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint, float mn, float mx,
-            float def, float step, bool counts = true) {
+Feature& Slider(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint, float mn, float mx,
+                float def, float step, bool counts = true, const char* fmt = "%.1fx") {
     Feature& f = Add(m, tab, group, id, label, hint);
     f.kind = Kind::Slider;
     f.min = mn;
@@ -39,27 +40,31 @@ void Slider(Model& m, Tab tab, const char* group, const char* id, const char* la
     f.def = def;
     f.value = def;
     f.step = step;
-    f.fmt = "%.1fx";
+    f.fmt = fmt;
     f.counts = counts;
+    return f;
 }
 
-void Action(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint, const char* button,
-            bool confirm = false) {
+Feature& Action(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint, const char* button,
+                bool confirm = false) {
     Feature& f = Add(m, tab, group, id, label, hint);
     f.kind = Kind::Action;
     f.actionLabel = button;
     f.confirm = confirm;
+    return f;
 }
 
 }
 
 void BuildFeatures(Model& m) {
     m.features.clear();
-    m.features.reserve(24);
-    m.tabs = {Player, Movement, Weapons, Tab::Settings};
+    m.features.reserve(32);
+    m.tabs = {Player, Movement, Weapons, Level, Tab::Settings};
+    m.plainTabs = {Level};
     m.tabLabels = {{Player, "Player", ICON_HEART_PULSE},
                    {Movement, "Movement", ICON_NAVIGATION},
-                   {Weapons, "Weapons", ICON_CROSSHAIR}};
+                   {Weapons, "Weapons", ICON_CROSSHAIR},
+                   {Level, "Level", ICON_MAP}};
 
     Toggle(m, Player, "Health", "godmode", "God mode", "Nothing can hurt or kill you");
     Toggle(m, Player, "Health", "unlimited_health", "Unlimited health", "Health refills as soon as it drops, but instant kills still kill");
@@ -80,6 +85,15 @@ void BuildFeatures(Model& m) {
     Toggle(m, Weapons, "Shooting", "no_reload", "No reload", "Weapons never reload or recharge, like coins and the Railcannon");
     Action(m, Weapons, "Unlocks", "unlock_all_weapons", "Unlock all weapons", "Unlocks every weapon and every weapon variant in your save", "Unlock", true);
     Toggle(m, Weapons, "Unlocks", "free_shop", "Free shop", "Weapons and variants in the shop cost 0 P");
+    Toggle(m, Weapons, "Aiming", "softaim", "Softaim", "While you hold Fire or Alt fire, your aim pulls to the head of the visible enemy closest to your crosshair");
+    Slider(m, Weapons, "Aiming", "aim_strength", "Aim strength", "How hard Softaim pulls your aim, 10 locks on", 1.0f, 10.0f, 10.0f, 1.0f, false, "%.0f");
+    Slider(m, Weapons, "Aiming", "aim_area", "Aim area", "How far from the crosshair Softaim grabs an enemy, in degrees", 5.0f, 90.0f, 30.0f, 5.0f, false, "%.0f");
+
+    Toggle(m, Level, "Orbs", "orb_esp", "Orb ESP", "Shows secret orbs and red soul orbs through walls, with their distance");
+    Action(m, Level, "Orbs", "collect_all_orbs", "Collect all orbs", "Collects every secret orb still to find in this level (red soul orbs stay), your saves are backed up first", "Collect", true);
+    Action(m, Level, "Enemies", "kill_enemies_in_range", "Kill all enemies in range", "Kills every enemy within Kill range", "Kill");
+    Slider(m, Level, "Enemies", "kill_range", "Kill range", "How far Kill all enemies in range reaches", 5.0f, 1000.0f, 50.0f, 5.0f, false, "%.0f m");
+    Toggle(m, Level, "Challenge", "challenge_shower", "Challenge shower", "Shows every unlocked level's challenge in the level select before you beat it, and as a note when the level starts");
 
     m.gameName = "ULTRAKILL";
     m.keyOpen = ImGuiKey_RightShift;

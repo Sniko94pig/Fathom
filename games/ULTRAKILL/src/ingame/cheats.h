@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace uk {
 
@@ -12,10 +13,13 @@ using un::Fld;
 
 struct Snap;
 
+enum class Scene { Other, Level, MainMenu };
+
 struct Ctx {
     const Snap* snap = nullptr;
     Object* player = nullptr;
     int playerId = 0;
+    Scene scene = Scene::Other;
     bool inLevel = false;
     bool dead = false;
     bool activated = false;
@@ -41,6 +45,20 @@ void Note(const std::string& text);
 const std::wstring& Folder();
 std::string Backup();
 std::string LastBackup();
+
+struct Marker {
+    float x = 0, y = 0;
+    std::string label;
+    uint32_t color = 0xFFFFFFFFu;
+    float dist = -1.0f;
+};
+
+constexpr uint32_t Rgb(int r, int g, int b, int a = 255) {
+    return (uint32_t)(r & 255) | ((uint32_t)(g & 255) << 8) | ((uint32_t)(b & 255) << 16) | ((uint32_t)(a & 255) << 24);
+}
+
+void Mark(const std::string& owner, std::vector<Marker> markers);
+std::vector<Marker> Marks();
 
 struct Hold {
     uint32_t h = 0;
