@@ -436,19 +436,19 @@ bool Init() {
     return true;
 }
 
-void RestoreWndProc() {
+void RestoreWndProc(bool final) {
     if (!hwnd || !oWndProc) return;
     if (GetWindowLongPtrW(hwnd, GWLP_WNDPROC) == (LONG_PTR)&WndProc) SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)oWndProc);
-    else if (IsWindow(hwnd)) stuck = true;
+    else if (final && IsWindow(hwnd)) stuck = true;
     if (captured && GetCapture() == hwnd) ReleaseCapture();
     captured = false;
     hwnd = nullptr;
     oWndProc = nullptr;
 }
 
-void Teardown() {
+void Teardown(bool final) {
     if (!ready) return;
-    RestoreWndProc();
+    RestoreWndProc(final);
     if (cbs.cleanup) {
         try {
             cbs.cleanup();
@@ -493,7 +493,7 @@ void Forget() {
 void Cleanup() {
     UpdateCursorLock(false);
     capture = false;
-    Teardown();
+    Teardown(true);
     cleaned = true;
 }
 
@@ -551,7 +551,7 @@ void __fastcall hkFullscreen(void* view, bool full, bool borderless, bool fix) {
     Guard guard;
     if (!inSwap) {
         UpdateCursorLock(false);
-        Teardown();
+        Teardown(false);
     }
     oFullscreen(view, full, borderless, fix);
 }

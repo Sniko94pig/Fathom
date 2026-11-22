@@ -22,7 +22,6 @@ Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* l
     f.id = id;
     f.label = label;
     f.hint = hint;
-    f.building = true;
     m.features.push_back(std::move(f));
     return m.features.back();
 }
@@ -62,20 +61,20 @@ void BuildFeatures(Model& m) {
                    {Level, "Level", ICON_PLAY},
                    {Troll, "Troll", ICON_SKULL}};
 
-    Slider(m, Player, "Speed", "game_speed", "Game speed", "Speeds up or slows down the whole game, music too. Attempts not at 1x don't count", 0.1f, 3.0f, 1.0f, 0.05f, "%.2fx");
-    Toggle(m, Player, "Cheats", "noclip", "Noclip", "Nothing can kill you. Attempts with it on don't count");
-    Toggle(m, Player, "Cheats", "unlimited_jumps", "Unlimited jumps", "Jump again in mid-air as often as you want. Attempts with it on don't count");
+    Slider(m, Player, "Speed", "game_speed", "Game speed", "Whole game and music. Not 1x: runs don't count", 0.1f, 3.0f, 1.0f, 0.05f, "%.2fx");
+    Toggle(m, Player, "Cheats", "noclip", "Noclip", "Nothing can kill you. Runs don't count");
+    Toggle(m, Player, "Cheats", "unlimited_jumps", "Unlimited jumps", "Jump in mid-air again and again. Runs don't count");
     Toggle(m, Player, "Cheats", "hitboxes", "Show hitboxes", "Draws the hitboxes of you and every object");
-    Toggle(m, Player, "Unlocks", "unlock_icons", "Unlock all icons", "Every icon, color and trail can be picked, only on your screen, other players don't see it");
+    Toggle(m, Player, "Unlocks", "unlock_icons", "Unlock all icons", "Pick any icon, only you see it");
 
-    Action(m, Level, "Level", "complete_level", "Complete level", "Finishes the level you are playing right away. It won't count", "Apply");
-    Toggle(m, Level, "Macro", "macro_record", "Record macro", "Play normally; when you beat the level, your run is saved as a macro for it");
-    Toggle(m, Level, "Macro", "macro_play", "Play macro", "The bot replays your saved macro for this level. Its runs don't count");
+    Action(m, Level, "Level", "complete_level", "Complete level", "Finishes the level now. It won't count", "Apply");
+    Toggle(m, Level, "Macro", "macro_record", "Record macro", "Your winning run is saved as a macro");
+    Toggle(m, Level, "Macro", "macro_play", "Play macro", "The bot plays your macro. Runs don't count");
 
-    Toggle(m, Troll, "Colors", "rgb", "RGB", "Your icon and the level cycle through rainbow colors");
+    Toggle(m, Troll, "Colors", "rgb", "RGB", "Rainbow colors on your icon and the level");
     Slider(m, Troll, "Colors", "rgb_speed", "RGB speed", "How fast the colors change", 0.1f, 5.0f, 1.0f, 0.1f, "%.1fx", false);
-    Toggle(m, Troll, "Jumpscares", "jumpscares", "Random jumpscares", "A scary face and a loud sound pop up at random moments");
-    Slider(m, Troll, "Jumpscares", "jumpscare_every", "Jumpscare every", "About how often a jumpscare comes, a bit random each time", 1.0f, 30.0f, 5.0f, 1.0f, "%.0f min", false);
+    Toggle(m, Troll, "Jumpscares", "jumpscares", "Random jumpscares", "A scary face and loud sound at random times");
+    Slider(m, Troll, "Jumpscares", "jumpscare_every", "Jumpscare every", "About how often, a bit random each time", 1.0f, 30.0f, 5.0f, 1.0f, "%.0f min", false);
     Action(m, Troll, "Jumpscares", "jumpscare_now", "Jumpscare now", "Shows one jumpscare right away", "Scare");
 
     m.gameName = "Geometry Dash";
