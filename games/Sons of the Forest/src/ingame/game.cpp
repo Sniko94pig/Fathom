@@ -56,10 +56,8 @@ bool guestApplied = false;
 std::unordered_map<std::string, std::pair<bool, std::string>> savedAvail;
 std::unordered_set<std::string> droppedIds;
 
-const char* kHostOnly[] = {"one_hit_kill", "enemy_range", "kill_in_range", "dismember_in_range", "always_fill_blueprints",
-                           "fast_printing", "finish_blueprints", "stop_time", "instant_save", "kelvin_heal", "kelvin_revive",
-                           "kelvin_bring", "kelvin_freeze", "kelvin_godmode", "virginia_heal", "virginia_revive", "virginia_bring",
-                           "virginia_freeze", "virginia_godmode", "creature_spawner", "remove_spawned_creatures"};
+const char* kHostOnly[] = {"fast_printing", "stop_time", "kelvin_heal", "kelvin_bring", "kelvin_freeze", "kelvin_godmode",
+                           "virginia_heal", "virginia_bring", "virginia_freeze", "virginia_godmode", "remove_spawned_creatures"};
 
 bool HostOnly(const std::string& id) {
     for (const char* h : kHostOnly)
@@ -564,7 +562,7 @@ std::vector<std::string> TakeNotes() {
 
 void SetMenu(bool open, bool focused) {
     menuOpen = open;
-    menuFocused = focused;
+    menuFocused = open && focused;
 }
 
 void SetGameWindow(void* hwnd) { gameWnd = hwnd; }
