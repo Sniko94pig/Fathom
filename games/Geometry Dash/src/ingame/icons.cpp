@@ -129,6 +129,7 @@ thread_local int depth = 0;
 gd::Seed realSeed[kSlotCount] = {};
 int realVal[kSlotCount] = {};
 int shownVal[kSlotCount] = {};
+gd::Seed shownSeed[kSlotCount] = {};
 uint8_t realGlow = 0;
 uint8_t shownGlow = 0;
 int realType = 0;
@@ -189,6 +190,8 @@ void WriteValue(void* gm, int i, int v) {
     int r = Roll();
     WriteSeed(gm, i, gd::Seed{r + v, r, v});
 }
+
+bool SameSeed(const gd::Seed& x, const gd::Seed& y) { return x.a == y.a && x.b == y.b && x.c == y.c; }
 
 bool Owned(void* gm, int i, int v) {
     const Slot& s = kSlots[i];
@@ -314,10 +317,14 @@ void Sync(void* gm) {
     bool changed[kSlotCount] = {};
     bool any = false;
     for (int i = 0; i < kSlotCount; ++i) {
-        int v = ReadValue(gm, i);
-        if (v == shownVal[i]) continue;
+        gd::Seed seed = ReadSeed(gm, i);
+        int v = seed.a - seed.b;
+        bool same = v == shownVal[i];
+        if (same && SameSeed(seed, shownSeed[i])) continue;
+        shownSeed[i] = seed;
+        if (same && v == realVal[i]) continue;
         if (Owned(gm, i, v)) {
-            realSeed[i] = ReadSeed(gm, i);
+            realSeed[i] = seed;
             realVal[i] = v;
         }
         shownVal[i] = v;
@@ -350,7 +357,10 @@ void PutReal(void* gm) {
 
 void PutShown(void* gm) {
     for (int i = 0; i < kSlotCount; ++i)
-        if (shownVal[i] != realVal[i]) WriteValue(gm, i, shownVal[i]);
+        if (shownVal[i] != realVal[i]) {
+            WriteValue(gm, i, shownVal[i]);
+            shownSeed[i] = ReadSeed(gm, i);
+        }
     if (shownGlow != realGlow) gd::F<uint8_t>(gm, kGlow) = shownGlow;
     if (shownType != realType) gd::F<int>(gm, kIconType) = shownType;
     faking = Overridden();
@@ -364,7 +374,10 @@ void Capture(void* gm) {
         if (v != realVal[i]) changed = true;
         realSeed[i] = ReadSeed(gm, i);
         realVal[i] = v;
-        if (!had) shownVal[i] = v;
+        if (!had) {
+            shownVal[i] = v;
+            shownSeed[i] = realSeed[i];
+        }
     }
     bool hadGlow = shownGlow != realGlow;
     uint8_t glow = gd::F<uint8_t>(gm, kGlow);
@@ -411,27 +424,37 @@ bool Activate() {
         realSeed[i] = ReadSeed(gm, i);
         realVal[i] = ReadValue(gm, i);
         shownVal[i] = realVal[i];
+        shownSeed[i] = realSeed[i];
     }
     realGlow = shownGlow = gd::F<uint8_t>(gm, kGlow);
     realType = shownType = gd::F<int>(gm, kIconType);
     int applied = 0;
+    bool picked[kSlotCount] = {};
     for (int i = 0; i < kSlotCount; ++i) {
         int v = picks.value[i];
         if (!picks.has[i] || v == realVal[i] || !Valid(gm, i, v)) continue;
         WriteValue(gm, i, v);
         shownVal[i] = v;
+        shownSeed[i] = ReadSeed(gm, i);
+        picked[i] = true;
+        if (Owned(gm, i, v)) {
+            realSeed[i] = shownSeed[i];
+            realVal[i] = v;
+        }
         ++applied;
     }
     uint8_t glow = static_cast<uint8_t>(picks.glow ? 1 : 0);
     if (picks.hasGlow && glow != realGlow) {
         gd::F<uint8_t>(gm, kGlow) = glow;
         shownGlow = glow;
+        if (!glow || GlowOwned(gm)) realGlow = glow;
         ++applied;
     }
     int form = FormOf(picks.type);
-    if (picks.hasType && picks.type != realType && form >= 0 && shownVal[form] != realVal[form]) {
+    if (picks.hasType && picks.type != realType && form >= 0 && (picked[form] || shownVal[form] != realVal[form])) {
         gd::F<int>(gm, kIconType) = picks.type;
         shownType = picks.type;
+        if (shownVal[form] == realVal[form]) realType = picks.type;
     }
     active = true;
     faking = Overridden();
@@ -449,6 +472,7 @@ void Deactivate() {
             if (shownVal[i] != realVal[i]) {
                 WriteSeed(gm, i, realSeed[i]);
                 shownVal[i] = realVal[i];
+                shownSeed[i] = realSeed[i];
             }
         if (shownGlow != realGlow) {
             gd::F<uint8_t>(gm, kGlow) = realGlow;

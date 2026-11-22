@@ -66,7 +66,9 @@ constexpr uintptr_t kLevelIdB = 0x14C;
 constexpr uintptr_t kLevelName = 0x158;
 
 constexpr int kSynthetic = 0x4D414352;
-constexpr int kVersion = 1;
+constexpr int kVersion = 2;
+constexpr int kMarkerBase = 10;
+constexpr uintptr_t kLevelCbsOverride = 0x634;
 constexpr double kTick = 1.0 / 240.0;
 constexpr size_t kMaxEvents = 2000000;
 constexpr const char* kFormat = "fathom-gd-macro";
@@ -168,6 +170,7 @@ struct SaveJob {
     SaveResult result;
 };
 SaveJob* saving = nullptr;
+int saveState = 0;
 
 Queue& Q(void* gl) { return gd::F<Queue>(gl, kQueue); }
 
@@ -281,7 +284,8 @@ std::shared_ptr<const Macro> Parse(const std::string& text, const Level& want) {
     nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
     if (j.is_discarded() || !j.is_object()) return nullptr;
     try {
-        if (j.value("format", std::string()) != kFormat || j.value("version", 0) != kVersion) return nullptr;
+        int version = j.value("version", 0);
+        if (j.value("format", std::string()) != kFormat || version < 1 || version > kVersion) return nullptr;
         const nlohmann::json& lv = j.at("level");
         const nlohmann::json& list = j.at("events");
         if (!lv.is_object() || !list.is_array()) return nullptr;
@@ -300,7 +304,8 @@ std::shared_ptr<const Macro> Parse(const std::string& text, const Level& want) {
             ev.button = Num(e[1]);
             int down = Num(e[2]);
             int p2 = Num(e[3]);
-            if (ev.step < 0 || ev.button < 0 || ev.button > 3 || down < 0 || p2 < 0) return nullptr;
+            bool marker = version >= 2 && ev.button > kMarkerBase && ev.button <= kMarkerBase + 3;
+            if (ev.step < 0 || ev.button < 0 || (ev.button > 3 && !marker) || down < 0 || p2 < 0) return nullptr;
             ev.down = down != 0;
             ev.p2 = p2 != 0;
             if (ev.step & 1) m->halfSteps = true;
@@ -369,6 +374,7 @@ std::string Serialize(const Macro& m, int steps) {
     o << "  \"steps\": " << steps << ",\n";
     o << "  \"stepsPerSecond\": 480,\n";
     o << "  \"buttons\": [\"release all\", \"jump\", \"left\", \"right\"],\n";
+    o << "  \"splitMarkers\": \"buttons 11 to 13 only make the game split that step, like jump, left and right would\",\n";
     o << "  \"eventFields\": [\"step\", \"button\", \"down\", \"player2\"],\n";
     o << "  \"events\": [";
     for (size_t i = 0; i < m.events.size(); ++i) {
@@ -451,6 +457,7 @@ void PollSave(bool wait) {
     if (saving->handle) CloseHandle(saving->handle);
     SaveJob* job = saving;
     saving = nullptr;
+    saveState = job->result.ok ? 2 : 3;
     Report(job->result);
     delete job;
 }
@@ -483,8 +490,17 @@ void Mark(Why w) {
 
 bool Recording() { return att.rec && !att.won && att.why == Why::None && gd::C().record.load(); }
 
+uint8_t CbsSetting(void* pl) {
+    void* lvl = gdx::Level(pl);
+    int forced = lvl ? gd::F<int>(lvl, kLevelCbsOverride) : 0;
+    if (forced == 1) return 1;
+    if (forced == 2) return 0;
+    void* gm = gdx::GameManager();
+    return gm && gameVariable && gameVariable(gm, "0177") ? 1 : 0;
+}
+
 void RestoreCbs() {
-    if (cbsLayer && cbsLayer == gdx::PlayLayer()) gd::F<uint8_t>(cbsLayer, kClickBetweenSteps) = cbsOld;
+    if (cbsLayer && cbsLayer == gdx::PlayLayer()) gd::F<uint8_t>(cbsLayer, kClickBetweenSteps) = gameVariable ? CbsSetting(cbsLayer) : cbsOld;
     cbsLayer = nullptr;
 }
 
@@ -543,6 +559,7 @@ void Save() {
     loadedKey = Key(m->level);
     loadedBad = false;
     PollSave(true);
+    saveState = 1;
     SaveJob* job = new SaveJob();
     job->dir = folder;
     job->level = m->level;
@@ -629,7 +646,18 @@ void RecordStep(void* gl, float dt, bool clear, int step) {
     CallQueue(gl, dt, clear);
     size_t after = Size(gl);
     size_t used = after <= before ? before - after : 0;
-    if (!used) return;
+    if (!used) {
+        if ((step & 1) == 0 || !Room()) return;
+        for (const Cmd& c : scratch) {
+            if (c.button != 1 || c.step == kSynthetic) continue;
+            Ev e;
+            if (!MakeEv(step, c, Flip(gl), e)) break;
+            e.button += kMarkerBase;
+            att.events.push_back(e);
+            break;
+        }
+        return;
+    }
     bool flip = Flip(gl);
     for (size_t i = 0; i < used && Room(); ++i) {
         Ev e;
@@ -638,6 +666,7 @@ void RecordStep(void* gl, float dt, bool clear, int step) {
 }
 
 void Apply(void* gl, const Ev& e, bool flip) {
+    if (e.button > kMarkerBase) return;
     int who = e.p2 ? 1 : 0;
     if (e.button <= 0) {
         void* p = gd::F<void*>(gl, who ? gdx::off::GBGL_player2 : gdx::off::GBGL_player1);
@@ -664,7 +693,7 @@ void Schedule(void* gl, int next, double start) {
         const Ev& e = ev[j];
         if (e.button <= 0) continue;
         Cmd c{};
-        c.button = e.button;
+        c.button = e.button > kMarkerBase ? e.button - kMarkerBase : e.button;
         c.push = static_cast<uint8_t>(e.down ? 1 : 0);
         c.p2 = static_cast<uint8_t>((!e.p2) != flip ? 0 : 1);
         c.step = kSynthetic;
@@ -915,6 +944,7 @@ const char* RecReason(Why w) {
     case Why::StartPos: return "REC: start position";
     case Why::Replay: return "REC: replay";
     case Why::Complete: return "REC: Complete level used";
+    case Why::Died: return "REC: died, this run won't save";
     case Why::Full: return "REC: run too long";
     default: return nullptr;
     }
@@ -1033,7 +1063,9 @@ void Frame() {
     if (!c.record.load() || !recReady.load()) return;
     if (att.rec) {
         if (att.saved && att.why == Why::None) {
-            Label("REC saved", green, false, false);
+            if (saveState == 3) Label("REC: could not save", amber, false, true);
+            else if (saveState == 2) Label("REC saved", green, false, false);
+            else Label("REC saving", gray, false, true);
             return;
         }
         if (const char* why = RecReason(att.why)) {
