@@ -11,10 +11,12 @@ struct Callbacks {
     std::function<void(uint64_t)> logoReady;
     std::function<void(void*)> window;
     std::function<void()> cleanup;
+    std::function<void()> lost;
+    std::function<void()> fatal;
 };
 
-bool Start(void* swapTarget, Callbacks cb);
-void Stop();
+bool Start(Callbacks cb);
+bool Stop();
 bool Rendering();
 bool Cleaned();
 void* Window();

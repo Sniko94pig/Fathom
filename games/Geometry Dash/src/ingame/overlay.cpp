@@ -1,7 +1,7 @@
 #include "ingame/overlay.h"
+#include "ingame/gd.h"
 #include "ingame/log.h"
 #include "imgui.h"
-#include "imgui_impl_opengl2.h"
 #include "imgui_impl_opengl3.h"
 #include "ui/atlas.h"
 #include "MinHook.h"
@@ -20,14 +20,51 @@
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F
 #endif
+#ifndef GL_FRAMEBUFFER
+#define GL_FRAMEBUFFER 0x8D40
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER_BINDING
+#define GL_DRAW_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+#ifndef GL_READ_FRAMEBUFFER_BINDING
+#define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
+#endif
 
 namespace overlay {
 
 namespace {
 
 using SwapFn = void(__fastcall*)(void*);
+using KeyFn = bool(__fastcall*)(void*, int, bool, bool, double);
+using TouchFn = void(__fastcall*)(void*, int, int*, float*, float*, double);
+using RightClickFn = void(__fastcall*)(void*, float, float);
+using InsertFn = void(__fastcall*)(void*, const char*, int, int);
+using PlainFn = void(__fastcall*)(void*);
+using FullscreenFn = void(__fastcall*)(void*, bool, bool, bool);
+using LockFn = void(__fastcall*)(void*, bool);
+using LockedFn = bool(__fastcall*)(void*);
+using ViewFn = void* (*)();
+using BindFramebufferFn = void(APIENTRY*)(GLenum, GLuint);
 
 SwapFn oSwap = nullptr;
+KeyFn oKey = nullptr;
+TouchFn oTouch = nullptr;
+RightClickFn oRightClick = nullptr;
+InsertFn oInsert = nullptr;
+PlainFn oDeleteBack = nullptr;
+PlainFn oDeleteForward = nullptr;
+PlainFn oPaste = nullptr;
+FullscreenFn oFullscreen = nullptr;
+LockFn oLock = nullptr;
+LockedFn getLocked = nullptr;
+ViewFn sharedView = nullptr;
+BindFramebufferFn bindFramebuffer = nullptr;
 void* tSwap = nullptr;
 
 Callbacks cbs;
@@ -36,6 +73,8 @@ std::atomic<bool> stopping{false};
 std::atomic<bool> running{false};
 std::atomic<bool> drawn{false};
 std::atomic<bool> cleaned{false};
+std::atomic<bool> capture{false};
+std::atomic<bool> stuck{false};
 thread_local bool inSwap = false;
 
 struct Guard {
@@ -45,15 +84,18 @@ struct Guard {
 
 HWND hwnd = nullptr;
 WNDPROC oWndProc = nullptr;
+HGLRC context = nullptr;
 bool ready = false;
 bool failed = false;
-bool modern = false;
 LARGE_INTEGER freq{}, last{};
 GLuint logoTex = 0;
 bool logoTried = false;
 std::atomic<float> shownW{0}, shownH{0};
+bool cursorFreed = false;
+bool gameWantsLock = false;
+bool captured = false;
 
-enum class EvType { Key, Char, Button, Wheel };
+enum class EvType { Key, Char, Button, Wheel, Focus };
 struct Ev {
     EvType type;
     int a;
@@ -112,12 +154,12 @@ void Push(const Ev& e) {
     if (events.size() < 512) events.push_back(e);
 }
 
-bool WantsInput() { return cbs.wantsInput && cbs.wantsInput(); }
+bool WantsInput() { return !stopping.load() && cbs.wantsInput && cbs.wantsInput(); }
 bool WantsKeyboard() { return cbs.wantsKeyboard && cbs.wantsKeyboard(); }
 
 LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     Guard guard;
-    bool want = WantsInput() && !stopping;
+    bool want = WantsInput();
     bool keys = want && WantsKeyboard();
     bool input = false;
     switch (msg) {
@@ -167,12 +209,96 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     case WM_MOUSEMOVE:
         input = true;
         break;
+    case WM_SETFOCUS:
+        Push({EvType::Focus, 1, true, 0});
+        break;
+    case WM_KILLFOCUS:
+        Push({EvType::Focus, 0, false, 0});
+        break;
     case WM_SETCURSOR:
-        if (want && LOWORD(l) == HTCLIENT) input = true;
+        if (want && LOWORD(l) == HTCLIENT) {
+            SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32512)));
+            return TRUE;
+        }
         break;
     }
-    if (want && input) return msg == WM_SETCURSOR ? TRUE : 0;
+    if (want && input) {
+        bool isDown = msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK || msg == WM_RBUTTONDOWN || msg == WM_RBUTTONDBLCLK ||
+                      msg == WM_MBUTTONDOWN || msg == WM_MBUTTONDBLCLK;
+        if (isDown && !captured) {
+            SetCapture(h);
+            captured = true;
+        }
+        return 0;
+    }
+    if (captured && (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP) && !(GetKeyState(VK_LBUTTON) & 0x8000) &&
+        !(GetKeyState(VK_RBUTTON) & 0x8000) && !(GetKeyState(VK_MBUTTON) & 0x8000)) {
+        captured = false;
+        if (GetCapture() == h) ReleaseCapture();
+    }
     return CallWindowProcW(oWndProc, h, msg, w, l);
+}
+
+bool __fastcall hkKey(void* self, int key, bool down, bool repeat, double ts) {
+    gd::Busy busy;
+    if (down && capture.load()) return false;
+    return oKey(self, key, down, repeat, ts);
+}
+
+void __fastcall hkTouch(void* self, int num, int* ids, float* xs, float* ys, double ts) {
+    gd::Busy busy;
+    if (capture.load()) return;
+    oTouch(self, num, ids, xs, ys, ts);
+}
+
+void __fastcall hkRightClick(void* self, float x, float y) {
+    gd::Busy busy;
+    if (capture.load()) return;
+    oRightClick(self, x, y);
+}
+
+void __fastcall hkInsert(void* self, const char* text, int len, int key) {
+    gd::Busy busy;
+    if (capture.load()) return;
+    oInsert(self, text, len, key);
+}
+
+void __fastcall hkDeleteBack(void* self) {
+    gd::Busy busy;
+    if (capture.load()) return;
+    oDeleteBack(self);
+}
+
+void __fastcall hkDeleteForward(void* self) {
+    gd::Busy busy;
+    if (capture.load()) return;
+    oDeleteForward(self);
+}
+
+void __fastcall hkPaste(void* self) {
+    gd::Busy busy;
+    if (capture.load()) return;
+    oPaste(self);
+}
+
+void __fastcall hkLock(void* view, bool lock) {
+    gd::Busy busy;
+    gameWantsLock = lock;
+    if (cursorFreed) return;
+    oLock(view, lock);
+}
+
+void UpdateCursorLock(bool want) {
+    void* view = sharedView ? sharedView() : nullptr;
+    if (!view || !oLock || !getLocked) return;
+    if (want && !cursorFreed) {
+        gameWantsLock = getLocked(view);
+        if (gameWantsLock) oLock(view, false);
+        cursorFreed = true;
+    } else if (!want && cursorFreed) {
+        cursorFreed = false;
+        if (gameWantsLock) oLock(view, true);
+    }
 }
 
 void FeedInput() {
@@ -214,13 +340,18 @@ void FeedInput() {
         case EvType::Wheel:
             io.AddMouseWheelEvent(0, e.f);
             break;
+        case EvType::Focus:
+            io.AddFocusEvent(e.down);
+            break;
         }
     }
 
     bool want = WantsInput();
+    capture = want;
+    UpdateCursorLock(want);
     CURSORINFO ci{sizeof(ci)};
     GetCursorInfo(&ci);
-    bool osCursor = (ci.flags & CURSOR_SHOWING) != 0;
+    bool osCursor = (ci.flags & CURSOR_SHOWING) != 0 && ci.hCursor != nullptr;
     POINT p;
     float mx = -FLT_MAX, my = -FLT_MAX;
     if (GetCursorPos(&p) && ScreenToClient(hwnd, &p)) {
@@ -244,12 +375,9 @@ HWND FindGameWindow() {
             if (pid != s->pid || !IsWindowVisible(w)) return TRUE;
             wchar_t cls[64] = {};
             GetClassNameW(w, cls, 64);
-            if (wcscmp(cls, L"GLFW30") == 0) {
-                s->found = w;
-                return FALSE;
-            }
-            if (!s->found) s->found = w;
-            return TRUE;
+            if (wcscmp(cls, L"GLFW30") != 0) return TRUE;
+            s->found = w;
+            return FALSE;
         },
         (LPARAM)&f);
     return f.found;
@@ -276,20 +404,30 @@ GLuint Upload(const uint8_t* rgba, int w, int h) {
     return tex;
 }
 
+void Fail(const char* why) {
+    LOG("%s", why);
+    failed = true;
+    if (cbs.fatal) cbs.fatal();
+}
+
 bool Init() {
     HDC dc = wglGetCurrentDC();
-    hwnd = dc ? WindowFromDC(dc) : nullptr;
-    if (!hwnd) hwnd = FindGameWindow();
-    if (!hwnd) return false;
+    HWND w = dc ? WindowFromDC(dc) : nullptr;
+    if (!w) w = FindGameWindow();
+    if (!w) return false;
     const char* ver = (const char*)glGetString(GL_VERSION);
     int major = ver ? std::atoi(ver) : 0;
-    modern = major >= 3;
-    bool ok = modern ? ImGui_ImplOpenGL3_Init(nullptr) : ImGui_ImplOpenGL2_Init();
-    if (!ok) {
-        LOG("menu renderer failed to start, OpenGL %s", ver ? ver : "unknown");
-        failed = true;
+    if (major < 3) {
+        Fail("the game's OpenGL version is too old for the menu");
         return false;
     }
+    if (!ImGui_ImplOpenGL3_Init(nullptr)) {
+        Fail("menu renderer failed to start");
+        return false;
+    }
+    bindFramebuffer = (BindFramebufferFn)wglGetProcAddress("glBindFramebuffer");
+    hwnd = w;
+    context = wglGetCurrentContext();
     QueryPerformanceFrequency(&freq);
     oWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)&WndProc);
     if (cbs.window) cbs.window(hwnd);
@@ -298,26 +436,71 @@ bool Init() {
     return true;
 }
 
-void Cleanup() {
-    if (ready) {
-        if (cbs.cleanup) {
-            try {
-                cbs.cleanup();
-            } catch (...) {
-            }
+void RestoreWndProc() {
+    if (!hwnd || !oWndProc) return;
+    if (GetWindowLongPtrW(hwnd, GWLP_WNDPROC) == (LONG_PTR)&WndProc) SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)oWndProc);
+    else if (IsWindow(hwnd)) stuck = true;
+    if (captured && GetCapture() == hwnd) ReleaseCapture();
+    captured = false;
+    hwnd = nullptr;
+    oWndProc = nullptr;
+}
+
+void Teardown() {
+    if (!ready) return;
+    RestoreWndProc();
+    if (cbs.cleanup) {
+        try {
+            cbs.cleanup();
+        } catch (...) {
         }
-        if (logoTex) glDeleteTextures(1, &logoTex);
-        logoTex = 0;
-        if (modern) ImGui_ImplOpenGL3_Shutdown();
-        else ImGui_ImplOpenGL2_Shutdown();
-        ready = false;
     }
+    if (logoTex) glDeleteTextures(1, &logoTex);
+    logoTex = 0;
+    logoTried = false;
+    ImGui_ImplOpenGL3_Shutdown();
+    context = nullptr;
+    ready = false;
+}
+
+void Forget() {
+    ImGuiIO& io = ImGui::GetIO();
+    io.BackendRendererUserData = nullptr;
+    io.BackendRendererName = nullptr;
+    io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures);
+    for (ImTextureData* tex : ImGui::GetPlatformIO().Textures) {
+        tex->SetTexID(ImTextureID_Invalid);
+        tex->SetStatus(ImTextureStatus_Destroyed);
+    }
+    if (cbs.lost) {
+        try {
+            cbs.lost();
+        } catch (...) {
+        }
+    }
+    logoTex = 0;
+    logoTried = false;
+    if (hwnd && IsWindow(hwnd) && oWndProc && GetWindowLongPtrW(hwnd, GWLP_WNDPROC) == (LONG_PTR)&WndProc)
+        SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)oWndProc);
+    hwnd = nullptr;
+    oWndProc = nullptr;
+    captured = false;
+    context = nullptr;
+    ready = false;
+    LOG("the game made a new window, the menu starts again");
+}
+
+void Cleanup() {
+    UpdateCursorLock(false);
+    capture = false;
+    Teardown();
     cleaned = true;
 }
 
 void Render() {
     if (failed || inSwap) return;
     inSwap = true;
+    if (ready && wglGetCurrentContext() != context) Forget();
     if (!ready && !Init()) {
         inSwap = false;
         return;
@@ -330,8 +513,7 @@ void Render() {
         if (logoTex && cbs.logoReady) cbs.logoReady((uint64_t)logoTex);
     }
     FeedInput();
-    if (modern) ImGui_ImplOpenGL3_NewFrame();
-    else ImGui_ImplOpenGL2_NewFrame();
+    ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
     try {
         if (cbs.frame) cbs.frame();
@@ -342,8 +524,17 @@ void Render() {
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();
     if (dd) {
-        if (modern) ImGui_ImplOpenGL3_RenderDrawData(dd);
-        else ImGui_ImplOpenGL2_RenderDrawData(dd);
+        GLint drawFb = 0, readFb = 0;
+        if (bindFramebuffer) {
+            glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFb);
+            glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFb);
+            if (drawFb != 0) bindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+        ImGui_ImplOpenGL3_RenderDrawData(dd);
+        if (bindFramebuffer && (drawFb != 0 || readFb != 0)) {
+            bindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)drawFb);
+            bindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFb);
+        }
     }
     drawn = true;
     inSwap = false;
@@ -356,17 +547,50 @@ void __fastcall hkSwap(void* view) {
     oSwap(view);
 }
 
+void __fastcall hkFullscreen(void* view, bool full, bool borderless, bool fix) {
+    Guard guard;
+    if (!inSwap) {
+        UpdateCursorLock(false);
+        Teardown();
+    }
+    oFullscreen(view, full, borderless, fix);
 }
 
-bool Start(void* swapTarget, Callbacks cb) {
+template <class F>
+bool HookExport(const char* name, F detour, F* orig) {
+    return gd::Hook(gd::CocosFn(name), (void*)detour, (void**)orig, name);
+}
+
+}
+
+bool Start(Callbacks cb) {
     cbs = std::move(cb);
-    tSwap = swapTarget;
+    tSwap = gd::cc::SwapBuffersTarget();
+    sharedView = (ViewFn)gd::CocosFn("?sharedOpenGLView@CCEGLView@cocos2d@@SAPEAV12@XZ");
+    getLocked = (LockedFn)gd::CocosFn("?getCursorLocked@CCEGLView@cocos2d@@QEBA_NXZ");
     if (!tSwap) {
         LOG("could not find the game's frame function");
         return false;
     }
-    if (MH_CreateHook(tSwap, (void*)&hkSwap, (void**)&oSwap) != MH_OK || MH_EnableHook(tSwap) != MH_OK) {
+    bool inputOk = true;
+    inputOk &= HookExport("?dispatchKeyboardMSG@CCKeyboardDispatcher@cocos2d@@QEAA_NW4enumKeyCodes@2@_N1N@Z", &hkKey, &oKey);
+    inputOk &= HookExport("?handleTouchesBegin@CCEGLViewProtocol@cocos2d@@UEAAXHQEAHQEAM1N@Z", &hkTouch, &oTouch);
+    inputOk &= HookExport("?handleRightClick@CCEGLViewProtocol@cocos2d@@QEAAXMM@Z", &hkRightClick, &oRightClick);
+    inputOk &= HookExport("?dispatchInsertText@CCIMEDispatcher@cocos2d@@QEAAXPEBDHW4enumKeyCodes@2@@Z", &hkInsert, &oInsert);
+    inputOk &= HookExport("?dispatchDeleteBackward@CCIMEDispatcher@cocos2d@@QEAAXXZ", &hkDeleteBack, &oDeleteBack);
+    inputOk &= HookExport("?dispatchDeleteForward@CCIMEDispatcher@cocos2d@@QEAAXXZ", &hkDeleteForward, &oDeleteForward);
+    inputOk &= HookExport("?performSafeClipboardPaste@CCEGLView@cocos2d@@QEAAXXZ", &hkPaste, &oPaste);
+    if (!inputOk) LOG("some game input could not be held back while the menu is open");
+    if (sharedView && getLocked) HookExport("?toggleLockCursor@CCEGLView@cocos2d@@QEAAX_N@Z", &hkLock, &oLock);
+    if (!HookExport("?toggleFullScreen@CCEGLView@cocos2d@@QEAAX_N00@Z", &hkFullscreen, &oFullscreen))
+        LOG("switching fullscreen will turn the menu off");
+    if (MH_CreateHook(tSwap, (void*)&hkSwap, (void**)&oSwap) != MH_OK) {
         LOG("render hook could not be created");
+        return false;
+    }
+    if (MH_EnableHook(tSwap) != MH_OK) {
+        MH_RemoveHook(tSwap);
+        LOG("render hook could not be switched on");
         return false;
     }
     running = true;
@@ -374,15 +598,32 @@ bool Start(void* swapTarget, Callbacks cb) {
     return true;
 }
 
-void Stop() {
+bool Stop() {
     stopping = true;
-    for (int i = 0; i < 300 && !cleaned.load(); ++i) Sleep(10);
-    if (!cleaned.load()) LOG("the game drew no frame, the menu drawing could not be cleaned up");
-    if (hwnd && oWndProc) SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)oWndProc);
-    if (tSwap) MH_DisableHook(tSwap);
-    for (int i = 0; i < 200 && inflight.load() > 0; ++i) Sleep(10);
-    Sleep(100);
+    capture = false;
+    if (running.load()) {
+        ULONGLONG start = GetTickCount64(), told = 0;
+        while (!cleaned.load()) {
+            Sleep(10);
+            ULONGLONG waited = GetTickCount64() - start;
+            if (waited >= 3000 && waited - told >= 10000) {
+                told = waited;
+                LOG("waiting for the game to draw a frame so the menu can close");
+            }
+        }
+    }
+    MH_DisableHook(MH_ALL_HOOKS);
+    ULONGLONG start = GetTickCount64(), told = 0;
+    while (inflight.load() > 0) {
+        Sleep(10);
+        ULONGLONG waited = GetTickCount64() - start;
+        if (waited >= 3000 && waited - told >= 10000) {
+            told = waited;
+            LOG("waiting for the game window to finish a message");
+        }
+    }
     running = false;
+    return !stuck.load();
 }
 
 bool Rendering() { return drawn.load(); }

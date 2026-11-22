@@ -20,13 +20,13 @@ add_library(fathom_gd SHARED
   ${GD_SRC}/ingame/scare.cpp
   ${GD_SRC}/ingame/scare_art.cpp
   ${GD_SRC}/ingame/audio.cpp
+  ${GD_SRC}/ingame/image.cpp
   ${GD_SRC}/core/gd_features.cpp
   ${minhook_SOURCE_DIR}/src/buffer.c
   ${minhook_SOURCE_DIR}/src/hook.c
   ${minhook_SOURCE_DIR}/src/trampoline.c
   ${minhook_SOURCE_DIR}/src/hde/hde64.c
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp)
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(fathom_gd PRIVATE ${GD_SRC} ${minhook_SOURCE_DIR}/include)
 target_compile_definitions(fathom_gd PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(fathom_gd PRIVATE fathom_ui opengl32)

@@ -101,5 +101,6 @@ void Frame();
 void Now();
 void Off();
 void Cleanup();
+void Forget();
 
 }

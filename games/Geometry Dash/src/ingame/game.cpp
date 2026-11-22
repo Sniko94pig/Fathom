@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 #include <windows.h>
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <fstream>
 
@@ -22,6 +23,7 @@ SchedFn oSched = nullptr;
 std::atomic<int> stop{0};
 std::atomic<ULONGLONG> lastTick{0};
 std::atomic<bool> hooked{false};
+std::atomic<bool> modulesReady{false};
 std::atomic<bool> prefsDirty{false};
 
 std::wstring PrefsPath() { return gd::Folder() + L"\\gd.json"; }
@@ -43,13 +45,16 @@ void AllOff() {
 void __fastcall hkSched(void* self, float dt) {
     gd::Busy busy;
     lastTick = GetTickCount64();
+    try {
+        gd::RunQueue();
+    } catch (...) {
+    }
     int s = stop.load();
     if (s == 1) {
         AllOff();
         stop = 2;
-    } else if (s == 0) {
+    } else if (s == 0 && modulesReady.load()) {
         try {
-            gd::RunQueue();
             safe::Tick();
             speed::Tick();
             player::Tick();
@@ -115,18 +120,29 @@ void Apply(Feature& f) {
     }
 }
 
+float PrefNumber(const nlohmann::json& j, const char* key, float fallback) {
+    auto it = j.find(key);
+    if (it == j.end() || !it->is_number()) return fallback;
+    float v = it->get<float>();
+    return std::isfinite(v) ? v : fallback;
+}
+
 void LoadPrefs() {
-    std::ifstream in(PrefsPath(), std::ios::binary);
-    if (!in) return;
-    nlohmann::json j = nlohmann::json::parse(in, nullptr, false);
-    if (!j.is_object()) return;
-    if (Feature* f = Find("rgb_speed")) {
-        f->value = std::clamp(j.value("rgb_speed", f->def), f->min, f->max);
-        gd::C().rgbSpeed = f->value;
-    }
-    if (Feature* f = Find("jumpscare_every")) {
-        f->value = std::clamp(j.value("jumpscare_every", f->def), f->min, f->max);
-        gd::C().scareEvery = f->value;
+    try {
+        std::ifstream in(PrefsPath(), std::ios::binary);
+        if (!in) return;
+        nlohmann::json j = nlohmann::json::parse(in, nullptr, false);
+        if (!j.is_object()) return;
+        if (Feature* f = Find("rgb_speed")) {
+            f->value = std::clamp(PrefNumber(j, "rgb_speed", f->def), f->min, f->max);
+            gd::C().rgbSpeed = f->value;
+        }
+        if (Feature* f = Find("jumpscare_every")) {
+            f->value = std::clamp(PrefNumber(j, "jumpscare_every", f->def), f->min, f->max);
+            gd::C().scareEvery = f->value;
+        }
+    } catch (...) {
+        LOG("gd.json could not be read, using the defaults");
     }
 }
 
@@ -175,11 +191,6 @@ void Wire(core::Model& m, std::mutex& lock) {
 }
 
 bool Start(std::string& err) {
-    if (!gd::Hook(gd::cc::SchedulerUpdateTarget(), (void*)&hkSched, (void**)&oSched, "frame update")) {
-        err = "could not attach to the game's frame update";
-        return false;
-    }
-    hooked = true;
     if (!safe::Install()) LOG("safe mode is not available, the cheats that need it stay off");
     if (!speed::Install()) LOG("game speed is not available");
     if (!player::Install()) LOG("some player cheats are not available");
@@ -187,6 +198,12 @@ bool Start(std::string& err) {
     if (!macro::Install()) LOG("macros are not available");
     if (!rgb::Install()) LOG("rgb is not available");
     if (!scare::Install()) LOG("jumpscares are not available");
+    if (!gd::Hook(gd::cc::SchedulerUpdateTarget(), (void*)&hkSched, (void**)&oSched, "frame update")) {
+        err = "could not attach to the game's frame update";
+        return false;
+    }
+    hooked = true;
+    modulesReady = true;
     UpdateAvailability();
     return true;
 }

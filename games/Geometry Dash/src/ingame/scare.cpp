@@ -1,10 +1,10 @@
 #include "ingame/audio.h"
 #include "ingame/gd.h"
+#include "ingame/image.h"
 #include "ingame/log.h"
 #include "ingame/modules.h"
 #include "ingame/overlay.h"
 #include "ingame/scare_art.h"
-#include "ui/atlas.h"
 #include "imgui.h"
 #include <windows.h>
 #include <algorithm>
@@ -13,9 +13,9 @@
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <random>
 #include <string>
+#include <functional>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -36,14 +36,42 @@ struct Pick {
     fs::path sound;
 };
 
+struct Worker {
+    HANDLE handle = nullptr;
+    std::function<void()> fn;
+    static DWORD WINAPI Run(void* p) {
+        Worker* w = (Worker*)p;
+        try {
+            w->fn();
+        } catch (...) {
+        }
+        return 0;
+    }
+    void Start(std::function<void()> f) {
+        Join();
+        fn = std::move(f);
+        handle = CreateThread(nullptr, 0, Run, this, 0, nullptr);
+        if (!handle) Run(this);
+    }
+    void Join() {
+        if (!handle) return;
+        WaitForSingleObject(handle, INFINITE);
+        CloseHandle(handle);
+        handle = nullptr;
+    }
+};
+
 constexpr int kFaceSize = 512;
 constexpr double kShow = 1.0;
 constexpr double kSound = 1.4;
+constexpr double kFade = 0.15;
 
 bool ready = false;
 fs::path userDir, builtinDir;
-std::mt19937 rng{std::random_device{}()};
-std::future<std::vector<Image>> facesJob;
+std::mt19937 rng;
+
+Worker facesWorker;
+std::atomic<bool> facesDone{false};
 std::vector<Image> faces;
 uint64_t faceTex[scare_art::kFaces] = {};
 void* screams[scare_art::kScreams] = {};
@@ -51,6 +79,8 @@ bool screamTried[scare_art::kScreams] = {};
 
 bool wasOn = false;
 float plannedEvery = 0.0f;
+float seenEvery = 0.0f;
+double everyChangedAt = 0.0;
 double nextAt = 0.0;
 std::atomic<bool> nowWanted{false};
 
@@ -61,11 +91,13 @@ int texW = 0, texH = 0;
 bool texOwned = false;
 void* channel = nullptr;
 void* userSound = nullptr;
-double soundUntil = 0.0;
+double soundAt = 0.0;
 
 Pick pending;
 bool pendingValid = false;
-std::future<Image> pendingImage;
+Worker decodeWorker;
+std::atomic<bool> decodeDone{false};
+Image decoded;
 
 double Clock() {
     static LARGE_INTEGER freq{};
@@ -124,7 +156,7 @@ Pick Choose() {
 
 Image Decode(const fs::path& path) {
     Image img;
-    if (!ui::LoadImageFile(path.wstring(), img.rgba, img.w, img.h)) return {};
+    if (!image::Load(path.wstring(), img.rgba, img.w, img.h)) return {};
     int big = std::max(img.w, img.h);
     if (big > 2048) {
         int f = (big + 2047) / 2048;
@@ -150,25 +182,28 @@ Image Decode(const fs::path& path) {
     return img;
 }
 
+void JoinDecode() { decodeWorker.Join(); }
+
 void Prepare() {
+    JoinDecode();
     pending = Choose();
     pendingValid = true;
-    if (!pending.picture.empty()) {
-        fs::path path = pending.picture;
-        pendingImage = std::async(std::launch::async, [path] { return Decode(path); });
+    decoded = Image{};
+    decodeDone = false;
+    if (pending.picture.empty()) {
+        decodeDone = true;
+        return;
     }
-}
-
-void Plan(double now) {
-    float every = std::clamp(gd::C().scareEvery.load(), 1.0f, 30.0f);
-    double factor = std::uniform_real_distribution<double>(0.5, 1.5)(rng);
-    nextAt = now + (double)every * 60.0 * factor;
-    plannedEvery = every;
-    Prepare();
+    fs::path path = pending.picture;
+    decodeWorker.Start([path] {
+        decoded = Decode(path);
+        decodeDone = true;
+    });
 }
 
 bool FacesReady() {
-    if (faces.empty() && facesJob.valid()) faces = facesJob.get();
+    if (!facesDone.load()) return false;
+    facesWorker.Join();
     return faces.size() == (size_t)scare_art::kFaces;
 }
 
@@ -187,74 +222,89 @@ void DropPicture() {
 }
 
 float Pitch() {
-    float s = std::clamp(gd::C().speed.load(), 0.1f, 3.0f);
-    return std::isfinite(s) && s > 0.0f ? 1.0f / s : 1.0f;
+    float s = gd::C().speed.load();
+    if (!std::isfinite(s)) s = 1.0f;
+    s = std::clamp(s, 0.1f, 3.0f);
+    return 1.0f / s;
 }
 
-void Start(Pick p, Image* img) {
-    DropPicture();
-    StopSound();
-    if (p.face >= 0) {
-        if (!FacesReady()) return;
-        if (!faceTex[p.face]) {
-            const Image& f = faces[(size_t)p.face];
-            faceTex[p.face] = overlay::MakeTexture(f.rgba.data(), f.w, f.h);
-        }
-        tex = faceTex[p.face];
-        texW = kFaceSize;
-        texH = kFaceSize;
-    } else {
-        Image local;
-        if (!img || img->rgba.empty()) {
-            local = Decode(p.picture);
-            img = &local;
-        }
-        if (img->rgba.empty()) {
-            LOG("jumpscare picture could not be read: %s", gd::Narrow(p.picture.filename().wstring()).c_str());
-            p.face = Roll(scare_art::kFaces);
-            Start(p, nullptr);
-            return;
-        }
-        tex = overlay::MakeTexture(img->rgba.data(), img->w, img->h);
-        texOwned = tex != 0;
-        texW = img->w;
-        texH = img->h;
+bool ShowFace(int face) {
+    if (!FacesReady() || face < 0 || face >= scare_art::kFaces) return false;
+    if (!faceTex[face]) {
+        const Image& f = faces[(size_t)face];
+        faceTex[face] = overlay::MakeTexture(f.rgba.data(), f.w, f.h);
     }
-    if (!tex) return;
+    tex = faceTex[face];
+    texW = kFaceSize;
+    texH = kFaceSize;
+    return tex != 0;
+}
+
+bool ShowImage(const Image& img) {
+    if (img.rgba.empty()) return false;
+    tex = overlay::MakeTexture(img.rgba.data(), img.w, img.h);
+    texOwned = tex != 0;
+    texW = img.w;
+    texH = img.h;
+    return tex != 0;
+}
+
+void PlaySoundFor(const Pick& p) {
     void* snd = nullptr;
-    if (p.scream >= 0) {
-        if (!screamTried[p.scream]) {
-            screamTried[p.scream] = true;
-            fs::path wav = builtinDir / (L"scream" + std::to_wstring(p.scream + 1) + L".wav");
-            screams[p.scream] = audio::Load(gd::Narrow(wav.wstring()));
-        }
-        snd = screams[p.scream];
-    } else if (!p.sound.empty()) {
-        userSound = audio::Load(gd::Narrow(p.sound.wstring()));
+    if (!p.sound.empty()) {
+        userSound = audio::Load(gd::Narrow(p.sound.wstring()), true);
         if (!userSound) LOG("jumpscare sound could not be played: %s", gd::Narrow(p.sound.filename().wstring()).c_str());
         snd = userSound;
     }
+    if (!snd) {
+        int s = p.scream >= 0 ? p.scream : Roll(scare_art::kScreams);
+        if (!screamTried[s]) {
+            screamTried[s] = true;
+            fs::path wav = builtinDir / (L"scream" + std::to_wstring(s + 1) + L".wav");
+            screams[s] = audio::Load(gd::Narrow(wav.wstring()), false);
+        }
+        snd = screams[s];
+    }
     channel = snd ? audio::Play(snd, 1.0f, Pitch()) : nullptr;
-    startAt = Clock();
-    soundUntil = startAt + kSound;
-    showing = true;
 }
 
-void Trigger(bool planned) {
-    if (!planned) {
-        Start(Choose(), nullptr);
-        return;
+void Trigger() {
+    DropPicture();
+    StopSound();
+    Pick p = pendingValid ? pending : Choose();
+    bool shown = false;
+    bool used = false;
+    if (p.face >= 0) {
+        shown = ShowFace(p.face);
+        used = true;
+    } else if (decodeDone.load()) {
+        JoinDecode();
+        shown = ShowImage(decoded);
+        if (!shown) LOG("jumpscare picture could not be read: %s", gd::Narrow(p.picture.filename().wstring()).c_str());
+        used = true;
     }
-    Pick p;
-    Image img;
-    if (pendingValid) {
-        p = pending;
-        if (pendingImage.valid()) img = pendingImage.get();
-    } else {
-        p = Choose();
+    if (!shown) {
+        Pick fallback = p;
+        fallback.face = Roll(scare_art::kFaces);
+        fallback.picture.clear();
+        shown = ShowFace(fallback.face);
+        if (!shown) return;
     }
-    pendingValid = false;
-    Start(p, img.rgba.empty() ? nullptr : &img);
+    PlaySoundFor(p);
+    startAt = Clock();
+    soundAt = startAt;
+    showing = true;
+    if (used) {
+        pendingValid = false;
+        Prepare();
+    }
+}
+
+void Plan(double now) {
+    float every = std::clamp(gd::C().scareEvery.load(), 1.0f, 30.0f);
+    double factor = std::uniform_real_distribution<double>(0.5, 1.5)(rng);
+    nextAt = now + (double)every * 60.0 * factor;
+    plannedEvery = every;
 }
 
 void WriteScreams() {
@@ -273,6 +323,7 @@ void WriteScreams() {
 }
 
 bool Install() {
+    rng.seed(std::random_device{}());
     userDir = fs::path(gd::Folder()) / L"jumpscares";
     builtinDir = fs::path(gd::Folder()) / L"builtin";
     std::error_code ec;
@@ -282,14 +333,15 @@ bool Install() {
     } catch (...) {
         LOG("jumpscare sounds could not be written");
     }
-    facesJob = std::async(std::launch::async, [] {
+    facesWorker.Start([] {
         std::vector<Image> out((size_t)scare_art::kFaces);
         for (int i = 0; i < scare_art::kFaces; ++i) {
             scare_art::Face(i, kFaceSize, out[(size_t)i].rgba);
             out[(size_t)i].w = kFaceSize;
             out[(size_t)i].h = kFaceSize;
         }
-        return out;
+        faces.swap(out);
+        facesDone = true;
     });
     if (!audio::Install()) LOG("jumpscares will have no sound");
     ready = true;
@@ -300,18 +352,38 @@ bool Ready() { return ready; }
 
 void Tick(float) {
     if (!ready) return;
+    if (facesDone.load()) facesWorker.Join();
+    if (decodeDone.load()) decodeWorker.Join();
     double now = Clock();
     bool on = gd::C().scares.load();
-    if (on && (!wasOn || std::fabs(plannedEvery - gd::C().scareEvery.load()) > 0.01f)) Plan(now);
+    float every = gd::C().scareEvery.load();
+    if (std::fabs(every - seenEvery) > 0.01f) {
+        seenEvery = every;
+        everyChangedAt = now;
+    }
+    if (on && !wasOn) {
+        Plan(now);
+        if (!pendingValid) Prepare();
+    } else if (on && std::fabs(plannedEvery - every) > 0.01f && now - everyChangedAt >= 1.0) {
+        Plan(now);
+    }
     wasOn = on;
     if (nowWanted.exchange(false)) {
-        Trigger(false);
+        if (!pendingValid) Prepare();
+        Trigger();
     } else if (on && !showing && now >= nextAt && !gd::C().menuOpen.load()) {
-        Trigger(true);
+        if (!pendingValid) Prepare();
+        Trigger();
         Plan(now);
     }
     if (showing && now - startAt > kShow) DropPicture();
-    if ((channel || userSound) && now > soundUntil) StopSound();
+    if (channel) {
+        double t = now - soundAt;
+        if (t > kSound) StopSound();
+        else if (t > kSound - kFade) audio::SetVolume(channel, (float)std::max(0.0, (kSound - t) / kFade));
+    } else if (userSound && now - soundAt > kSound) {
+        StopSound();
+    }
 }
 
 void Frame() {
@@ -344,8 +416,7 @@ void Off() {
     nowWanted = false;
     StopSound();
     DropPicture();
-    if (pendingImage.valid()) pendingImage.wait();
-    pendingImage = {};
+    JoinDecode();
     pendingValid = false;
     for (int i = 0; i < scare_art::kScreams; ++i) {
         if (screams[i]) audio::Free(screams[i]);
@@ -360,7 +431,15 @@ void Cleanup() {
         if (t) overlay::FreeTexture(t);
         t = 0;
     }
-    if (facesJob.valid()) facesJob.wait();
+    facesWorker.Join();
+    JoinDecode();
+}
+
+void Forget() {
+    tex = 0;
+    texOwned = false;
+    showing = false;
+    for (uint64_t& t : faceTex) t = 0;
 }
 
 }

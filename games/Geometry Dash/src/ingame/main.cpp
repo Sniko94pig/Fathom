@@ -106,8 +106,17 @@ std::string BackupSaves() {
             return {};
         }
         int bad = 0;
-        for (const fs::path& f : files)
-            if (!CopyShared(f, dst / f.filename())) ++bad;
+        for (const fs::path& f : files) {
+            bool done = false;
+            for (int attempt = 0; attempt < 4 && !done; ++attempt) {
+                auto before = FileTime(f.wstring());
+                std::error_code fe;
+                fs::remove(dst / f.filename(), fe);
+                done = CopyShared(f, dst / f.filename()) && FileTime(f.wstring()) == before;
+                if (!done) Sleep(250);
+            }
+            if (!done) ++bad;
+        }
         if (bad) {
             LOG("save backup failed: %d save files could not be copied", bad);
             fs::remove_all(dst, ec);
@@ -181,12 +190,30 @@ bool WaitForGame() {
     return false;
 }
 
-void Unload() {
-    LOG("unloading");
-    {
-        std::lock_guard<std::mutex> g(modelLock);
-        if (menu) menu->open = false;
+void MarkUnloading() {
+    std::lock_guard<std::mutex> g(modelLock);
+    if (menu) menu->open = false;
+    for (core::Feature& f : model.features) {
+        f.available = false;
+        f.missing = "Fathom is closing";
     }
+}
+
+void WriteSettingsText(const std::string& text) {
+    std::wstring path = dir + L"\\settings.json";
+    std::wstring tmp = path + L".tmp";
+    {
+        std::ofstream out(fs::path(tmp), std::ios::binary | std::ios::trunc);
+        if (!out) return;
+        out << text;
+        if (!out.good()) return;
+    }
+    MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+}
+
+bool Unload() {
+    LOG("unloading");
+    MarkUnloading();
     game::RequestStop();
     ULONGLONG start = GetTickCount64(), told = 0;
     while (!game::Stopped()) {
@@ -205,27 +232,57 @@ void Unload() {
                 gd::Note("Fathom stays on until you close Geometry Dash, so nothing gets saved");
                 LOG("safe mode lock is on, staying loaded until the game closes");
             } else {
-                gd::Note("Fathom unloads when you leave this level");
+                gd::Note("Fathom closes when you leave this level");
                 LOG("waiting for the level to close so safe mode can finish");
             }
         }
         Sleep(100);
     }
+    std::string text;
     {
         std::lock_guard<std::mutex> g(modelLock);
-        core::SaveSettings(model);
+        text = core::SettingsText(model);
     }
+    WriteSettingsText(text);
     game::SavePrefs(true);
-    overlay::Stop();
-    MH_DisableHook(MH_ALL_HOOKS);
-    for (int i = 0; i < 300 && gd::BusyCount() > 0; ++i) Sleep(10);
+    bool safeToFree = overlay::Stop();
+    start = GetTickCount64();
+    told = 0;
+    while (gd::BusyCount() > 0) {
+        Sleep(10);
+        ULONGLONG waited = GetTickCount64() - start;
+        if (waited >= 3000 && waited - told >= 10000) {
+            told = waited;
+            LOG("waiting for the game to leave Fathom's code");
+        }
+    }
     Sleep(200);
+    if (!safeToFree) {
+        LOG("another program changed the game window after Fathom, so Fathom stays loaded but does nothing until the game closes");
+        slog::Close();
+        return false;
+    }
     MH_Uninitialize();
     menu.reset();
     if (ImGui::GetCurrentContext()) ImGui::DestroyContext();
-    Sleep(200);
     LOG("unloaded");
     slog::Close();
+    return true;
+}
+
+DWORD WINAPI ShellThread(void* arg) {
+    gd::Busy busy;
+    std::wstring* target = (std::wstring*)arg;
+    ShellExecuteW(nullptr, L"open", target->c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    delete target;
+    return 0;
+}
+
+void OpenInShell(const std::wstring& target) {
+    std::wstring* arg = new std::wstring(target);
+    HANDLE t = CreateThread(nullptr, 0, ShellThread, arg, 0, nullptr);
+    if (t) CloseHandle(t);
+    else delete arg;
 }
 
 DWORD WINAPI MainThread(void*) {
@@ -252,14 +309,15 @@ DWORD WINAPI MainThread(void*) {
         gd::BuildFeatures(model);
         model.settingsPath = gd::Narrow(dir + L"\\settings.json");
         model.backupSaves = [] { return BackupSaves(); };
-        model.openFolder = [] { ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL); };
-        model.openUrl = [](const std::string& url) {
-            std::wstring w = gd::Widen(url);
-            ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        };
+        model.openFolder = [] { OpenInShell(dir); };
+        model.openUrl = [](const std::string& url) { OpenInShell(gd::Widen(url)); };
         model.inWorld = true;
         game::Wire(model, modelLock);
-        core::LoadSettings(model);
+        try {
+            core::LoadSettings(model);
+        } catch (...) {
+            LOG("settings.json could not be read, using the defaults");
+        }
         menu = std::make_unique<ui::Menu>(model);
         menu->SyncFromModel();
         menu->open = false;
@@ -275,7 +333,9 @@ DWORD WINAPI MainThread(void*) {
         model.logoTexture = tex;
     };
     cb.cleanup = [] { scare::Cleanup(); };
-    bool overlayOk = overlay::Start(gd::cc::SwapBuffersTarget(), cb);
+    cb.lost = [] { scare::Forget(); };
+    cb.fatal = [] { unloadRequested = true; };
+    bool overlayOk = overlay::Start(cb);
     if (!overlayOk) {
         LOG("overlay failed to start");
         unloadRequested = true;
@@ -304,23 +364,31 @@ DWORD WINAPI MainThread(void*) {
         if (now - lastSync < 500) continue;
         lastSync = now;
         game::SavePrefs(false);
-        std::lock_guard<std::mutex> g(modelLock);
-        std::string text = core::SettingsText(model);
+        std::string text;
+        {
+            std::lock_guard<std::mutex> g(modelLock);
+            text = core::SettingsText(model);
+        }
         auto t = FileTime(settingsFile);
         if (text != lastText) {
-            core::SaveSettings(model);
+            WriteSettingsText(text);
             lastText = text;
             knownTime = FileTime(settingsFile);
         } else if (t != knownTime && t != fs::file_time_type::min()) {
-            core::LoadSettings(model);
+            std::lock_guard<std::mutex> g(modelLock);
+            try {
+                core::LoadSettings(model);
+            } catch (...) {
+                LOG("settings.json could not be read");
+            }
             menu->SyncFromModel();
             lastText = core::SettingsText(model);
             knownTime = t;
             LOG("settings reloaded from the app");
         }
     }
-    Unload();
-    FreeLibraryAndExitThread(self, 0);
+    if (Unload()) FreeLibraryAndExitThread(self, 0);
+    ExitThread(0);
 }
 
 std::wstring ModuleFolder() {
@@ -342,9 +410,6 @@ extern "C" __declspec(dllexport) DWORD WINAPI FathomInject(LPVOID) {
 }
 
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        self = inst;
-        DisableThreadLibraryCalls(inst);
-    }
+    if (reason == DLL_PROCESS_ATTACH) self = inst;
     return TRUE;
 }

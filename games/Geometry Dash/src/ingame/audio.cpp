@@ -65,11 +65,11 @@ bool SetMasterPitch(float pitch) {
     return setPitch(master, pitch) == 0;
 }
 
-void* Load(const std::string& utf8Path) {
+void* Load(const std::string& utf8Path, bool stream) {
     void* s = sys.load();
     if (!ready || !s) return nullptr;
     void* sound = nullptr;
-    if (createSound(s, utf8Path.c_str(), 0, nullptr, &sound) != 0) return nullptr;
+    if (createSound(s, utf8Path.c_str(), stream ? 0x80u : 0u, nullptr, &sound) != 0) return nullptr;
     return sound;
 }
 
@@ -86,6 +86,10 @@ void* Play(void* sound, float volume, float pitch) {
 
 void Stop(void* channel) {
     if (ready && channel) stop(channel);
+}
+
+void SetVolume(void* channel, float volume) {
+    if (ready && channel) setVolume(channel, volume);
 }
 
 void Free(void* sound) {
