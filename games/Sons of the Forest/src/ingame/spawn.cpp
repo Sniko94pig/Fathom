@@ -38,9 +38,10 @@ const char* kItemAsm = "Sons.Item";
 const char* kVailAsm = "Sons.Ai.Vail";
 const char* kCoreAsm = "UnityEngine.CoreModule";
 const char* kGolfCart = "golf_cart";
+const char* kBlueprints = "Blueprints";
 
-const std::vector<std::string> kItemCats = {"Weapons", "Ammo", "Weapon mods", "Clothing & armor", "Food & medicine", "Resources", "Tools",
-                                            "Other"};
+const std::vector<std::string> kItemCats = {"Blueprints", "Weapons", "Ammo", "Weapon mods", "Clothing & armor", "Food & medicine",
+                                            "Resources", "Tools", "Other"};
 const std::vector<std::string> kWorldCats = {"Vehicles", "Weapons", "Ammo", "Weapon mods", "Clothing & armor", "Food & medicine",
                                              "Resources", "Tools", "Other"};
 const std::vector<std::string> kCreatureCats = {"Cannibals", "Mutants", "Animals", "Water animals", "Other"};
@@ -52,13 +53,25 @@ struct NullableVec3 {
 };
 static_assert(sizeof(NullableVec3) == 16, "Nullable<Vector3> is 16 bytes");
 
+struct StateValue {
+    int id = 0;
+    int pad = 0;
+    void* name = nullptr;
+    float color[4] = {0, 0, 0, 0};
+};
+static_assert(sizeof(StateValue) == 32, "Sons.Ai.Vail.State is 32 bytes");
+
 struct Refs {
     Class* localPlayer = nullptr;
     Fld lpInventory, lpStats, lpCamTr;
     Method *lpGetInventory = nullptr, *lpInCaves = nullptr;
     Class* inventory = nullptr;
     Fld invView;
-    Method *invAdd = nullptr, *invSpace = nullptr, *invSetNew = nullptr, *invRightHand = nullptr;
+    Method *invAdd = nullptr, *invSpace = nullptr, *invSetNew = nullptr, *invRightHand = nullptr, *invOwns = nullptr;
+    Class *bpCheck = nullptr, *bpAchievement = nullptr;
+    Fld bpList, achList;
+    Class* playerState = nullptr;
+    Method *psInstance = nullptr, *psGetBool = nullptr;
     Class* itemInstance = nullptr;
     Fld iiId, iiData;
     Class* stats = nullptr;
@@ -89,6 +102,10 @@ struct Refs {
     Class *worldSim = nullptr, *worldActor = nullptr, *actorManager = nullptr;
     Fld simInstance, simActors, waType, waUid, waDebug, waRemoved;
     Method *simRemove = nullptr, *vamFind = nullptr, *vamRemove = nullptr;
+    Class *dropEvent = nullptr, *globalTargets = nullptr, *reliability = nullptr, *state = nullptr, *playerLocation = nullptr;
+    Method *evCreate = nullptr, *evType = nullptr, *evVariation = nullptr, *evPosition = nullptr, *evRotation = nullptr, *evState = nullptr,
+           *evArea = nullptr, *evSend = nullptr, *areaMask = nullptr;
+    Fld stateInvalid, stateFlying;
 } R;
 
 struct Values {
@@ -98,12 +115,13 @@ struct Values {
     int viewPlaneCrash = -1, viewLoading = 0, viewWakingUp = 1, viewWorld = 2, viewDeath = 7, viewEnd = 12;
     int classCannibal = 1, classCreepy = 2, classAnimal = 3;
     int artifact = 707, emergencyPack = 483, knightV = 630, glider = 626;
+    int rabbit = 1, onlyServer = 6, reliableOrdered = 2;
 } K;
 
 std::unordered_set<int> skipTypes, waterTypes;
 std::vector<std::pair<std::string, int>> defaultLoadout;
 bool canCatalog = false, canAdd = false, canAddAll = false, canWorld = false, canCart = false, canCreature = false, canRemove = false,
-     canIcons = false;
+     canIcons = false, canBlueprints = false, canGuestRabbit = false;
 
 core::Model* model = nullptr;
 std::mutex* modelLock = nullptr;
@@ -134,8 +152,15 @@ int catStage = 0;
 size_t catNext = 0, catTotal = 0;
 bool catReady = false;
 
-std::vector<Item> pendItems, pendWorld, pendCreatures, lastItems, lastWorld;
-bool pubItems = false, pubCreatures = false;
+std::vector<Item> baseItems, pendItems, pendWorld, pendCreatures, lastItems, lastWorld;
+bool pubItems = false, pubWorld = false, pubCreatures = false;
+
+std::vector<int> blueprintIds;
+std::unordered_set<int> blueprintSet, bpOwned;
+std::unordered_map<int, uint32_t> bpKeys;
+bool bpFound = false, bpKnown = false, bpDirty = false, bpAsked = false;
+double bpNextFind = 0, bpNextCheck = 0;
+int bpFinds = 0, bpMissing = -1;
 
 std::vector<int> iconQueue;
 size_t iconNext = 0;
@@ -146,6 +171,7 @@ std::vector<Item> creatureBuild;
 size_t creatureNext = 0;
 bool creaturesBuilt = false;
 std::unordered_map<std::string, std::string> creatureNames;
+std::unordered_map<std::string, int> creatureTypes;
 std::unordered_map<int, std::string> typeNames;
 
 struct AddJob {
@@ -384,6 +410,30 @@ Info ReadItem(Object* d) {
     return in;
 }
 
+int ComposeItems() {
+    std::vector<Item> items = baseItems;
+    int missing = 0;
+    if (bpFound && bpKnown) {
+        bool moved = false;
+        for (Item& it : items) {
+            int id = ParseId(it.id);
+            if (!blueprintSet.count(id) || bpOwned.count(id)) continue;
+            it.category = kBlueprints;
+            moved = true;
+            if (!it.hidden) ++missing;
+        }
+        if (moved) SortItems(items, kItemCats);
+    }
+    if (Same(items, lastItems)) {
+        pendItems.clear();
+        pubItems = false;
+    } else {
+        pendItems = std::move(items);
+        pubItems = true;
+    }
+    return missing;
+}
+
 void FinishCatalog() {
     catStage = 2;
     std::unordered_map<int, Info> map;
@@ -412,15 +462,15 @@ void FinishCatalog() {
         std::sort(iconQueue.begin(), iconQueue.end());
     }
     LOG("item catalog: %d items, %d in your inventory list, %d in the world list", (int)info.size(), (int)items.size(), (int)world.size());
-    if (Same(items, lastItems) && Same(world, lastWorld)) {
-        pendItems.clear();
+    baseItems = std::move(items);
+    if (Same(world, lastWorld)) {
         pendWorld.clear();
-        pubItems = false;
-        return;
+        pubWorld = false;
+    } else {
+        pendWorld = std::move(world);
+        pubWorld = true;
     }
-    pendItems = std::move(items);
-    pendWorld = std::move(world);
-    pubItems = true;
+    bpMissing = ComposeItems();
 }
 
 void StepCatalog() {
@@ -485,6 +535,7 @@ void StepCreatureList() {
         int cls = R.actorClassOf ? un::CallInt(R.actorClassOf, nullptr, {&type}, 0) : 0;
         std::string name = TypeName(type);
         if (name.empty()) name = Pretty(id);
+        creatureTypes.emplace(id, type);
         creatureBuild.push_back(MakeItem(id, name, CreatureCategory(type, cls), false));
     }
     if (creatureNext < defs.size()) return;
@@ -509,29 +560,28 @@ void StepCreatureList() {
 }
 
 void Publish() {
-    if ((!pubItems && !pubCreatures) || !model || !modelLock) return;
+    if ((!pubItems && !pubWorld && !pubCreatures) || !model || !modelLock) return;
     std::vector<Item> items, world, creatures;
-    bool doItems = pubItems, doCreatures = pubCreatures;
-    if (doItems) {
-        items = pendItems;
-        world = pendWorld;
-    }
+    bool doItems = pubItems, doWorld = pubWorld, doCreatures = pubCreatures;
+    if (doItems) items = pendItems;
+    if (doWorld) world = pendWorld;
     if (doCreatures) creatures = pendCreatures;
     {
         std::unique_lock<std::mutex> g(*modelLock, std::try_to_lock);
         if (!g.owns_lock()) return;
-        if (doItems) {
-            model->items.swap(items);
-            model->worldItems.swap(world);
-        }
+        if (doItems) model->items.swap(items);
+        if (doWorld) model->worldItems.swap(world);
         if (doCreatures) model->creatureItems.swap(creatures);
     }
     if (doItems) {
         lastItems = std::move(pendItems);
-        lastWorld = std::move(pendWorld);
         pendItems.clear();
-        pendWorld.clear();
         pubItems = false;
+    }
+    if (doWorld) {
+        lastWorld = std::move(pendWorld);
+        pendWorld.clear();
+        pubWorld = false;
     }
     if (doCreatures) {
         pendCreatures.clear();
@@ -624,6 +674,8 @@ void StepIcons() {
     if (iconsWritten > 0) overlay::LoadAtlas(dir);
 }
 
+bool IsBlueprint(int id) { return bpFound && blueprintSet.count(id) != 0; }
+
 int Give(Object* inv, int id, int want) {
     if (!inv || !R.invAdd || !R.invSpace || id <= 0 || want <= 0) return -1;
     bool ok = false;
@@ -640,13 +692,108 @@ int Give(Object* inv, int id, int want) {
             Note("The finished Artifact also unlocks it in Creative mode for all your saves");
         }
     }
-    if (R.invSetNew) {
+    bool blueprint = IsBlueprint(id);
+    if (R.invSetNew && !blueprint) {
         bool isNew = false;
         un::Call(R.invSetNew, inv, {&id, &isNew});
     }
     bool prevent = true, crafted = false;
     bool added = un::CallBool(R.invAdd, inv, {&id, &n, &prevent, &crafted, nullptr}, false);
+    if (added && blueprint) {
+        bpDirty = true;
+        bpAsked = true;
+    }
     return added ? n : -1;
+}
+
+std::vector<int> ListInts(Object* list) {
+    std::vector<int> out;
+    if (!list) return out;
+    Class* c = il2::ClassOf(list);
+    il2::Field* items = c ? il2::FindField(c, "_items") : nullptr;
+    int off = il2::Offset(items);
+    if (off <= 0) return out;
+    Object* arr = il2::Get<Object*>(list, off);
+    size_t len = il2::Length(arr);
+    int n = il2::ListCount(list);
+    if (!arr || n <= 0) return out;
+    if ((size_t)n > len) n = (int)len;
+    const int* data = (const int*)il2::Data(arr);
+    out.assign(data, data + n);
+    return out;
+}
+
+void FindBlueprints(double now) {
+    if (bpFound || bpFinds >= 20 || now < bpNextFind) return;
+    bpNextFind = now + (bpFinds < 12 ? 5.0 : 30.0);
+    std::unordered_set<int> ids;
+    auto take = [&](Class* cls, const Fld& f) {
+        if (!cls || !f) return;
+        for (Object* o : un::FindAll(cls, true))
+            for (int id : ListInts(un::Ref(o, f)))
+                if (id > 0) ids.insert(id);
+    };
+    take(R.bpCheck, R.bpList);
+    take(R.bpAchievement, R.achList);
+    if (ids.empty()) {
+        if (++bpFinds == 20) LOG("the game's blueprint list was not found in this world, stopped looking");
+        return;
+    }
+    blueprintIds.assign(ids.begin(), ids.end());
+    std::sort(blueprintIds.begin(), blueprintIds.end());
+    blueprintSet = std::move(ids);
+    bpFound = true;
+    bpNextCheck = 0;
+    LOG("blueprints: %d kinds", (int)blueprintIds.size());
+}
+
+Object* BlueprintKey(int id) {
+    auto it = bpKeys.find(id);
+    if (it != bpKeys.end()) return il2::Pinned(it->second);
+    Object* s = il2::NewString(("DiscoverablePageUnlocked_" + std::to_string(id)).c_str());
+    if (!s) return nullptr;
+    uint32_t h = il2::Pin(s);
+    if (h) bpKeys[id] = h;
+    return s;
+}
+
+void ClearBlueprintKeys() {
+    for (const auto& [id, h] : bpKeys) il2::Unpin(h);
+    bpKeys.clear();
+}
+
+void StepBlueprints(const Ctx& c) {
+    if (!canBlueprints || !catReady) return;
+    FindBlueprints(c.now);
+    if (!bpFound || (!bpDirty && c.now < bpNextCheck)) return;
+    bpNextCheck = c.now + 1.0;
+    bpDirty = false;
+    bool asked = bpAsked;
+    bpAsked = false;
+    Object* inv = Inventory(c);
+    if (!inv) return;
+    Object* ps = R.psInstance && R.psGetBool ? un::Call(R.psInstance, nullptr) : nullptr;
+    if (!un::Alive(ps)) ps = nullptr;
+    std::unordered_set<int> owned;
+    for (int id : blueprintIds) {
+        int v = id;
+        bool own = un::CallBool(R.invOwns, inv, {&v}, false);
+        if (!own && ps) {
+            Object* key = BlueprintKey(id);
+            bool fallback = false;
+            own = key && un::CallBool(R.psGetBool, ps, {key, &fallback}, false);
+        }
+        if (own) owned.insert(id);
+    }
+    if (bpKnown && owned == bpOwned) return;
+    bpOwned = std::move(owned);
+    bpKnown = true;
+    int missing = ComposeItems();
+    if (asked && missing != bpMissing) {
+        if (missing == 0) Note("You have every blueprint now");
+        else Note(std::to_string(missing) + (missing == 1 ? " blueprint is" : " blueprints are") + " still missing");
+    }
+    bpMissing = missing;
 }
 
 void AddOne(const Ctx& c, const std::string& sid, int amount) {
@@ -983,9 +1130,70 @@ void StepClaims(double now) {
     Claim();
 }
 
+bool SendRabbit(Vec3 pos, Quat rot, int state, int area) {
+    uint8_t targets = (uint8_t)K.onlyServer, mode = (uint8_t)K.reliableOrdered;
+    bool ok = false;
+    Object* ev = un::Call(R.evCreate, nullptr, {&targets, &mode}, &ok);
+    if (!ok || !ev) return false;
+    int type = K.rabbit, variation = 0;
+    bool a = false, b = false, d = false, e = false, f = false, g = false, sent = false;
+    un::Call(R.evType, ev, {&type}, &a);
+    un::Call(R.evVariation, ev, {&variation}, &b);
+    un::Call(R.evPosition, ev, {&pos}, &d);
+    un::Call(R.evRotation, ev, {&rot}, &e);
+    un::Call(R.evState, ev, {&state}, &f);
+    un::Call(R.evArea, ev, {&area}, &g);
+    if (!a || !b || !d || !e || !f || !g) return false;
+    un::Call(R.evSend, ev, {}, &sent);
+    return sent;
+}
+
+void GuestRabbits(const Ctx& c, const std::string& id, int amount) {
+    auto t = creatureTypes.find(id);
+    if (t == creatureTypes.end() || t->second != K.rabbit) {
+        Note("As a guest you can only spawn rabbits, the host's game refuses every other creature");
+        return;
+    }
+    if (!canGuestRabbit) {
+        Note("Spawning rabbits as a guest is not available");
+        return;
+    }
+    StateValue invalid, flying;
+    if (!il2::StaticGet(R.stateInvalid.f, &invalid, sizeof(invalid)) || !il2::StaticGet(R.stateFlying.f, &flying, sizeof(flying)) ||
+        invalid.id == flying.id) {
+        Note("Rabbits can't be spawned yet, try again in a moment");
+        return;
+    }
+    Object* cam = CameraTr(c);
+    if (!cam || !c.player) return;
+    Vec3 root = un::Position(c.player);
+    Vec3 fwd = FlatForward(cam);
+    int area = un::CallInt(R.areaMask, nullptr, {}, 0);
+    int n = std::clamp(amount, 1, 20), sent = 0;
+    for (int i = 0; i < n; ++i) {
+        Vec3 pos = un::Add(root, un::Mul(fwd, 1.5f));
+        float ang = Rand01() * 6.2831853f, r = std::sqrt(Rand01()) * (n > 1 ? 0.4f : 0.0f);
+        pos.x += std::cos(ang) * r;
+        pos.z += std::sin(ang) * r;
+        float ground = 0;
+        bool hit = RayGround(pos, root.y + 1.5f, ground);
+        pos.y = hit && std::fabs(ground - root.y) <= 1.0f ? ground + 0.3f : root.y + 0.3f;
+        if (un::Dist(pos, root) > 2.5f) continue;
+        if (!SendRabbit(pos, Yaw(Rand01() * 6.2831853f), flying.id, area)) break;
+        ++sent;
+    }
+    if (sent == 0) {
+        Note("Could not ask the host for rabbits");
+        return;
+    }
+    WarnAchievementsOnce();
+    Note("As a guest only rabbits can be spawned: asked the host for " + std::to_string(sent) + (sent == 1 ? " rabbit" : " rabbits") + " right next to you");
+}
+
 void SpawnCreature(const Ctx& c, const std::string& id, int amount) {
     if (c.session == core::Session::Client) {
-        Note("Only the host can spawn creatures");
+        if (id.empty() || id.find(' ') != std::string::npos) return;
+        GuestRabbits(c, id, amount);
         return;
     }
     if (!canCreature) {
@@ -1035,7 +1243,11 @@ int RemoveMine() {
 }
 
 void RemoveCreatures(const Ctx& c) {
-    if (!c.inWorld || c.session == core::Session::Client) return;
+    if (!c.inWorld) return;
+    if (c.session == core::Session::Client) {
+        Note("Only the host can remove creatures");
+        return;
+    }
     Claim();
     if (mine.empty()) {
         Note("There are no creatures you spawned to remove");
@@ -1113,6 +1325,7 @@ void ResolvePlayer() {
         R.invSpace = un::M(R.inventory, "GetAvailableSpaceForItem", 1);
         R.invSetNew = un::M(R.inventory, "SetIsNewItemInInventory", 2);
         R.invRightHand = un::M(R.inventory, "get_RightHandItem", 0);
+        R.invOwns = un::M(R.inventory, "Owns", std::vector<std::string>{"System.Int32"});
         if (Class* views = il2::Nested(R.inventory, "PlayerViews")) {
             K.viewPlaneCrash = Lit(views, "PlaneCrash", K.viewPlaneCrash);
             K.viewLoading = Lit(views, "Loading", K.viewLoading);
@@ -1136,6 +1349,15 @@ void ResolvePlayer() {
     }
     R.cutscenes = un::C(kSons, "Sons.Cutscenes", "CutsceneManager");
     R.cutscenePlaying = StaticM(R.cutscenes, "IsCutscenePlaying", 0);
+    R.bpCheck = un::C(kSons, "Sons.Gameplay", "CheckIfDiscoveredBlueprintOwned");
+    if (R.bpCheck) R.bpList = un::F(R.bpCheck, "_blueprints");
+    R.bpAchievement = un::C(kSons, "Sons.Gameplay.Achievements", "DiscoverableBlueprintsAchievement");
+    if (R.bpAchievement) R.achList = un::F(R.bpAchievement, "_requiredItems");
+    R.playerState = un::C(kSons, "Sons.Player", "PlayerState");
+    if (R.playerState) {
+        R.psInstance = StaticM(R.playerState, "GetInstance", 0);
+        R.psGetBool = un::M(R.playerState, "GetBool", std::vector<std::string>{"System.String", "System.Boolean"});
+    }
 }
 
 void ResolveItems() {
@@ -1287,6 +1509,29 @@ void ResolveCreatures() {
         R.vamFind = un::M(R.actorManager, "FindActiveActor", std::vector<std::string>{"Sons.Ai.Vail.WorldSimActor"});
         R.vamRemove = StaticM(R.actorManager, "RemoveActor", 1);
     }
+    K.rabbit = Lit(R.actorTypeId, "Rabbit", K.rabbit);
+    R.dropEvent = un::C("bolt.user", "", "DropVailActorEvent");
+    if (R.dropEvent) {
+        R.evCreate = un::M(R.dropEvent, "Create", std::vector<std::string>{"Bolt.GlobalTargets", "Bolt.ReliabilityModes"});
+        R.evType = un::M(R.dropEvent, "set_TypeId", 1);
+        R.evVariation = un::M(R.dropEvent, "set_VariationId", 1);
+        R.evPosition = un::M(R.dropEvent, "set_Position", 1);
+        R.evRotation = un::M(R.dropEvent, "set_Rotation", 1);
+        R.evState = un::M(R.dropEvent, "set_State", 1);
+        R.evArea = un::M(R.dropEvent, "set_AreaMask", 1);
+        R.evSend = un::M(R.dropEvent, "Send", 0);
+    }
+    R.globalTargets = un::C("bolt", "Bolt", "GlobalTargets");
+    K.onlyServer = Lit(R.globalTargets, "OnlyServer", K.onlyServer);
+    R.reliability = un::C("bolt", "Bolt", "ReliabilityModes");
+    K.reliableOrdered = Lit(R.reliability, "ReliableOrdered", K.reliableOrdered);
+    R.state = un::C(kVailAsm, "Sons.Ai.Vail", "State");
+    if (R.state) {
+        R.stateInvalid = un::F(R.state, "Invalid");
+        R.stateFlying = un::F(R.state, "Flying");
+    }
+    R.playerLocation = un::C("Endnight", "Endnight.Utilities", "PlayerLocation");
+    R.areaMask = StaticM(R.playerLocation, "GetLocalPlayerAreaMask", 0);
 }
 
 bool Resolve(std::string& err) {
@@ -1305,8 +1550,12 @@ bool Resolve(std::string& err) {
     canRemove = canCreature && R.simInstance && R.simActors && R.waUid && R.waDebug && R.waRemoved && R.simRemove;
     canIcons = canCatalog && R.idUi && R.uiIcon && R.rtGet && R.rtRelease && R.rtActiveGet && R.rtActiveSet && R.blit && R.texture2d &&
                R.tex2dCtor && R.readPixels && R.encodePng && un::E.cachedPtr;
-    LOG("spawner parts: add %d, add all %d, world %d, golf cart %d, creatures %d, remove %d, icons %d", canAdd, canAddAll, canWorld, canCart,
-        canCreature, canRemove, canIcons);
+    canBlueprints = canAdd && R.invOwns && ((R.bpCheck && R.bpList) || (R.bpAchievement && R.achList)) &&
+                    (un::E.findObjectsOfType || un::E.findObjectsOfTypeInactive);
+    canGuestRabbit = canCreature && R.evCreate && R.evType && R.evVariation && R.evPosition && R.evRotation && R.evState && R.evArea &&
+                     R.evSend && R.areaMask && R.stateInvalid.isStatic && R.stateFlying.isStatic && (R.lpCamTr || un::E.camMain);
+    LOG("spawner parts: add %d, add all %d, world %d, golf cart %d, creatures %d, remove %d, icons %d, blueprints %d, guest rabbits %d", canAdd,
+        canAddAll, canWorld, canCart, canCreature, canRemove, canIcons, canBlueprints, canGuestRabbit);
     if (!canAdd && !canWorld && !canCart && !canCreature) {
         err = "the game's item and creature functions were not found";
         return false;
@@ -1317,6 +1566,7 @@ bool Resolve(std::string& err) {
 bool Supported(const std::string& id) {
     if (id == "add_items" || id == "instant_loadout") return canAdd;
     if (id == "add_all_items") return canAddAll;
+    if (id == "add_blueprints") return canBlueprints;
     if (id == "spawner") return canWorld;
     if (id == "vehicle_spawner") return canWorld || canCart;
     if (id == "creature_spawner") return canCreature;
@@ -1335,6 +1585,7 @@ void Tick(const Ctx& c) {
     StepIcons();
     RunRequests(c);
     StepAddJobs(c);
+    StepBlueprints(c);
     StepSpawnJobs(c);
     StepClaims(c.now);
 }
@@ -1366,6 +1617,15 @@ void Release(const Ctx&) {
     catStage = 0;
     catNext = 0;
     catTotal = 0;
+    bpOwned.clear();
+    bpKnown = false;
+    bpDirty = false;
+    bpAsked = false;
+    bpNextCheck = 0;
+    bpNextFind = 0;
+    bpFinds = 0;
+    bpMissing = -1;
+    ClearBlueprintKeys();
     if (!creaturesBuilt) {
         creatureNext = 0;
         creatureBuild.clear();
@@ -1376,6 +1636,7 @@ void Wire(core::Model& m, std::mutex& lock) {
     model = &m;
     modelLock = &lock;
     m.categories = kItemCats;
+    if (!canBlueprints) m.categories.erase(std::remove(m.categories.begin(), m.categories.end(), std::string(kBlueprints)), m.categories.end());
     m.worldCategories = kWorldCats;
     m.creatureCategories = kCreatureCats;
     if (canAdd) {

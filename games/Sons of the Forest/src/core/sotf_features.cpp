@@ -98,7 +98,11 @@ void BuildFeatures(Model& m) {
     Toggle(m, Combat, "Weapons", "no_reload", "No reload", "Keep shooting without reloading, shots still use ammo");
     Toggle(m, Combat, "Weapons", "no_recoil", "No weapon recoil", "Every bullet goes exactly where you aim");
     Slider(m, Combat, "Weapons", "weapon_damage", "Weapon damage", "", 1.0f, 10.0f, 1.0f);
-    Toggle(m, Combat, "Weapons", "silent_aim", "Silent aim", "Every shot hits an enemy or animal in the head");
+    Slider(m, Combat, "Weapons", "fire_rate", "Fire rate", "", 1.0f, 10.0f, 1.0f);
+    Toggle(m, Combat, "Weapons", "silent_aim", "Silent aim", "Every shot hits the head of a target picked below");
+    Toggle(m, Combat, "Silent aim targets", "aim_enemies", "Enemies", "Cannibals and mutants, babies too");
+    Toggle(m, Combat, "Silent aim targets", "aim_animals", "Animals", "Deer, rabbits, sharks and other wildlife");
+    Toggle(m, Combat, "Silent aim targets", "aim_players", "Other players", "Only in multiplayer");
     Toggle(m, Combat, "Enemies", "one_hit_kill", "One hit enemies", "Enemies die from one hit");
     Slider(m, Combat, "Enemies", "enemy_range", "Range", "For the two buttons below", 5.0f, 200.0f, 50.0f, "%.0f m");
     Action(m, Combat, "Enemies", "kill_in_range", "Kill enemies in range", "Kills every enemy within the range", "Kill");
@@ -115,6 +119,8 @@ void BuildFeatures(Model& m) {
     Toggle(m, Building, "Crafting", "no_item_limit", "No item limit", "Carry as many of each item as you want");
     Toggle(m, Building, "3D printer", "unlimited_resin", "Unlimited printer resin", "The 3D printer never runs out of resin");
     Toggle(m, Building, "3D printer", "fast_printing", "Fast printing", "The 3D printer finishes at once");
+    Toggle(m, Building, "Building", "log_hack", "Endless held logs", "A log you hold and place is not used up");
+    Toggle(m, Building, "Building", "stone_hack", "Endless held stones", "A stone you hold and place is not used up");
     Toggle(m, Building, "Trees", "one_hit_trees", "One hit cut trees", "One swing cuts a tree");
     Toggle(m, Building, "Trees", "instant_tree_fall", "Instant tree falling", "Cut trees fall right away");
 
@@ -139,6 +145,7 @@ void BuildFeatures(Model& m) {
     Action(m, Spawner, "Items", "spawner", "Spawn items", "Drop items in front of you", "Open");
     Action(m, Spawner, "Items", "instant_loadout", "Loadout loader", "Guns, ammo, GPS and more in one press", "Open");
     Action(m, Spawner, "Items", "add_all_items", "Add all items", "Every item in the game goes in your inventory", "Apply");
+    Action(m, Spawner, "Items", "add_blueprints", "Add blueprints", "Pick the Blueprints chip to see every blueprint you don't have", "Open");
     Action(m, Spawner, "Spawn", "vehicle_spawner", "Spawn vehicle", "Spawn a vehicle in front of you", "Open");
     Action(m, Spawner, "Spawn", "creature_spawner", "Spawn enemies and creatures", "Spawn enemies and animals near you", "Open");
     Action(m, Spawner, "Spawn", "remove_spawned_creatures", "Remove creatures I spawned", "Works until you load a save again", "Remove");
@@ -147,8 +154,11 @@ void BuildFeatures(Model& m) {
     for (const char* id : {"add_items", "spawner", "creature_spawner", "instant_loadout", "map"})
         if (Feature* f = m.find(id)) f->page = id;
     if (Feature* f = m.find("vehicle_spawner")) f->page = "spawner";
-    for (const char* id : {"strength_levels", "enemy_range"})
+    if (Feature* f = m.find("add_blueprints")) f->page = "add_items";
+    for (const char* id : {"strength_levels", "enemy_range", "aim_enemies", "aim_animals", "aim_players"})
         if (Feature* f = m.find(id)) f->counts = false;
+    for (const char* id : {"aim_enemies", "aim_animals"})
+        if (Feature* f = m.find(id)) f->on = true;
     m.mapDrawn = true;
 
     m.gameName = "Sons of the Forest";

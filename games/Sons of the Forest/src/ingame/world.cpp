@@ -54,7 +54,7 @@ struct Refs {
     Fld smActiveType, gsInstance;
     Method *smSave = nullptr, *smSaveToSlot = nullptr, *smFolder = nullptr, *smIds = nullptr, *smLoading = nullptr, *gsmType = nullptr,
            *gsmGameId = nullptr, *csSlot = nullptr, *gsGetName = nullptr, *gsSetName = nullptr, *gsIsGenerated = nullptr,
-           *gsUpdateName = nullptr, *gsNewName = nullptr;
+           *gsUpdateName = nullptr, *gsNewName = nullptr, *csSavePlayer = nullptr;
     int clientType = 2;
 } R;
 
@@ -82,6 +82,10 @@ bool SaveReady() {
     return save && R.smFolder && R.smIds && R.gsmType && R.gsmGameId && R.csSlot;
 }
 
+bool GuestSaveReady() { return R.csSavePlayer && R.smFolder && R.smIds && R.gsmType && R.gsmGameId && R.csSlot; }
+
+bool Guest(const Ctx& c) { return c.session == core::Session::Client; }
+
 patch::Forced<float> frozen;
 double frozenSince = 0;
 bool frozenNoted = false;
@@ -93,7 +97,7 @@ void ReleaseTime() {
 
 void StopTime(const Ctx& c) {
     if (!TimeReady()) return;
-    bool want = c.inWorld && c.s.On("stop_time");
+    bool want = c.inWorld && !Guest(c) && c.s.On("stop_time");
     Object* tod = want ? Live(un::Static(R.todInstance)) : nullptr;
     bool had = frozen.have;
     Object* before = frozen.obj.get();
@@ -488,6 +492,73 @@ bool CallSave(int type, Object* name, int id) {
     return ok;
 }
 
+void GuestSave(const Ctx& c, int type) {
+    Object* gameId = un::Call(R.gsmGameId, nullptr);
+    uint32_t slot = 0;
+    if (Filled(gameId)) {
+        bool found = false;
+        Object* boxed = un::Call(R.csSlot, nullptr, {&type, gameId}, &found);
+        if (!found) {
+            Note("Saving failed, the list of saves could not be read");
+            return;
+        }
+        slot = il2::Result<uint32_t>(boxed, 0);
+    }
+    int client = R.clientType;
+    int id = (int)slot;
+    fs::path dir;
+    fs::file_time_type before = fs::file_time_type::min();
+    std::wstring backup;
+    int countBefore = 0;
+    if (slot != 0) {
+        std::wstring folder = Widen(il2::Str(un::Call(R.smFolder, nullptr, {&client, &id})));
+        if (folder.empty()) {
+            Note("Saving failed, your character's save folder was not found");
+            return;
+        }
+        dir = fs::path(folder);
+        if (!BackupSlot(dir, slot, backup)) {
+            Note("Could not back up your old character save, nothing was saved");
+            LOG("instant save (guest): backup of slot %010u failed", (unsigned)slot);
+            return;
+        }
+        before = DataTime(dir);
+    } else {
+        countBefore = SaveCount(client);
+        if (countBefore < 0) {
+            Note("Saving failed, the list of saves could not be read");
+            return;
+        }
+    }
+    lastSave = c.now;
+    bool ok = false;
+    un::Call(R.csSavePlayer, nullptr, {}, &ok);
+    if (!ok) {
+        Note("Saving failed, see fathom.log");
+        LOG("instant save (guest): the game's player save call failed: %s", il2::LastException().c_str());
+        return;
+    }
+    if (slot != 0) {
+        fs::file_time_type after = DataTime(dir);
+        if (after == fs::file_time_type::min() || after == before) {
+            Note("The game did not write your character save, see fathom.log");
+            LOG("instant save (guest): slot %010u was not rewritten", (unsigned)slot);
+            return;
+        }
+        Note(backup.empty() ? "Saved your character, the host saves the world"
+                            : "Saved your character, the old one was copied to Fathom's save-backups folder");
+        LOG("instant save (guest): wrote character slot %010u", (unsigned)slot);
+    } else {
+        if (SaveCount(client) <= countBefore) {
+            Note("The game did not write your character save, see fathom.log");
+            LOG("instant save (guest): no new character slot appeared");
+            return;
+        }
+        Note("Saved your character, the host saves the world");
+        LOG("instant save (guest): wrote a new character slot");
+    }
+}
+
 void InstantSave(const Ctx& c) {
     if (c.now - lastSave < 3.0) {
         Note("Still saving, try again in a moment");
@@ -507,8 +578,13 @@ void InstantSave(const Ctx& c) {
         Note("Saving failed, the game did not say what kind of game this is");
         return;
     }
-    if (type == R.clientType) {
-        Note("Only the host can save this game");
+    if (Guest(c) || type == R.clientType) {
+        if (GuestSaveReady()) GuestSave(c, type);
+        else Note("Only the host can save this game");
+        return;
+    }
+    if (!SaveReady()) {
+        Note("Saving is not available right now");
         return;
     }
     Object* gameId = un::Call(R.gsmGameId, nullptr);
@@ -654,7 +730,10 @@ bool Resolve(std::string& err) {
         R.gsmType = un::M(R.setupManager, "GetSaveGameType", 0);
         R.gsmGameId = un::M(R.setupManager, "GetGameId", 0);
     }
-    if ((R.coopSave = un::C("Sons.Multiplayer", "Sons.Multiplayer", "CoopSaveUtils"))) R.csSlot = un::M(R.coopSave, "GetSaveIdForGuid", 2);
+    if ((R.coopSave = un::C("Sons.Multiplayer", "Sons.Multiplayer", "CoopSaveUtils"))) {
+        R.csSlot = un::M(R.coopSave, "GetSaveIdForGuid", 2);
+        R.csSavePlayer = un::M(R.coopSave, "SavePlayerData", 0);
+    }
     if ((R.gameState = un::C("Sons.Gameplay.GameSetup", "Sons.Save", "GameState"))) {
         R.gsInstance = un::F(R.gameState, "_instance");
         R.gsGetName = un::M(R.gameState, "GetGameName", 0);
@@ -664,9 +743,10 @@ bool Resolve(std::string& err) {
         R.gsNewName = un::M(R.gameState, "GenerateSaveGameName", 0);
     }
 
-    bool t = TimeReady(), b = BrightReady(), f = FovReady(), k = ConsoleReady(), s = SaveReady();
-    LOG("world parts: time %d, brightness %d, field of view %d, console %d, save %d", t ? 1 : 0, b ? 1 : 0, f ? 1 : 0, k ? 1 : 0, s ? 1 : 0);
-    if (!t && !b && !f && !k && !s) {
+    bool t = TimeReady(), b = BrightReady(), f = FovReady(), k = ConsoleReady(), s = SaveReady(), g = GuestSaveReady();
+    LOG("world parts: time %d, brightness %d, field of view %d, console %d, save %d, guest save %d", t ? 1 : 0, b ? 1 : 0, f ? 1 : 0,
+        k ? 1 : 0, s ? 1 : 0, g ? 1 : 0);
+    if (!t && !b && !f && !k && !s && !g) {
         err = "none of the world parts were found";
         return false;
     }
@@ -678,7 +758,7 @@ bool Supported(const std::string& id) {
     if (id == "brightness") return BrightReady();
     if (id == "fov") return FovReady();
     if (id == "enable_console") return ConsoleReady();
-    if (id == "instant_save") return SaveReady();
+    if (id == "instant_save") return SaveReady() || GuestSaveReady();
     return false;
 }
 
@@ -690,7 +770,7 @@ void Tick(const Ctx& c) {
 }
 
 bool Action(const std::string& id, const Ctx& c) {
-    if (id != "instant_save" || !SaveReady()) return false;
+    if (id != "instant_save" || !(SaveReady() || GuestSaveReady())) return false;
     InstantSave(c);
     return true;
 }

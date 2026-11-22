@@ -31,24 +31,36 @@ const char* kBallistics = "BulletBallistics";
 
 const float kPi = 3.14159265f;
 const float kAimRange = 150.0f;
+const float kAimMin = 0.5f;
 const float kAimCone = 30.0f;
 const float kRecoilLimit = 45.0f;
+const float kKillMult = 1000.0f;
+const float kKillCone = 10.0f;
+const float kMeleeCone = 15.0f;
+const float kMeleeReach = 4.0f;
+const float kPlayerHead = 1.6f;
 const double kScanEvery = 0.05;
+const double kKillHold = 0.25;
+const double kBusyWindow = 2.0;
+const double kRigRetry = 2.0;
 
 enum HeldKind { K_RANGED = 1, K_BOW = 2, K_THROWN = 4, K_ROPE = 8, K_MELEE = 16, K_FLASH = 32 };
 enum HookId { H_SPENT, H_BOW_SPENT, H_SHOOT, H_ARMOUR, H_COUNT };
+enum TargetKind { T_ACTOR, T_PLAYER };
 
 struct Refs {
     Class *localPlayer = nullptr, *inventory = nullptr, *itemInstance = nullptr, *held = nullptr, *ranged = nullptr, *bow = nullptr,
           *melee = nullptr, *flashlight = nullptr, *ropeGun = nullptr, *rangedWeapon = nullptr, *ammo = nullptr, *weapon = nullptr,
           *ammoProps = nullptr, *bulletInfo = nullptr, *projectileInfo = nullptr, *ballistics = nullptr, *bulletHandler = nullptr,
           *ballisticSettings = nullptr, *itemData = nullptr, *meleeData = nullptr, *weaponInfo = nullptr, *armourSystem = nullptr,
-          *slotData = nullptr, *playerStats = nullptr, *actorManager = nullptr, *actor = nullptr, *vailTypes = nullptr;
+          *slotData = nullptr, *playerStats = nullptr, *actorManager = nullptr, *actor = nullptr, *vailTypes = nullptr,
+          *tracker = nullptr, *mpUtil = nullptr, *boltEntity = nullptr, *remoteSetup = nullptr;
     std::vector<Class*> thrown;
     Fld lpInventory, lpCamTr, lpStats;
     Fld invSlots, invView;
     Fld iiData, iiObject;
     Fld rcWeapon, mcInfo, flDrain;
+    Fld rcFireDelay, rcNextFire, rcAttack, rcCharging, rcWeaponAnim, hcAnimator;
     Fld rwAmmo, rwNpc, rwScreen, rwLocal, rwItemData, rwSpawn, rwController, wSpawn;
     Fld amInternal, amMax, amCur, amProps;
     Fld apScatter, apProjectile;
@@ -59,18 +71,22 @@ struct Refs {
     Fld asSlots, sdPiece, sdPoints;
     Fld psArmour, psDying;
     Fld mgrInstance, mgrActive;
-    Fld vaId, vaDead, vaDamage, vaHead;
+    Fld vaId, vaDead, vaDamage, vaHead, vaCapHeight, vaCapCenter, vaScale, vaCtrl;
+    Fld trInstance, trEntities, mpEntities, rsAnimator;
     Method *rcGetWeapon = nullptr, *rcReload = nullptr, *rwLaser = nullptr, *amAvailable = nullptr, *zeroing = nullptr,
-           *vaDying = nullptr, *vtClass = nullptr, *vtFriendly = nullptr;
+           *vaDying = nullptr, *vtClass = nullptr, *vtFriendly = nullptr, *colBounds = nullptr;
+    Method *animGetSpeed = nullptr, *animSetSpeed = nullptr, *animBone = nullptr, *beAttached = nullptr, *beControl = nullptr;
     Method *spent = nullptr, *bowSpent = nullptr, *shoot = nullptr, *armourCalc = nullptr;
     int viewWorld = 2, aliveState = 0;
     int clsCannibal = 1, clsCreepy = 2, clsAnimal = 3;
     int friends[4] = {8, 9, 10, 100};
+    int headBone = 10;
     std::vector<int> shotTypes;
 } R;
 
 struct Support {
-    bool ammo = false, reload = false, recoil = false, damage = false, aim = false, armour = false, flash = false;
+    bool ammo = false, reload = false, recoil = false, damage = false, aim = false, armour = false, flash = false, rate = false,
+         players = false;
 } support;
 
 using SpentFn = void (*)(Object*, const void*);
@@ -104,10 +120,38 @@ Hand hands[2];
 struct Target {
     uint32_t h = 0;
     Object* raw = nullptr;
+    int kind = T_ACTOR;
+    int cls = 0;
+    bool body = false;
     Vec3 head, vel;
     bool hasHead = false;
 };
 Target target;
+
+struct AimFilter {
+    bool enemies = true, animals = true, players = false;
+};
+AimFilter filter;
+
+struct Rig {
+    uint32_t ent = 0;
+    uint32_t head = 0;
+    double retry = 0;
+    bool seen = false;
+};
+std::unordered_map<Object*, Rig> rigs;
+
+struct Speed {
+    patch::Hold obj;
+    float base = 1.0f, written = 1.0f;
+    bool have = false;
+};
+Speed sSpeed[2];
+patch::Scaled sFire;
+Object* fireCtrl = nullptr;
+float lastNext = 0;
+double busyUntil = 0;
+std::unordered_map<Class*, Method*> idles;
 
 struct Burst {
     Object* weapon = nullptr;
@@ -136,7 +180,9 @@ ListShape shapes[4];
 
 struct Cand {
     Object* actor = nullptr;
-    Vec3 head;
+    int kind = T_ACTOR;
+    int cls = 0;
+    Vec3 head, body;
     float dist = 0, cosine = 0;
 };
 
@@ -146,7 +192,11 @@ std::unordered_map<Class*, Method*> reloads;
 patch::Scaled sAmmo, sMelee, sCharge, sSmash;
 patch::Forced<float> sFlash[2];
 
-double nextScan = 0, reloadWait = 0;
+struct Box {
+    Vec3 center, extents;
+};
+
+double nextScan = 0, reloadWait = 0, killNext = 0, killUntil = 0;
 Object* lastPlayer = nullptr;
 LONGLONG tickRate = 0;
 
@@ -283,6 +333,8 @@ Object* SpawnOf(Object* rw) {
     return un::Alive(s) ? s : nullptr;
 }
 
+bool EnemyClass(int cls) { return cls == R.clsCannibal || cls == R.clsCreepy; }
+
 bool Targetable(int id, int& cls) {
     cls = 0;
     if (id <= 0 || id >= 128) return false;
@@ -300,15 +352,127 @@ bool Targetable(int id, int& cls) {
         t.known = true;
     }
     cls = t.cls;
-    return !t.friendly && (cls == R.clsCannibal || cls == R.clsCreepy || cls == R.clsAnimal);
+    return !t.friendly && (EnemyClass(cls) || cls == R.clsAnimal);
 }
 
-bool HeadOf(Object* actor, int cls, Vec3& out) {
+bool Allowed(int kind, int cls) {
+    if (kind == T_PLAYER) return filter.players;
+    if (cls == R.clsAnimal) return filter.animals;
+    return filter.enemies && EnemyClass(cls);
+}
+
+bool Capsule(Object* actor, Vec3 root, Vec3& top, Vec3& mid, float& reach) {
+    Object* ctl = R.colBounds ? un::Ref(actor, R.vaCtrl) : nullptr;
+    if (ctl && un::Alive(ctl)) {
+        bool ok = false;
+        Object* r = un::Call(R.colBounds, ctl, {}, &ok);
+        Box b = ok ? il2::Result<Box>(r, Box{}) : Box{};
+        float hy = b.extents.y;
+        if (ok && Finite(b.center) && Finite(b.extents) && hy > 0.025f && hy < 10.0f && un::Dist(b.center, root) < hy + 3.0f) {
+            top = un::Add(b.center, Vec3{0, hy * 0.8f, 0});
+            mid = b.center;
+            reach = hy + 0.75f;
+            return true;
+        }
+    }
+    if (!R.vaCapHeight || !R.vaCapCenter) return false;
+    float h = un::Val<float>(actor, R.vaCapHeight);
+    Vec3 cc = un::Val<Vec3>(actor, R.vaCapCenter);
+    float s = un::Val<float>(actor, R.vaScale, 1.0f);
+    if (!(s > 0.05f && s < 20.0f)) s = 1.0f;
+    if (!(h > 0.05f && h < 20.0f) || !Finite(cc) || std::fabs(cc.y) > 20.0f) return false;
+    top = un::Add(root, Vec3{0, (cc.y + h * 0.4f) * s, 0});
+    mid = un::Add(root, Vec3{0, cc.y * s, 0});
+    reach = h * s * 0.5f + 0.75f;
+    return Finite(top) && Finite(mid);
+}
+
+bool ActorPoints(Object* actor, int cls, Vec3& head, Vec3& body) {
+    Vec3 root, top, mid, j;
+    float reach = 0;
+    bool haveRoot = Pos(actor, root);
+    bool cap = haveRoot && Capsule(actor, root, top, mid, reach);
     Object* joint = un::Ref(actor, R.vaHead);
-    if (un::Alive(joint) && Pos(joint, out)) return true;
-    Vec3 p;
-    if (!Pos(actor, p)) return false;
-    out = un::Add(p, Vec3{0, cls == R.clsAnimal ? 0.5f : 1.6f, 0});
+    if (un::Alive(joint) && Pos(joint, j) && (!cap || un::Dist(j, mid) <= reach)) {
+        head = j;
+        body = cap ? mid : j;
+        return true;
+    }
+    if (cap) {
+        head = top;
+        body = mid;
+        return true;
+    }
+    if (!haveRoot) return false;
+    bool animal = cls == R.clsAnimal;
+    head = un::Add(root, Vec3{0, animal ? 0.5f : 1.6f, 0});
+    body = un::Add(root, Vec3{0, animal ? 0.3f : 1.0f, 0});
+    return true;
+}
+
+void UnpinRig(Rig& r) {
+    if (r.ent) il2::Unpin(r.ent);
+    if (r.head) il2::Unpin(r.head);
+    r = Rig{};
+}
+
+void ClearRigs() {
+    for (auto& e : rigs) UnpinRig(e.second);
+    rigs.clear();
+}
+
+Object* FindHead(Object* ent) {
+    if (!R.animBone) return nullptr;
+    Object* anim = nullptr;
+    Object* setup = R.remoteSetup ? un::CompInChildren(ent, R.remoteSetup, false) : nullptr;
+    if (setup) anim = un::Ref(setup, R.rsAnimator);
+    if (!un::Alive(anim) && un::E.animator) anim = un::CompInChildren(ent, un::E.animator, false);
+    if (!un::Alive(anim)) return nullptr;
+    int bone = R.headBone;
+    Object* t = un::Call(R.animBone, anim, {&bone});
+    return un::Alive(t) ? t : nullptr;
+}
+
+Object* RigHead(Object* ent, double now) {
+    auto it = rigs.find(ent);
+    if (it != rigs.end() && il2::Pinned(it->second.ent) != ent) {
+        UnpinRig(it->second);
+        rigs.erase(it);
+        it = rigs.end();
+    }
+    if (it == rigs.end()) {
+        if (now < 0) return nullptr;
+        Rig r;
+        r.ent = il2::Weak(ent);
+        it = rigs.emplace(ent, r).first;
+    }
+    Rig& r = it->second;
+    r.seen = true;
+    if (r.head) {
+        Object* h = il2::Pinned(r.head);
+        if (h && un::Alive(h)) return h;
+        il2::Unpin(r.head);
+        r.head = 0;
+    }
+    if (now < 0 || now < r.retry) return nullptr;
+    r.retry = now + kRigRetry;
+    Object* t = FindHead(ent);
+    if (t) r.head = il2::Weak(t);
+    return t;
+}
+
+bool PlayerPoints(Object* ent, double now, Vec3& head, Vec3& body) {
+    Vec3 root, p;
+    if (!Pos(ent, root)) return false;
+    Object* h = RigHead(ent, now);
+    if (h && Pos(h, p) && un::Dist(p, root) < 3.0f) {
+        head = p;
+        body = un::Mul(un::Add(p, root), 0.5f);
+        if (un::Dist(head, body) < 0.2f) body = head;
+        return true;
+    }
+    head = un::Add(root, Vec3{0, kPlayerHead, 0});
+    body = un::Add(root, Vec3{0, 1.0f, 0});
     return true;
 }
 
@@ -317,26 +481,51 @@ void DropTarget() {
     target = Target{};
 }
 
-void SetTarget(Object* actor, Vec3 head) {
-    if (target.h && target.raw == actor && il2::Pinned(target.h) == actor) return;
+Object* TargetObj() {
+    if (!target.h) return nullptr;
+    Object* a = il2::Pinned(target.h);
+    if (!a || a != target.raw || !un::Alive(a)) return nullptr;
+    if (target.kind == T_ACTOR) return un::Val<bool>(a, R.vaDead) ? nullptr : a;
+    if (R.beAttached && !un::CallBool(R.beAttached, a, {}, false)) return nullptr;
+    return a;
+}
+
+bool Fresh(Object* o, Vec3& out) {
+    Vec3 head, body;
+    bool ok = target.kind == T_PLAYER ? PlayerPoints(o, -1.0, head, body) : ActorPoints(o, target.cls, head, body);
+    if (!ok) return false;
+    out = target.body ? body : head;
+    return Finite(out);
+}
+
+void SetTarget(const Cand& k, Vec3 point, bool body) {
+    if (target.h && target.raw == k.actor && il2::Pinned(target.h) == k.actor) {
+        if (target.body != body) {
+            target.body = body;
+            target.head = point;
+            target.hasHead = true;
+        }
+        return;
+    }
     DropTarget();
-    target.h = il2::Weak(actor);
-    target.raw = actor;
-    target.head = head;
+    target.h = il2::Weak(k.actor);
+    target.raw = k.actor;
+    target.kind = k.kind;
+    target.cls = k.cls;
+    target.body = body;
+    target.head = point;
     target.hasHead = true;
 }
 
 void TrackTarget(float dt) {
     if (!target.h) return;
-    Object* a = il2::Pinned(target.h);
-    if (!a || a != target.raw || !un::Alive(a) || un::Val<bool>(a, R.vaDead)) {
+    Object* a = TargetObj();
+    if (!a || !Allowed(target.kind, target.cls)) {
         DropTarget();
         return;
     }
-    int cls = 0;
-    Targetable(un::Val<int>(a, R.vaId), cls);
     Vec3 head;
-    if (!HeadOf(a, cls, head)) return;
+    if (!Fresh(a, head)) return;
     if (dt > 0.0005f && target.hasHead) {
         Vec3 v = un::Mul(un::Sub(head, target.head), 1.0f / dt);
         if (!Finite(v) || un::Len(v) > 40.0f) v = Vec3{};
@@ -354,7 +543,82 @@ bool Visible(Vec3 from, Vec3 to, float dist, int mask) {
     return hit.distance >= dist - 1.0f;
 }
 
-void Scan(Object* rw) {
+bool Consider(Cand& k, Vec3 pos, Vec3 fwd, float minCos) {
+    Vec3 to = un::Sub(k.head, pos);
+    float d = un::Len(to);
+    if (!(d >= kAimMin && d <= kAimRange)) return false;
+    float cs = un::Dot(to, fwd) / d;
+    if (!(cs >= minCos)) return false;
+    k.dist = d;
+    k.cosine = cs;
+    return true;
+}
+
+void ActorCands(Vec3 pos, Vec3 fwd, float minCos, std::vector<Cand>& cands) {
+    Object* mgr = un::Static(R.mgrInstance);
+    Object** items = nullptr;
+    int count = 0;
+    if (!un::Alive(mgr) || !ListRead(un::Ref(mgr, R.mgrActive), items, count) || !items) return;
+    std::vector<Object*> actors(items, items + count);
+    for (Object* a : actors) {
+        if (!a || !un::Alive(a) || un::Val<bool>(a, R.vaDead)) continue;
+        if (!un::Val<bool>(a, R.vaDamage, true)) continue;
+        int cls = 0;
+        if (!Targetable(un::Val<int>(a, R.vaId), cls) || !Allowed(T_ACTOR, cls)) continue;
+        Cand k;
+        k.actor = a;
+        k.kind = T_ACTOR;
+        k.cls = cls;
+        if (!ActorPoints(a, cls, k.head, k.body)) continue;
+        if (Consider(k, pos, fwd, minCos)) cands.push_back(k);
+    }
+}
+
+void AddEntities(Object* list, std::vector<Object*>& out) {
+    Object** items = nullptr;
+    int count = 0;
+    if (!list || !ListRead(list, items, count) || !items) return;
+    for (int i = 0; i < count; ++i)
+        if (items[i] && std::find(out.begin(), out.end(), items[i]) == out.end()) out.push_back(items[i]);
+}
+
+void Remotes(Vec3 pos, float minDist, std::vector<Object*>& out) {
+    std::vector<Object*> ents;
+    Object* tracker = un::Static(R.trInstance);
+    if (un::Alive(tracker)) AddEntities(un::Ref(tracker, R.trEntities), ents);
+    AddEntities(un::Static(R.mpEntities), ents);
+    for (Object* e : ents) {
+        if (!un::Alive(e) || (R.boltEntity && !il2::IsSubclass(il2::ClassOf(e), R.boltEntity))) continue;
+        if (!un::CallBool(R.beAttached, e, {}, false)) continue;
+        if (R.beControl && un::CallBool(R.beControl, e, {}, true)) continue;
+        Vec3 root;
+        if (!Pos(e, root) || un::Dist(root, pos) < minDist) continue;
+        out.push_back(e);
+    }
+}
+
+void PlayerCands(Vec3 pos, Vec3 fwd, float minCos, double now, std::vector<Cand>& cands) {
+    std::vector<Object*> ents;
+    Remotes(pos, 1.5f, ents);
+    for (auto& e : rigs) e.second.seen = false;
+    for (Object* e : ents) {
+        Cand k;
+        k.actor = e;
+        k.kind = T_PLAYER;
+        if (!PlayerPoints(e, now, k.head, k.body)) continue;
+        if (Consider(k, pos, fwd, minCos)) cands.push_back(k);
+    }
+    for (auto it = rigs.begin(); it != rigs.end();) {
+        if (it->second.seen) {
+            ++it;
+            continue;
+        }
+        UnpinRig(it->second);
+        it = rigs.erase(it);
+    }
+}
+
+void Scan(Object* rw, double now) {
     Object* cam = un::Static(R.lpCamTr);
     Vec3 pos, fwd;
     if (!un::Alive(cam) || !Pos(cam, pos) || !Fwd(cam, fwd)) {
@@ -362,47 +626,28 @@ void Scan(Object* rw) {
         return;
     }
     fwd = un::Norm(fwd);
-    Object* mgr = un::Static(R.mgrInstance);
-    Object** items = nullptr;
-    int count = 0;
-    if (!un::Alive(mgr) || !ListRead(un::Ref(mgr, R.mgrActive), items, count) || !items) {
-        DropTarget();
-        return;
-    }
-    std::vector<Object*> actors(items, items + count);
     Object* info = ShotInfo(rw, nullptr);
     int mask = info ? un::Val<int>(info, R.biMask) : 0;
     if (mask == 0) mask = ~0;
     float minCos = std::cos(kAimCone * kPi / 180.0f);
     std::vector<Cand> cands;
-    for (Object* a : actors) {
-        if (!a || !un::Alive(a) || un::Val<bool>(a, R.vaDead)) continue;
-        if (!un::Val<bool>(a, R.vaDamage, true)) continue;
-        int cls = 0;
-        if (!Targetable(un::Val<int>(a, R.vaId), cls)) continue;
-        Vec3 head;
-        if (!HeadOf(a, cls, head)) continue;
-        Vec3 to = un::Sub(head, pos);
-        float d = un::Len(to);
-        if (!(d >= 1.0f && d <= kAimRange)) continue;
-        float cs = un::Dot(to, fwd) / d;
-        if (!(cs >= minCos)) continue;
-        Cand k;
-        k.actor = a;
-        k.head = head;
-        k.dist = d;
-        k.cosine = cs;
-        cands.push_back(k);
-    }
+    if (filter.enemies || filter.animals) ActorCands(pos, fwd, minCos, cands);
+    if (filter.players && support.players) PlayerCands(pos, fwd, minCos, now, cands);
+    else if (!rigs.empty()) ClearRigs();
     std::sort(cands.begin(), cands.end(), [](const Cand& x, const Cand& y) {
         if (x.cosine != y.cosine) return x.cosine > y.cosine;
         return x.dist < y.dist;
     });
     for (size_t i = 0; i < cands.size() && i < 10; ++i) {
         const Cand& k = cands[i];
-        if (!Visible(pos, k.head, k.dist, mask)) continue;
-        if (R.vaDying && un::CallBool(R.vaDying, k.actor)) continue;
-        SetTarget(k.actor, k.head);
+        bool body = false;
+        if (!Visible(pos, k.head, k.dist, mask)) {
+            float bd = un::Dist(k.body, pos);
+            if (un::Dist(k.body, k.head) < 0.05f || !(bd >= kAimMin) || !Visible(pos, k.body, bd, mask)) continue;
+            body = true;
+        }
+        if (k.kind == T_ACTOR && R.vaDying && un::CallBool(R.vaDying, k.actor)) continue;
+        SetTarget(k, body ? k.body : k.head, body);
         return;
     }
     DropTarget();
@@ -412,12 +657,117 @@ void Aim(const Ctx& c, bool on, Object* ctrl, int kind) {
     Object* rw = on && ctrl && (kind & K_RANGED) && !(kind & (K_THROWN | K_ROPE)) ? RangedOf(ctrl) : nullptr;
     if (!rw) {
         if (target.h) DropTarget();
+        if (!rigs.empty()) ClearRigs();
         return;
     }
     TrackTarget(c.dt);
     if (c.now < nextScan) return;
     nextScan = c.now + kScanEvery;
-    Scan(rw);
+    Scan(rw, c.now);
+}
+
+struct Sighted {
+    bool enemy = false;
+    Vec3 point;
+    float dist = 0, cosine = 0;
+};
+
+bool Sight(Vec3 pos, Vec3 fwd, Vec3 head, Vec3 body, float reach, float minCos, Sighted& s) {
+    float best = -2.0f;
+    for (int i = 0; i <= 4; ++i) {
+        Vec3 p = un::Add(body, un::Mul(un::Sub(head, body), i * 0.25f));
+        Vec3 to = un::Sub(p, pos);
+        float d = un::Len(to);
+        if (!(d >= 0.05f)) continue;
+        float cs = un::Dot(to, fwd) / d;
+        if (cs > best) {
+            best = cs;
+            s.point = p;
+            s.dist = d;
+        }
+    }
+    s.cosine = best;
+    return best >= minCos && s.dist <= reach;
+}
+
+int KillScan(Object* ctrl, int kind) {
+    if (!ctrl || !(kind & (K_RANGED | K_MELEE))) return -1;
+    Object* cam = un::Static(R.lpCamTr);
+    Vec3 pos, fwd;
+    if (!un::Alive(cam) || !Pos(cam, pos) || !Fwd(cam, fwd)) return -1;
+    fwd = un::Norm(fwd);
+    bool ranged = (kind & K_RANGED) != 0;
+    float reach = ranged ? kAimRange : kMeleeReach;
+    float minCos = std::cos((ranged ? kKillCone : kMeleeCone) * kPi / 180.0f);
+    int mask = 0;
+    Object* rw = ranged ? RangedOf(ctrl) : nullptr;
+    if (rw) {
+        Object* info = ShotInfo(rw, nullptr);
+        mask = info ? un::Val<int>(info, R.biMask) : 0;
+    }
+    if (mask == 0) mask = ~0;
+    bool aimed = false;
+    if (ranged && aimOn.load() && target.h && TargetObj()) {
+        if (target.kind != T_ACTOR || !EnemyClass(target.cls)) return -1;
+        aimed = true;
+    }
+    std::vector<Sighted> seen;
+    Object* mgr = un::Static(R.mgrInstance);
+    Object** items = nullptr;
+    int count = 0;
+    if (un::Alive(mgr) && ListRead(un::Ref(mgr, R.mgrActive), items, count) && items) {
+        std::vector<Object*> actors(items, items + count);
+        for (Object* a : actors) {
+            if (!a || !un::Alive(a) || un::Val<bool>(a, R.vaDead)) continue;
+            int cls = 0;
+            bool enemy = Targetable(un::Val<int>(a, R.vaId), cls) && EnemyClass(cls);
+            if (enemy && !un::Val<bool>(a, R.vaDamage, true)) continue;
+            Vec3 head, body;
+            if (!ActorPoints(a, cls, head, body)) continue;
+            Sighted s;
+            s.enemy = enemy;
+            if (Sight(pos, fwd, head, body, reach, minCos, s)) seen.push_back(s);
+        }
+    }
+    if (support.players) {
+        std::vector<Object*> ents;
+        Remotes(pos, R.beControl ? 0.0f : 1.5f, ents);
+        for (Object* e : ents) {
+            Vec3 head, body;
+            if (!PlayerPoints(e, -1.0, head, body)) continue;
+            Sighted s;
+            if (Sight(pos, fwd, head, body, reach, minCos, s)) seen.push_back(s);
+        }
+    }
+    std::sort(seen.begin(), seen.end(), [](const Sighted& x, const Sighted& y) {
+        if (x.cosine != y.cosine) return x.cosine > y.cosine;
+        return x.dist < y.dist;
+    });
+    const Sighted* hit = nullptr;
+    int checked = 0;
+    for (const Sighted& s : seen) {
+        if (++checked > 12) break;
+        if (!Visible(pos, s.point, s.dist, mask)) continue;
+        if (!s.enemy) return -1;
+        hit = &s;
+        break;
+    }
+    if (hit) {
+        for (const Sighted& s : seen)
+            if (!s.enemy && s.dist <= hit->dist) return -1;
+        return 1;
+    }
+    return aimed ? 1 : 0;
+}
+
+bool Killing(const Ctx& c, Object* ctrl, int kind) {
+    if (c.now < killNext) return c.now < killUntil;
+    killNext = c.now + kScanEvery;
+    int r = KillScan(ctrl, kind);
+    bool ranged = (kind & K_RANGED) != 0;
+    if (r > 0) killUntil = c.now + (ranged ? kKillHold : kScanEvery * 2.0);
+    else if (r < 0 || !ranged) killUntil = 0;
+    return c.now < killUntil;
 }
 
 bool AimableShot(int type) {
@@ -509,12 +859,11 @@ bool CrosshairPoint(Object* info, Vec3& point) {
 
 bool AimAt(Object* info, Vec3 origin, Vec3& out) {
     if (!info || !target.h || !AimableShot(un::Val<int>(info, R.piType, -1))) return false;
-    Object* actor = il2::Pinned(target.h);
-    if (!actor || actor != target.raw || !un::Alive(actor) || un::Val<bool>(actor, R.vaDead)) return false;
+    Object* actor = TargetObj();
+    if (!actor) return false;
     Vec3 head = target.head;
-    Object* joint = un::Ref(actor, R.vaHead);
     Vec3 fresh;
-    if (un::Alive(joint) && Pos(joint, fresh)) head = fresh;
+    if (Fresh(actor, fresh)) head = fresh;
     else if (!target.hasHead) return false;
     float dist = un::Dist(head, origin);
     if (!(dist >= 0.3f && dist <= kAimRange + 25.0f)) return false;
@@ -779,6 +1128,73 @@ void Flashlight(bool on, Object* right, int rightKind, Object* left, int leftKin
     patch::Force<float>(b, R.flDrain, b != nullptr, 0.0f, sFlash[1]);
 }
 
+void SlowDown(Speed& s) {
+    Object* o = s.obj.get();
+    if (s.have && o && un::Alive(o) && R.animGetSpeed && R.animSetSpeed) {
+        float cur = un::CallFloat(R.animGetSpeed, o, {}, -1.0f);
+        if (std::fabs(cur - s.written) < 1e-4f) un::Call(R.animSetSpeed, o, {&s.base});
+    }
+    s.obj.reset();
+    s.have = false;
+}
+
+void SpeedUp(Object* o, float mult, Speed& s) {
+    if (s.have && s.obj.get() != o) SlowDown(s);
+    if (!o || !un::Alive(o) || mult <= 1.0001f || !R.animGetSpeed || !R.animSetSpeed) {
+        if (s.have) SlowDown(s);
+        return;
+    }
+    float cur = un::CallFloat(R.animGetSpeed, o, {}, -1.0f);
+    if (!std::isfinite(cur) || cur < 0.0f) return;
+    if (!s.have) {
+        s.obj.set(o);
+        s.base = cur;
+        s.have = true;
+    } else if (std::fabs(cur - s.written) > 1e-4f) {
+        s.base = cur;
+    }
+    float want = s.base * mult;
+    if (cur != want) un::Call(R.animSetSpeed, o, {&want});
+    s.written = want;
+}
+
+Method* IdleOf(Class* c) {
+    if (!c) return nullptr;
+    auto it = idles.find(c);
+    if (it != idles.end()) return it->second;
+    Method* m = il2::FindMethod(c, "IsItemIdle", 0);
+    if (m && !il2::MethodPointer(m)) m = nullptr;
+    idles[c] = m;
+    return m;
+}
+
+void FireRate(const Ctx& c, float rate, Object* ctrl, int kind) {
+    Object* f = rate > 1.0001f && ctrl && (kind & K_RANGED) && !(kind & (K_THROWN | K_ROPE)) ? ctrl : nullptr;
+    patch::Scale(f, R.rcFireDelay, f ? 1.0f / rate : 1.0f, sFire);
+    bool busy = false;
+    if (f) {
+        float next = un::Val<float>(f, R.rcNextFire);
+        bool shot = f == fireCtrl && next + 1e-4f < lastNext;
+        if (shot || (R.rcAttack && un::Val<int>(f, R.rcAttack) != 0)) busyUntil = c.now + kBusyWindow;
+        fireCtrl = f;
+        lastNext = next;
+        if (R.rcCharging && un::Val<bool>(f, R.rcCharging)) {
+            busy = true;
+        } else if (c.now < busyUntil) {
+            Method* idle = IdleOf(il2::ClassOf(f));
+            busy = !idle || !un::CallBool(idle, f, {}, true);
+        }
+    } else {
+        fireCtrl = nullptr;
+        lastNext = 0;
+        busyUntil = 0;
+    }
+    Object* pa = busy ? un::Ref(f, R.hcAnimator) : nullptr;
+    Object* wa = busy ? un::Ref(f, R.rcWeaponAnim) : nullptr;
+    SpeedUp(un::Alive(pa) ? pa : nullptr, rate, sSpeed[0]);
+    SpeedUp(un::Alive(wa) && wa != pa ? wa : nullptr, rate, sSpeed[1]);
+}
+
 void ReleaseAll() {
     ammoOn.store(false);
     recoilOn.store(false);
@@ -791,12 +1207,21 @@ void ReleaseAll() {
     UnscalePlain(sSmash, R.mdSmash);
     patch::Release(sFlash[0], R.flDrain);
     patch::Release(sFlash[1], R.flDrain);
+    patch::Unscale(sFire, R.rcFireDelay);
+    SlowDown(sSpeed[0]);
+    SlowDown(sSpeed[1]);
+    fireCtrl = nullptr;
+    lastNext = 0;
+    busyUntil = 0;
+    ClearRigs();
     DropTarget();
     ClearHand(hands[0]);
     ClearHand(hands[1]);
     burst = Burst{};
     nextScan = 0;
     reloadWait = 0;
+    killNext = 0;
+    killUntil = 0;
     lastPlayer = nullptr;
 }
 
@@ -810,7 +1235,8 @@ void Publish() {
     for (core::Feature& f : model->features) {
         int bit = 0;
         if (f.id == "unlimited_ammo") bit = 1 << H_SPENT;
-        else if (f.id == "no_recoil" || f.id == "silent_aim") bit = 1 << H_SHOOT;
+        else if (f.id == "no_recoil" || f.id == "silent_aim" || f.id == "aim_enemies" || f.id == "aim_animals" || f.id == "aim_players")
+            bit = 1 << H_SHOOT;
         else if (f.id == "unbreakable_armor") bit = 1 << H_ARMOUR;
         if (!(fresh & bit)) continue;
         f.available = false;
@@ -897,6 +1323,16 @@ bool Resolve(std::string& err) {
     if (R.bowSpent && il2::MethodPointer(R.bowSpent) == il2::MethodPointer(R.spent)) R.bowSpent = nullptr;
     R.mcInfo = un::F(R.melee, "_weaponInfo");
     R.flDrain = un::F(R.flashlight, "_powerDrainRate");
+    R.rcFireDelay = un::F(R.ranged, "_fireDelay");
+    R.rcNextFire = un::F(R.ranged, "_nextFireDelay");
+    R.rcAttack = un::F(R.ranged, "_attackState");
+    R.rcCharging = un::F(R.ranged, "_isCharging");
+    R.rcWeaponAnim = un::F(R.ranged, "_weaponAnimator");
+    R.hcAnimator = un::F(R.held, "_playerAnimator");
+    R.animGetSpeed = un::M(un::E.animator, "get_speed", 0);
+    R.animSetSpeed = un::M(un::E.animator, "set_speed", std::vector<std::string>{"System.Single"});
+    R.animBone = un::M(un::E.animator, "GetBoneTransform", 1);
+    R.headBone = (int)il2::EnumValue(un::C("UnityEngine.AnimationModule", "UnityEngine", "HumanBodyBones"), "Head", 10);
 
     R.rangedWeapon = un::C(kSons, "Sons.Weapon", "RangedWeapon");
     R.rwAmmo = un::F(R.rangedWeapon, "_ammo");
@@ -977,6 +1413,11 @@ bool Resolve(std::string& err) {
     R.vaDead = un::F(R.actor, "_isDead");
     R.vaDamage = un::F(R.actor, "_damageEnabled");
     R.vaHead = un::F(R.actor, "_visionHeadJoint");
+    R.vaCapHeight = un::F(R.actor, "_capsuleHeight");
+    R.vaCapCenter = un::F(R.actor, "_capsuleCenter");
+    R.vaScale = un::F(R.actor, "_actorScaleMult");
+    R.vaCtrl = un::F(R.actor, "_characterController");
+    R.colBounds = un::M(un::E.collider, "get_bounds", 0);
     R.vaDying = un::M(R.actor, "IsDying", 0);
     R.vailTypes = un::C(kVail, "Sons.Ai.Vail", "VailTypes");
     R.vtClass = un::M(R.vailTypes, "GetActorClass", 1);
@@ -989,6 +1430,17 @@ bool Resolve(std::string& err) {
     const char* friendNames[4] = {"Timmy", "Robby", "Virginia", "PlayerRobby"};
     for (int i = 0; i < 4; ++i) R.friends[i] = (int)il2::EnumValue(typeId, friendNames[i], R.friends[i]);
 
+    R.boltEntity = un::C("bolt", "", "BoltEntity");
+    R.beAttached = R.boltEntity ? il2::Getter(R.boltEntity, "isAttached") : nullptr;
+    R.beControl = R.boltEntity ? il2::Getter(R.boltEntity, "hasControl") : nullptr;
+    R.tracker = un::C(kSons, "", "PlayerTracker");
+    R.trInstance = un::F(R.tracker, "_instance");
+    R.trEntities = un::F(R.tracker, "AllPlayerEntities");
+    R.mpUtil = un::C("Sons.Multiplayer", "Sons.Multiplayer", "MultiplayerUtilities");
+    R.mpEntities = un::F(R.mpUtil, "_playerEntities");
+    R.remoteSetup = un::C(kSons, "Sons.Multiplayer.Client", "CoopPlayerRemoteSetup");
+    R.rsAnimator = un::F(R.remoteSetup, "_playerAnimator");
+
     bool hands = R.lpInventory && R.invSlots && R.iiObject && R.held && un::E.compGetComponentInChildren;
     bool spawn = R.wSpawn || R.rwSpawn;
     bool shot = il2::MethodPointer(R.shoot) && R.rwLocal && spawn && R.lpCamTr && un::E.raycast && un::E.trForward;
@@ -1000,12 +1452,16 @@ bool Resolve(std::string& err) {
                   R.rwAmmo && R.amProps && R.apProjectile && R.piType;
     support.armour = il2::MethodPointer(R.armourCalc) && R.asSlots && R.sdPiece && R.sdPoints && R.lpStats && R.psArmour;
     support.flash = hands && R.flashlight && R.flDrain;
+    support.rate = hands && R.ranged && R.rcFireDelay && R.rcNextFire;
+    support.players = R.beAttached && R.trInstance && R.trEntities;
+    if (!support.players) support.players = R.beAttached && R.mpEntities;
 
     std::string off;
     const std::pair<const char*, bool> parts[] = {{"unlimited ammo", support.ammo}, {"no reload", support.reload},
                                                   {"no recoil", support.recoil},    {"weapon damage", support.damage},
                                                   {"silent aim", support.aim},      {"unbreakable armor", support.armour},
-                                                  {"flashlight", support.flash}};
+                                                  {"flashlight", support.flash},    {"fire rate", support.rate},
+                                                  {"silent aim on players", support.aim && support.players}};
     for (const auto& p : parts)
         if (!p.second) off += std::string(off.empty() ? "" : ", ") + p.first;
     if (!off.empty()) LOG("Combat cheats not available: %s", off.c_str());
@@ -1018,6 +1474,8 @@ bool Supported(const std::string& id) {
     if (id == "no_recoil") return support.recoil;
     if (id == "weapon_damage") return support.damage;
     if (id == "silent_aim") return support.aim;
+    if (id == "aim_enemies" || id == "aim_animals" || id == "aim_players") return support.aim;
+    if (id == "fire_rate") return support.rate;
     if (id == "unbreakable_armor") return support.armour;
     if (id == "unlimited_flashlight") return support.flash;
     return false;
@@ -1041,7 +1499,15 @@ void Tick(const Ctx& c) {
     bool armour = support.armour && (live & (1 << H_ARMOUR)) && c.s.On("unbreakable_armor");
     bool flash = support.flash && c.s.On("unlimited_flashlight");
     float mult = support.damage ? std::clamp(c.s.Value("weapon_damage", 1.0f), 1.0f, 10.0f) : 1.0f;
-    bool damage = mult > 1.0001f;
+    bool kill = support.damage && c.session == core::Session::Client && c.cheats && c.s.On("one_hit_kill");
+    if (kill) WarnAchievementsOnce();
+    else killNext = killUntil = 0;
+    bool damage = mult > 1.0001f || kill;
+    float rate = support.rate ? std::clamp(c.s.Value("fire_rate", 1.0f), 1.0f, 10.0f) : 1.0f;
+    bool fire = rate > 1.0001f;
+    filter.enemies = c.s.On("aim_enemies");
+    filter.animals = c.s.On("aim_animals");
+    filter.players = c.s.On("aim_players");
 
     ammoOn.store(ammo);
     recoilOn.store(recoil);
@@ -1049,7 +1515,7 @@ void Tick(const Ctx& c) {
     armourOn.store(armour && armourSelf != nullptr);
 
     Object* inv = nullptr;
-    if (reload || damage || flash || aim || recoil) {
+    if (reload || damage || flash || aim || recoil || fire) {
         inv = un::Static(R.lpInventory);
         if (!un::Alive(inv)) inv = nullptr;
     }
@@ -1062,8 +1528,11 @@ void Tick(const Ctx& c) {
     bool world = inv && (!R.invView || un::Val<int>(inv, R.invView) == R.viewWorld);
 
     if (reload && world) NoReload(c, right, rightKind);
+    if (kill && world && Killing(c, right, rightKind)) mult = std::max(mult, kKillMult);
+    else if (kill && !world) killNext = killUntil = 0;
     Damage(mult, right, rightKind, hands[0]);
     Flashlight(flash, right, rightKind, left, leftKind);
+    FireRate(c, fire && world ? rate : 1.0f, right, rightKind);
     aimOn.store(aim);
     Aim(c, aim && world, right, rightKind);
 }

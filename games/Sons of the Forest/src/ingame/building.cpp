@@ -22,6 +22,10 @@ const char* kSons = "Sons";
 const char* kItems = "Sons.Item";
 const int kStackCap = 999;
 const int kFinishPerFrame = 15;
+const int kAddsPerFrame = 4;
+const int kMaxAddsPerNode = 500;
+const int kLogId = 78;
+const int kStoneId = 640;
 
 struct Refs {
     Class *localPlayer = nullptr, *inventory = nullptr, *placeAction = nullptr, *singleOp = nullptr, *treeOp = nullptr, *multiOp = nullptr;
@@ -33,24 +37,27 @@ struct Refs {
     Fld invPlaceAction, invHeld, invCraftDb;
     Fld psaPlacing, psaActiveOp, psaSingle, psaTree, psaMulti, psaScs;
     Fld singleValid, singleNode, treeValid, treeNode, treeTarget, multiNodes;
-    Fld scsInstance, scsNodes, scsInstantBuild, scsInfinite;
+    Fld scsInstance, scsNodes, scsInstantBuild, scsInfinite, scsNoCuttings;
     Fld nodePending;
-    Method* nodeComplete = nullptr;
-    Fld heldInfinite, heldItems, heldDataId;
+    Method *nodeComplete = nullptr, *nodeNext = nullptr, *nodeTryAdd = nullptr;
+    Fld heldInfinite, heldItems, heldDataId, heldItemId;
     Method* creativeSetting = nullptr;
     Fld csInstance, csRecipeDb, dbRecipes, recipeType, recipeIngredients, ingReusable;
     int craftNewItem = -1;
-    Fld imInstance, idbItems, itemId, itemMax, itemUnique, itemNoStore;
+    Fld imInstance, idbItems, itemId, itemMax, itemUnique, itemNoStore, itemName;
     Method* getItems = nullptr;
     Fld prCur, prMax, prPrinting, prPaused, prTime, prBlueprint, bpRequired, bpTotal;
     Method* prRefill = nullptr;
     Fld chOverrides, chOneHit, tcOneHitFell, lsLoading;
+    Fld tcBroken, tcActiveHit, tcTriggered, tcLastForward;
+    Method* tcFell = nullptr;
     Method* loadInProgress = nullptr;
 } R;
 
 struct Support {
     bool noReq = false, anywhere = false, finish = false, autoFill = false, noCraft = false, noLimit = false;
-    bool resin = false, fastPrint = false, oneHit = false, instantFall = false;
+    bool resin = false, fastPrint = false, oneHit = false, instantFall = false, treeFell = false;
+    bool guestAdd = false, logHack = false, stoneHack = false;
 } S;
 
 struct StaticFlag {
@@ -73,11 +80,24 @@ struct Job {
     std::vector<uint32_t> nodes;
     size_t next = 0;
     int done = 0;
+    int adds = 0;
 };
 
-patch::Forced<bool> scsInfinite, heldInfinite, instantBuild, oneHitTrees;
+struct GuestFill {
+    std::unordered_set<Object*> seen;
+    std::unordered_map<Object*, double> fresh;
+    bool armed = false;
+    double scan = 0, lastPlacing = -100;
+};
+
+patch::Forced<bool> scsInfinite, heldInfinite, instantBuild, oneHitTrees, noCuttings;
 StaticFlag treeFall;
-Job job;
+Job job, fill;
+GuestFill guest;
+std::vector<int> logIds, stoneIds;
+double heldIdScan = 0;
+std::vector<uint32_t> trees;
+double treeScan = 0;
 std::vector<uint32_t> reused;
 patch::Hold craftDb;
 double craftCheck = 0;
@@ -201,9 +221,29 @@ void BuildAnywhere(Object* player) {
     }
 }
 
-void DropJob() {
-    for (size_t i = job.next; i < job.nodes.size(); ++i) il2::Unpin(job.nodes[i]);
-    job = Job{};
+void DropJob(Job& j) {
+    for (size_t i = j.next; i < j.nodes.size(); ++i) il2::Unpin(j.nodes[i]);
+    j = Job{};
+}
+
+std::unordered_set<Object*> Previews(Object* psa) {
+    std::unordered_set<Object*> previews;
+    if (!psa) return previews;
+    for (const Fld* opField : {&R.psaSingle, &R.psaTree}) {
+        Object* op = un::Ref(psa, *opField);
+        Class* k = op ? il2::ClassOf(op) : nullptr;
+        if (!k) continue;
+        Object* n = nullptr;
+        if (k == R.singleOp) n = un::Ref(op, R.singleNode);
+        else if (k == R.treeOp) n = un::Ref(op, R.treeNode);
+        if (n) previews.insert(n);
+    }
+    Object* multi = un::Ref(psa, R.psaMulti);
+    if (multi && il2::ClassOf(multi) == R.multiOp)
+        for (Object* line : il2::ListItems(un::Ref(multi, R.multiNodes)))
+            for (Object* n : il2::ListItems(line))
+                if (n) previews.insert(n);
+    return previews;
 }
 
 void StartFinish(const Ctx& c) {
@@ -217,23 +257,7 @@ void StartFinish(const Ctx& c) {
         return;
     }
     Object* scs = Scs(c.player);
-    std::unordered_set<Object*> previews;
-    if (psa) {
-        for (const Fld* opField : {&R.psaSingle, &R.psaTree}) {
-            Object* op = un::Ref(psa, *opField);
-            Class* k = op ? il2::ClassOf(op) : nullptr;
-            if (!k) continue;
-            Object* n = nullptr;
-            if (k == R.singleOp) n = un::Ref(op, R.singleNode);
-            else if (k == R.treeOp) n = un::Ref(op, R.treeNode);
-            if (n) previews.insert(n);
-        }
-        Object* multi = un::Ref(psa, R.psaMulti);
-        if (multi && il2::ClassOf(multi) == R.multiOp)
-            for (Object* line : il2::ListItems(un::Ref(multi, R.multiNodes)))
-                for (Object* n : il2::ListItems(line))
-                    if (n) previews.insert(n);
-    }
+    std::unordered_set<Object*> previews = Previews(psa);
     for (Object* n : il2::ListItems(un::Ref(scs, R.scsNodes))) {
         if (!un::Alive(n) || !IsA(n, R.node) || previews.count(n) || un::Val<bool>(n, R.nodePending)) continue;
         job.nodes.push_back(il2::Pin(n));
@@ -241,29 +265,131 @@ void StartFinish(const Ctx& c) {
     if (job.nodes.empty()) Note("No unfinished blueprints found");
 }
 
-void RunFinish(const Ctx& c) {
-    if (!c.inWorld || c.session == core::Session::Client) {
-        DropJob();
-        return;
-    }
+void HostStep(Job& j) {
     int budget = kFinishPerFrame;
-    while (budget > 0 && job.next < job.nodes.size()) {
-        uint32_t h = job.nodes[job.next++];
+    while (budget > 0 && j.next < j.nodes.size()) {
+        uint32_t h = j.nodes[j.next++];
         Object* n = il2::Pinned(h);
         if (un::Alive(n) && !un::Val<bool>(n, R.nodePending)) {
             bool relocated = false, ok = false;
             un::Call(R.nodeComplete, n, {&relocated}, &ok);
-            if (ok) ++job.done;
+            if (ok) ++j.done;
             --budget;
         }
         il2::Unpin(h);
     }
-    if (job.next < job.nodes.size()) return;
-    int done = job.done;
-    DropJob();
+}
+
+void GuestStep(Job& j, const Ctx& c) {
+    std::unordered_set<Object*> previews = Previews(PlaceAction(c.player));
+    int budget = kAddsPerFrame;
+    while (budget > 0 && j.next < j.nodes.size()) {
+        Object* n = il2::Pinned(j.nodes[j.next]);
+        bool more = false;
+        if (un::Alive(n) && IsA(n, R.node) && !un::Val<bool>(n, R.nodePending) && !previews.count(n) && j.adds < kMaxAddsPerNode) {
+            int id = un::CallInt(R.nodeNext, n, {}, -1);
+            if (id >= 0) {
+                int one = 1;
+                bool local = true, ok = false;
+                un::Call(R.nodeTryAdd, n, {&id, &one, &local}, &ok);
+                --budget;
+                ++j.adds;
+                more = ok;
+            } else if (j.adds > 0) {
+                ++j.done;
+            }
+        }
+        if (more) continue;
+        il2::Unpin(j.nodes[j.next++]);
+        j.adds = 0;
+    }
+}
+
+void RunJob(Job& j, const Ctx& c, bool report) {
+    bool guestJob = c.session == core::Session::Client;
+    if (!c.inWorld || !c.player || !c.cheats || (guestJob && !S.guestAdd)) {
+        DropJob(j);
+        return;
+    }
+    if (guestJob) GuestStep(j, c);
+    else HostStep(j);
+    if (j.next < j.nodes.size()) return;
+    int done = j.done;
+    DropJob(j);
+    if (!report) return;
     if (done <= 0) Note("No blueprints could be finished");
     else if (done == 1) Note("1 blueprint finished");
     else Note(std::to_string(done) + " blueprints finished");
+}
+
+void DropGuestFill() {
+    guest = GuestFill{};
+    DropJob(fill);
+}
+
+void TrackGuestFill(const Ctx& c, bool want) {
+    if (!want) {
+        if (guest.armed || !fill.nodes.empty()) DropGuestFill();
+        return;
+    }
+    Object* psa = PlaceAction(c.player);
+    if (psa && un::Val<bool>(psa, R.psaPlacing)) guest.lastPlacing = c.now;
+    if (c.now < guest.scan) return;
+    guest.scan = c.now + 0.2;
+    Object* scs = Scs(c.player);
+    if (!scs) return;
+    std::unordered_set<Object*> previews = Previews(psa);
+    std::unordered_set<Object*> seen;
+    std::unordered_map<Object*, double> fresh;
+    for (Object* n : il2::ListItems(un::Ref(scs, R.scsNodes))) {
+        if (!un::Alive(n) || !IsA(n, R.node)) continue;
+        if (!guest.armed || guest.seen.count(n) || previews.count(n) || un::Val<bool>(n, R.nodePending)) {
+            seen.insert(n);
+            continue;
+        }
+        auto it = guest.fresh.find(n);
+        if (it == guest.fresh.end()) {
+            if (c.now - guest.lastPlacing > 3.0) seen.insert(n);
+            else fresh[n] = c.now;
+            continue;
+        }
+        if (c.now - it->second < 0.4) {
+            fresh[n] = it->second;
+            continue;
+        }
+        fill.nodes.push_back(il2::Pin(n));
+        seen.insert(n);
+    }
+    guest.seen.swap(seen);
+    guest.fresh.swap(fresh);
+    guest.armed = true;
+}
+
+void DropTrees() {
+    for (uint32_t h : trees) il2::Unpin(h);
+    trees.clear();
+    treeScan = 0;
+}
+
+void FellHitTrees(const Ctx& c) {
+    if (c.now >= treeScan) {
+        for (uint32_t h : trees) il2::Unpin(h);
+        trees.clear();
+        for (Object* o : un::FindAll(R.treeCut))
+            if (uint32_t h = il2::Weak(o)) trees.push_back(h);
+        treeScan = c.now + 0.5;
+    }
+    for (uint32_t h : trees) {
+        Object* t = il2::Pinned(h);
+        if (!un::Alive(t) || un::Val<bool>(t, R.tcBroken) || !un::Val<bool>(t, R.tcActiveHit)) continue;
+        if (R.tcLastForward && c.player) {
+            un::Vec3 dir = un::Norm(un::Flat(un::Forward(c.player)));
+            if (un::Len(dir) > 0.5f) un::SetVal<un::Vec3>(t, R.tcLastForward, dir);
+        }
+        un::SetVal<bool>(t, R.tcTriggered, true);
+        bool straightToStump = false;
+        un::Call(R.tcFell, t, {&straightToStump});
+    }
 }
 
 void RestoreReuse() {
@@ -325,6 +451,39 @@ Object* ItemList() {
         return un::Alive(db) ? un::Ref(db, R.idbItems) : nullptr;
     }
     return R.getItems ? un::Call(R.getItems, nullptr) : nullptr;
+}
+
+void FindHeldIds(double now) {
+    if (now < heldIdScan) return;
+    heldIdScan = now + 5.0;
+    if (logIds.empty()) logIds.push_back(kLogId);
+    if (stoneIds.empty()) stoneIds.push_back(kStoneId);
+    if (!R.itemName || !R.itemId) {
+        heldIdScan = 1e300;
+        return;
+    }
+    std::vector<int> logs, stones;
+    bool any = false;
+    for (Object* item : il2::ListItems(ItemList())) {
+        if (!un::Alive(item)) continue;
+        any = true;
+        std::string name = il2::Str(un::Ref(item, R.itemName));
+        int id = un::Val<int>(item, R.itemId);
+        if (name == "Log" || name == "Log_legacy") logs.push_back(id);
+        else if (name == "Stone") stones.push_back(id);
+    }
+    if (!any) return;
+    if (!logs.empty()) logIds = logs;
+    if (!stones.empty()) stoneIds = stones;
+    heldIdScan = 1e300;
+}
+
+bool HoldingHacked(Object* ctrl, bool logs, bool stones, double now) {
+    if (!ctrl || (!logs && !stones)) return false;
+    FindHeldIds(now);
+    int id = un::Val<int>(ctrl, R.heldItemId);
+    if (logs && std::find(logIds.begin(), logIds.end(), id) != logIds.end()) return true;
+    return stones && std::find(stoneIds.begin(), stoneIds.end(), id) != stoneIds.end();
 }
 
 void LearnHeldOnly(Object* player) {
@@ -478,13 +637,15 @@ bool Supported(const std::string& id) {
     if (id == "no_build_requirements") return S.noReq;
     if (id == "build_anywhere") return S.anywhere;
     if (id == "finish_blueprints") return S.finish;
-    if (id == "always_fill_blueprints") return S.autoFill;
+    if (id == "always_fill_blueprints") return S.autoFill || S.guestAdd;
     if (id == "no_craft_requirements") return S.noCraft;
     if (id == "no_item_limit") return S.noLimit;
     if (id == "unlimited_resin") return S.resin;
     if (id == "fast_printing") return S.fastPrint;
     if (id == "one_hit_trees") return S.oneHit;
     if (id == "instant_tree_fall") return S.instantFall;
+    if (id == "log_hack") return S.logHack;
+    if (id == "stone_hack") return S.stoneHack;
     return false;
 }
 
@@ -520,12 +681,16 @@ bool Resolve(std::string& err) {
     R.scsNodes = Find(R.scs, "_activeStructureNodes", false);
     R.scsInstantBuild = Find(R.scs, "<InstantBuild>k__BackingField", false, "System.Boolean");
     R.scsInfinite = Find(R.scs, "<InfiniteItemHack>k__BackingField", false, "System.Boolean");
+    R.scsNoCuttings = Find(R.scs, "<BlockCuttingsSpawn>k__BackingField", false, "System.Boolean");
     R.node = un::C(kSons, "Sons.Crafting.Structures", "StructureCraftingNode");
     R.nodePending = Find(R.node, "_pendingDestroy", false, "System.Boolean");
     R.nodeComplete = un::M(R.node, "StructureCompleted", std::vector<std::string>{"System.Boolean"});
+    R.nodeNext = un::M(R.node, "GetNextRequiredIngredientId", 0);
+    R.nodeTryAdd = un::M(R.node, "TryAddIngredient", std::vector<std::string>{"System.Int32", "System.Int32", "System.Boolean"});
 
     R.held = un::C(kSons, "TheForest.Items.Special", "HeldOnlyItemController");
     R.heldInfinite = Find(R.held, "<InfiniteHack>k__BackingField", false, "System.Boolean");
+    R.heldItemId = Find(R.held, "_heldItemId", false, "System.Int32");
     R.heldItems = Find(R.held, "_heldOnlyItems", false);
     R.heldData = Inner(R.held, "ControllerItemData");
     R.heldDataId = Find(R.heldData, "_itemId", false, "System.Int32");
@@ -555,6 +720,7 @@ bool Resolve(std::string& err) {
     R.itemMax = Find(R.itemData, "_maxAmount", false, "System.Int32");
     R.itemUnique = Find(R.itemData, "_eachInstanceIsUnique", false, "System.Boolean");
     R.itemNoStore = Find(R.itemData, "_canNotBeStored", false, "System.Boolean");
+    R.itemName = Find(R.itemData, "_name", false, "System.String");
 
     R.printer = un::C(kSons, "", "Resin3dPrinter");
     R.prCur = Find(R.printer, "_currentResinVolume", false, "System.Single");
@@ -573,6 +739,11 @@ bool Resolve(std::string& err) {
     R.chOneHit = Find(R.cheats, "<OneHitTreeCutting>k__BackingField", false, "System.Boolean");
     R.treeCut = un::C(kSons, "Sons.Gameplay.TreeCutting", "TreeCutManager");
     R.tcOneHitFell = Find(R.treeCut, "UseOneHitFell", true, "System.Boolean");
+    R.tcBroken = Find(R.treeCut, "_broken", false, "System.Boolean");
+    R.tcActiveHit = Find(R.treeCut, "<IsActivelyBeingHit>k__BackingField", false, "System.Boolean");
+    R.tcTriggered = Find(R.treeCut, "_thisManagerTriggeredTheFell", false, "System.Boolean");
+    R.tcLastForward = Find(R.treeCut, "_lastHitSourceForward", false, "UnityEngine.Vector3");
+    R.tcFell = R.treeCut ? un::M(R.treeCut, "FellTree", std::vector<std::string>{"System.Boolean"}) : nullptr;
 
     R.loadScene = un::C("Sons.Loading", "Sons.Loading", "LoadScene");
     R.lsLoading = Find(R.loadScene, "_isLoading", true, "System.Boolean");
@@ -592,15 +763,20 @@ bool Resolve(std::string& err) {
     S.resin = R.printer && R.prCur && R.prMax && R.prRefill;
     S.fastPrint = R.printer && R.prCur && R.prPrinting && R.prPaused && R.prTime && R.prBlueprint && R.bpRequired && R.bpTotal;
     S.oneHit = R.chOverrides && R.chOneHit;
-    S.instantFall = (bool)R.tcOneHitFell;
+    S.treeFell = R.treeCut && R.tcBroken && R.tcActiveHit && R.tcTriggered && R.tcFell;
+    S.instantFall = R.tcOneHitFell || S.treeFell;
+    S.guestAdd = S.finish && R.nodeNext && R.nodeTryAdd && R.scsInfinite;
+    S.logHack = inv && R.invHeld && R.held && R.heldInfinite && R.heldItemId;
+    S.stoneHack = S.logHack;
 
     std::string off;
     for (const char* id : {"no_build_requirements", "build_anywhere", "finish_blueprints", "always_fill_blueprints", "no_craft_requirements",
-                           "no_item_limit", "unlimited_resin", "fast_printing", "one_hit_trees", "instant_tree_fall"})
+                           "no_item_limit", "unlimited_resin", "fast_printing", "one_hit_trees", "instant_tree_fall", "log_hack", "stone_hack"})
         if (!Supported(id)) off += std::string(off.empty() ? "" : ", ") + id;
     if (!off.empty()) LOG("building: not available: %s", off.c_str());
+    if (!S.guestAdd) LOG("building: blueprints cannot be filled as a guest");
     if (!S.noReq && !S.anywhere && !S.finish && !S.autoFill && !S.noCraft && !S.noLimit && !S.resin && !S.fastPrint && !S.oneHit &&
-        !S.instantFall) {
+        !S.instantFall && !S.logHack) {
         err = "none of the building parts were found";
         return false;
     }
@@ -613,15 +789,24 @@ void Tick(const Ctx& c) {
     Object* player = live ? c.player : nullptr;
     bool noReq = S.noReq && live && c.s.On("no_build_requirements");
     bool autoFill = S.autoFill && live && host && c.s.On("always_fill_blueprints");
-    Object* scs = noReq || autoFill ? Scs(player) : nullptr;
-    if (S.noReq) {
-        if (noReq) WarnAchievementsOnce();
-        ForceBuildFlag(scs, R.scsInfinite, noReq, scsInfinite);
-        if (R.heldInfinite) ForceBuildFlag(noReq ? HeldController(player) : nullptr, R.heldInfinite, noReq, heldInfinite);
+    if (S.guestAdd) TrackGuestFill(c, live && !host && c.s.On("always_fill_blueprints"));
+    bool guestAdding = S.guestAdd && live && !host && (!job.nodes.empty() || !fill.nodes.empty());
+    bool infinite = noReq || guestAdding;
+    Object* scs = infinite || autoFill ? Scs(player) : nullptr;
+    if (noReq) WarnAchievementsOnce();
+    if (R.scsInfinite) ForceBuildFlag(infinite ? scs : nullptr, R.scsInfinite, infinite, scsInfinite);
+    if (R.scsNoCuttings) patch::Force<bool>(guestAdding ? scs : nullptr, R.scsNoCuttings, guestAdding, true, noCuttings);
+    if (R.heldInfinite) {
+        bool logs = S.logHack && live && c.s.On("log_hack");
+        bool stones = S.stoneHack && live && c.s.On("stone_hack");
+        Object* ctrl = noReq || logs || stones ? HeldController(player) : nullptr;
+        bool held = ctrl && (noReq || HoldingHacked(ctrl, logs, stones, c.now));
+        ForceBuildFlag(held ? ctrl : nullptr, R.heldInfinite, held, heldInfinite);
     }
     if (S.autoFill) patch::Force<bool>(scs, R.scsInstantBuild, autoFill, true, instantBuild);
     if (S.anywhere && live && c.s.On("build_anywhere")) BuildAnywhere(player);
-    if (!job.nodes.empty()) RunFinish(c);
+    if (!job.nodes.empty()) RunJob(job, c, true);
+    if (!fill.nodes.empty()) RunJob(fill, c, false);
     if (S.noCraft) Crafting(c, live && c.s.On("no_craft_requirements"));
     if (S.noLimit) ItemCaps(c, c.s.On("no_item_limit"));
     Printers(c, live);
@@ -629,23 +814,37 @@ void Tick(const Ctx& c) {
         bool want = live && c.s.On("one_hit_trees");
         HoldFlag(want ? un::Static(R.chOverrides) : nullptr, R.chOneHit, want, oneHitTrees);
     }
-    if (S.instantFall) ForceStatic(R.tcOneHitFell, live && c.s.On("instant_tree_fall"), treeFall);
+    if (S.instantFall) {
+        bool fall = live && c.s.On("instant_tree_fall");
+        if (R.tcOneHitFell) ForceStatic(R.tcOneHitFell, fall, treeFall);
+        if (S.treeFell) {
+            if (fall) FellHitTrees(c);
+            else if (!trees.empty() || treeScan != 0) DropTrees();
+        }
+    }
 }
 
 bool Action(const std::string& id, const Ctx& c) {
     if (id != "finish_blueprints" || !S.finish) return false;
-    if (!c.inWorld || !c.player || c.session == core::Session::Client) return true;
+    if (!c.inWorld || !c.player || !c.cheats) return true;
+    if (c.session == core::Session::Client && !S.guestAdd) {
+        Note("That only works when you host or play alone");
+        return true;
+    }
     StartFinish(c);
     return true;
 }
 
 void Release(const Ctx&) {
     patch::Release(scsInfinite, R.scsInfinite);
+    patch::Release(noCuttings, R.scsNoCuttings);
     patch::Release(heldInfinite, R.heldInfinite);
     patch::Release(instantBuild, R.scsInstantBuild);
     DropFlag(oneHitTrees, R.chOneHit);
     ForceStatic(R.tcOneHitFell, false, treeFall);
-    DropJob();
+    DropTrees();
+    DropJob(job);
+    DropGuestFill();
     RestoreReuse();
     RestoreCaps();
     DropPrinters();
