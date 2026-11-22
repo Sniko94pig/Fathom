@@ -50,6 +50,11 @@ struct Loader {
     double backupsTime = -100.0;
     std::function<std::vector<BackupEntry>()> listBackups;
     std::function<int(const std::vector<std::wstring>&)> recycleBackups;
+    int oldBuilds = 0;
+    std::string oldBuildsSize;
+    double oldBuildsTime = -100.0;
+    std::function<int(std::string&)> scanOldBuilds;
+    std::function<int()> deleteOldBuilds;
 };
 
 int AccentCount();

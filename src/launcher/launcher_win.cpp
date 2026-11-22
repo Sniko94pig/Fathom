@@ -417,6 +417,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         return roots;
     };
     loader.listBackups = [backupRoots] { return launcher::backups::List(backupRoots()); };
+    auto oldFolders = [] {
+        wchar_t tmp[MAX_PATH] = {};
+        GetTempPathW(MAX_PATH, tmp);
+        return std::vector<std::wstring>{ (std::filesystem::path(ExeDir()) / L"old-builds").wstring(), (std::filesystem::path(tmp) / L"FathomUpdate").wstring() };
+    };
+    loader.scanOldBuilds = [oldFolders](std::string& size) {
+        unsigned long long bytes = 0;
+        int n = launcher::backups::ScanOld({ oldFolders()[0] }, bytes);
+        unsigned long long extra = 0;
+        launcher::backups::ScanOld({ oldFolders()[1] }, extra);
+        size = launcher::backups::SizeText(bytes + extra);
+        return n;
+    };
+    loader.deleteOldBuilds = [oldFolders] { return launcher::backups::DeleteOld(oldFolders()); };
     loader.recycleBackups = [backupRoots](const std::vector<std::wstring>& paths) { return launcher::backups::Recycle(backupRoots(), paths); };
     loader.refreshArt = [&] { artRefresh = true; artWipe = true; };
     loader.checkUpdates = [] { launcher::update::Check(); };

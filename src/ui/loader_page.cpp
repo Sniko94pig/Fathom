@@ -130,6 +130,37 @@ void Menu::LoaderPage() {
                 });
     }
     {
+        double now = ImGui::GetTime();
+        if (l.scanOldBuilds && now - l.oldBuildsTime > 10.0) {
+            l.oldBuilds = l.scanOldBuilds(l.oldBuildsSize);
+            l.oldBuildsTime = now;
+        }
+        float h = S(38) + S(44) + S(8) + bh + S(16);
+        ImVec2 p = ms.Place(h);
+        float y = CardBegin(p, w, h, "Old builds");
+        std::string line = l.oldBuilds <= 0 ? std::string("No old builds right now")
+                                            : std::to_string(l.oldBuilds) + (l.oldBuilds == 1 ? " old build" : " old builds") + "  \xc2\xb7  " +
+                                                  l.oldBuildsSize;
+        TextFit(dl, T().medium, 13.5f, ImVec2(p.x + S(16), y + S(4)), w - S(32), White(0.95f), line.c_str());
+        TextFit(dl, T().regular, 12, ImVec2(p.x + S(16), y + S(24)), w - S(32), White(0.45f),
+                "Fathom keeps a copy of the older version every time it updates.");
+        y += S(44) + S(8);
+        if (Button("deleteold", "Delete old builds", ImVec2(p.x + S(16), y), ImVec2(w - S(32), bh), Btn::Danger, ICON_TRASH_2,
+                   l.oldBuilds > 0 && (bool)l.deleteOldBuilds)) {
+            std::string title = l.oldBuilds == 1 ? "Delete 1 old build?" : "Delete " + std::to_string(l.oldBuilds) + " old builds?";
+            std::string body = "This frees " + l.oldBuildsSize +
+                               ". Old builds are deleted for good: they don't go to the Recycle Bin, and you can't go back to those versions from "
+                               "this PC anymore. Every older version can still be downloaded from Fathom's GitHub releases page. Your saves "
+                               "and backups are not touched.";
+            Ask(title, body, "Delete", [this] {
+                int failed = loader->deleteOldBuilds();
+                loader->oldBuildsTime = -100.0;
+                if (failed) Notify("Some old builds could not be deleted", ICON_TRIANGLE_ALERT);
+                else Notify("Old builds deleted", ICON_TRASH_2);
+            });
+        }
+    }
+    {
         float h = S(38) + S(52) + S(8) + bh * 2 + S(8) + S(16);
         ImVec2 p = ms.Place(h);
         float y = CardBegin(p, w, h, "Folders and backups");

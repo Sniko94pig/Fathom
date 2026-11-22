@@ -476,6 +476,11 @@ int main(int argc, char** argv) {
                  return v;
              };
              loader.recycleBackups = [](const std::vector<std::wstring>&) { return 0; };
+             loader.scanOldBuilds = [](std::string& size) {
+                 size = "889.4 MB";
+                 return 27;
+             };
+             loader.deleteOldBuilds = [] { return 0; };
              ui::T().accent = ui::AccentColor(loader.s.accent);
              u.embedded = true;
              u.showGameTabs = false;

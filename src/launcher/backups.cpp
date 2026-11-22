@@ -105,6 +105,45 @@ std::vector<ui::BackupEntry> List(const std::vector<Root>& roots) {
     return out;
 }
 
+std::string SizeText(unsigned long long bytes) { return Size(bytes); }
+
+int ScanOld(const std::vector<std::wstring>& folders, unsigned long long& bytes) {
+    bytes = 0;
+    int count = 0;
+    for (const std::wstring& f : folders) {
+        std::error_code ec;
+        if (f.empty() || !fs::is_directory(f, ec)) continue;
+        for (const auto& e : fs::directory_iterator(f, ec)) {
+            std::error_code ec2;
+            if (e.is_directory(ec2)) ++count;
+            else if (e.is_regular_file(ec2)) {
+                bytes += e.file_size(ec2);
+                continue;
+            }
+            for (auto it = fs::recursive_directory_iterator(e.path(), fs::directory_options::skip_permission_denied, ec2);
+                 !ec2 && it != fs::recursive_directory_iterator(); it.increment(ec2)) {
+                std::error_code ec3;
+                if (it->is_regular_file(ec3)) bytes += it->file_size(ec3);
+            }
+        }
+    }
+    return count;
+}
+
+int DeleteOld(const std::vector<std::wstring>& folders) {
+    int failed = 0;
+    for (const std::wstring& f : folders) {
+        std::error_code ec;
+        if (f.empty() || !fs::is_directory(f, ec)) continue;
+        for (const auto& e : fs::directory_iterator(f, ec)) {
+            std::error_code ec2;
+            fs::remove_all(e.path(), ec2);
+            if (ec2) ++failed;
+        }
+    }
+    return failed;
+}
+
 int Recycle(const std::vector<Root>& roots, const std::vector<std::wstring>& paths) {
     std::wstring list;
     int n = 0;

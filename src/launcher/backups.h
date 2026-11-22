@@ -12,5 +12,8 @@ struct Root {
 
 std::vector<ui::BackupEntry> List(const std::vector<Root>& roots);
 int Recycle(const std::vector<Root>& roots, const std::vector<std::wstring>& paths);
+std::string SizeText(unsigned long long bytes);
+int ScanOld(const std::vector<std::wstring>& folders, unsigned long long& bytes);
+int DeleteOld(const std::vector<std::wstring>& folders);
 
 }
