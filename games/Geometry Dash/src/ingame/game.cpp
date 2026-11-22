@@ -55,13 +55,20 @@ void __fastcall hkSched(void* self, float dt) {
             player::Tick();
             icons::Tick();
             macro::Tick();
-            rgb::Tick(dt);
             scare::Tick(dt);
         } catch (...) {
             static int reported = 0;
             if (reported++ < 5) LOG("error in the frame update");
         }
-        dt = speed::Scale(dt);
+        float real = dt;
+        oSched(self, speed::Scale(dt));
+        try {
+            rgb::Tick(real);
+        } catch (...) {
+            static int reported = 0;
+            if (reported++ < 5) LOG("error in the color update");
+        }
+        return;
     }
     oSched(self, dt);
 }
