@@ -3,6 +3,7 @@
 #include "ingame/log.h"
 #include "ingame/modules.h"
 #include <intrin.h>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 
@@ -38,6 +39,7 @@ PushFn oPush = nullptr;
 uintptr_t fromP1 = 0;
 uintptr_t fromP2 = 0;
 bool ready = false;
+std::atomic<bool> stopped{false};
 
 bool Flag(const void* p, uintptr_t off) { return gd::F<uint8_t>(p, off) != 0; }
 
@@ -65,8 +67,9 @@ bool CanJump(void* p) {
 bool __fastcall hkPush(void* p, int button) {
     gd::Busy busy;
     uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress());
-    if (!gd::C().jumps.load() || button != kJumpButton || !p || (from != fromP1 && from != fromP2) || !CanJump(p))
+    if (stopped.load() || !gd::C().jumps.load() || button != kJumpButton || !p || (from != fromP1 && from != fromP2) || !CanJump(p))
         return oPush(p, button);
+    safe::MarkCheated("unlimited jumps");
     uint32_t fall = gd::F<uint32_t>(p, kFallStart);
     bool rising = Flag(p, kRising);
     gd::F<uint8_t>(p, kOnGround) = 1;
@@ -96,6 +99,9 @@ bool Ready() { return ready; }
 
 void Tick() {}
 
-void Off() { gd::C().jumps = false; }
+void Off() {
+    gd::C().jumps = false;
+    stopped = true;
+}
 
 }

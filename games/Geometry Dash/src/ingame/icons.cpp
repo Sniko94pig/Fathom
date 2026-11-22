@@ -117,6 +117,8 @@ SelfFn colorPageIcons = nullptr;
 ChildrenFn nodeChildren = nullptr;
 
 std::atomic<bool> ready{false};
+std::atomic<bool> stopped{false};
+std::atomic<bool> offThreadLogged{false};
 std::atomic<bool> active{false};
 std::atomic<bool> faking{false};
 std::atomic<bool> uploadSwap{false};
@@ -252,8 +254,12 @@ void LoadPicks() {
 }
 
 void SavePicks() {
-    dirty = false;
-    if (gd::Folder().empty()) return;
+    if (gd::Folder().empty()) {
+        dirty = false;
+        return;
+    }
+    bool ok = false;
+    std::wstring tmp;
     try {
         nlohmann::json j = nlohmann::json::object();
         for (int i = 0; i < kSlotCount; ++i)
@@ -261,17 +267,26 @@ void SavePicks() {
         if (picks.hasGlow) j["glow"] = picks.glow;
         if (picks.hasType) j["icon_type"] = picks.type;
         std::wstring path = PicksPath();
-        std::wstring tmp = path + L".tmp";
+        tmp = path + L".tmp";
+        bool written = false;
         {
             std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-            if (!out) return;
-            out << j.dump(2);
-            if (!out.good()) return;
+            if (out) {
+                out << j.dump(2);
+                written = out.good();
+            }
         }
-        if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) LOG("unlock all icons: icons.json could not be saved");
+        ok = written && MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
     } catch (...) {
-        LOG("unlock all icons: icons.json could not be saved");
+        ok = false;
     }
+    if (ok) {
+        dirty = false;
+        return;
+    }
+    if (!tmp.empty()) DeleteFileW(tmp.c_str());
+    dirtyAt = GetTickCount64();
+    LOG("unlock all icons: icons.json could not be saved, trying again soon");
 }
 
 void Remember() {
@@ -509,6 +524,9 @@ bool __fastcall hkColorUnlocked(void* gm, int id, int type) {
 
 void __fastcall hkEncode(void* gm, void* dict) {
     gd::Busy busy;
+    DWORD main = mainThread.load();
+    if (main && GetCurrentThreadId() != main && !offThreadLogged.exchange(true))
+        LOG("unlock all icons: the game saved from another thread");
     {
         Scope real(gm);
         if (real.gm && faking.load() && saveLogs < kLogLimit) {
@@ -593,7 +611,7 @@ bool Install() {
 bool Ready() { return ready.load(); }
 
 void Set(bool on) {
-    if (!ready.load()) return;
+    if (!ready.load() || stopped.load()) return;
     mainThread = GetCurrentThreadId();
     if (on) {
         if (!active.load()) Activate();
@@ -603,7 +621,7 @@ void Set(bool on) {
 }
 
 void Tick() {
-    if (!ready.load()) return;
+    if (!ready.load() || stopped.load()) return;
     mainThread = GetCurrentThreadId();
     bool want = gd::C().icons.load();
     if (active.load()) {
@@ -632,6 +650,7 @@ void Off() {
     gd::C().icons = false;
     if (!ready.load()) return;
     Deactivate();
+    stopped = true;
     if (dirty) SavePicks();
     if (refresh) {
         refresh = false;
@@ -640,7 +659,8 @@ void Off() {
 }
 
 bool BlockUpload(const char* url) {
-    if (uploadSwap.load() || !faking.load() || !url) return false;
+    if (uploadSwap.load() || !url) return false;
+    if (!active.load() && !faking.load()) return false;
     return std::strstr(url, "updateGJUserScore") != nullptr;
 }
 
