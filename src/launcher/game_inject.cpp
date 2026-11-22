@@ -111,12 +111,28 @@ fs::path SotfSaves(const inject::Paths&) {
 
 fs::path UkSaves(const inject::Paths& p) { return fs::path(p.win64) / L"Saves"; }
 
+fs::path GdSaves(const inject::Paths&) {
+    wchar_t buf[MAX_PATH * 2];
+    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH * 2);
+    if (!n || n >= MAX_PATH * 2) return {};
+    return fs::path(buf) / L"GeometryDash";
+}
+
+bool GdKeep(const std::wstring& name) {
+    std::wstring low = name;
+    for (wchar_t& c : low) c = (wchar_t)towlower(c);
+    if (low.size() < 4 || low.compare(low.size() - 4, 4, L".dat") != 0) return false;
+    return low.rfind(L"ccgamemanager", 0) == 0 || low.rfind(L"cclocallevels", 0) == 0;
+}
+
 }
 
 const Spec kSubnautica{L"Subnautica.exe", L"Subnautica", L"fathom_sn1.dll", L"fathom_sn1.run.dll", "Subnautica", 264710, L"Subnautica", Sn1Saves};
 const Spec kSonsOfTheForest{L"SonsOfTheForest.exe", L"Sons Of The Forest", L"fathom_sotf.dll", L"fathom_sotf.run.dll", "Sons of the Forest", 1326470,
                             L"SonsOfTheForest", SotfSaves};
 const Spec kUltrakill{L"ULTRAKILL.exe", L"ULTRAKILL", L"fathom_ultrakill.dll", L"fathom_ultrakill.run.dll", "ULTRAKILL", 1229490, L"ULTRAKILL", UkSaves};
+const Spec kGeometryDash{L"GeometryDash.exe", L"Geometry Dash", L"fathom_gd.dll", L"fathom_gd.run.dll", "Geometry Dash", 322170, L"GeometryDash", GdSaves,
+                         GdKeep};
 
 inject::Paths Locate(const Spec& s) {
     inject::Paths p;
@@ -224,7 +240,21 @@ std::string BackupSaves(const Spec& s, const inject::Paths& p) {
         swprintf_s(stamp, L"%s_%04d-%02d-%02d_%02d-%02d-%02d", s.backupName, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
         fs::path dst = root / stamp / src.filename();
         fs::create_directories(dst);
-        fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+        if (s.keep) {
+            int copied = 0;
+            for (const auto& e : fs::directory_iterator(src)) {
+                if (!e.is_regular_file() || !s.keep(e.path().filename().wstring())) continue;
+                fs::copy_file(e.path(), dst / e.path().filename(), fs::copy_options::overwrite_existing);
+                ++copied;
+            }
+            if (!copied) {
+                std::error_code ec;
+                fs::remove_all(root / stamp, ec);
+                return {};
+            }
+        } else {
+            fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+        }
         return Narrow((root / stamp).wstring());
     } catch (...) {
         return {};

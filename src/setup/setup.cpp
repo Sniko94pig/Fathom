@@ -26,12 +26,12 @@ namespace fs = std::filesystem;
 namespace {
 
 const wchar_t* kBase = L"https://github.com/Sniko94pig/Fathom/releases/latest/download/";
-const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll", L"fathom_ultrakill.dll", L"fathom_mc.jar"};
+const wchar_t* kFiles[] = {L"Fathom.exe", L"fathom.dll", L"fathom_sn1.dll", L"fathom_sotf.dll", L"fathom_ultrakill.dll", L"fathom_gd.dll", L"fathom_mc.jar"};
 const wchar_t* kKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fathom";
 const wchar_t* kUninstaller = L"Uninstall Fathom.exe";
 const wchar_t* kSetup = L"FathomSetup.exe";
 const wchar_t* kGameExe = L"Subnautica2-Win64-Shipping.exe";
-const wchar_t* kGameExes[] = {L"Subnautica2-Win64-Shipping.exe", L"Subnautica.exe", L"SonsOfTheForest.exe", L"ULTRAKILL.exe"};
+const wchar_t* kGameExes[] = {L"Subnautica2-Win64-Shipping.exe", L"Subnautica.exe", L"SonsOfTheForest.exe", L"ULTRAKILL.exe", L"GeometryDash.exe"};
 const UINT WM_REFRESH = WM_APP + 1;
 const int ID_MAIN = 101, ID_SECOND = 102, ID_CHECK = 103;
 

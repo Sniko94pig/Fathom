@@ -823,9 +823,10 @@ void Home::DrawGame() {
     bool sn1 = std::strcmp(g.id, "subnautica") == 0;
     bool sotf = std::strcmp(g.id, "sonsoftheforest") == 0;
     bool ukGame = std::strcmp(g.id, "ultrakill") == 0;
+    bool gdGame = std::strcmp(g.id, "geometrydash") == 0;
     bool mc = std::strcmp(g.id, "minecraft") == 0;
-    const inject::Paths& gp = sn1 ? sn1Paths : sotf ? sotfPaths : ukGame ? ukPaths : paths;
-    inject::GameState gs = sn1 ? sn1State : sotf ? sotfState : ukGame ? ukState : state;
+    const inject::Paths& gp = sn1 ? sn1Paths : sotf ? sotfPaths : ukGame ? ukPaths : gdGame ? gdPaths : paths;
+    inject::GameState gs = sn1 ? sn1State : sotf ? sotfState : ukGame ? ukState : gdGame ? gdState : state;
     bool running = gs != inject::GameState::NotRunning;
     bool injected = gs == inject::GameState::Injected;
     std::string line;
@@ -864,7 +865,7 @@ void Home::DrawGame() {
     } else if (running) {
         if (Button("main", "Inject", bp, bs, Btn::Primary, ICON_ZAP, gp.found)) {
             injectNow = true;
-            injectGame = sn1 ? 1 : sotf ? 2 : ukGame ? 3 : 0;
+            injectGame = sn1 ? 1 : sotf ? 2 : ukGame ? 3 : gdGame ? 4 : 0;
         }
     } else {
         if (Button("main", "Start game", bp, bs, Btn::Primary, ICON_PLAY, true)) startNow = true;
@@ -875,10 +876,10 @@ void Home::DrawGame() {
         DrawMinecraftCards(y, w, o);
         return;
     }
-    if ((sn2 || sn1 || sotf || ukGame) && g.ready) {
+    if ((sn2 || sn1 || sotf || ukGame || gdGame) && g.ready) {
         DrawGameCards(y, w, o, gp, gs,
-                      sn1 ? "Subnautica (Steam)" : sotf ? "Sons Of The Forest (Steam)" : ukGame ? "ULTRAKILL (Steam)" : "Subnautica2 (Steam)",
-                      sn1 ? "fathom_sn1.dll" : sotf ? "fathom_sotf.dll" : ukGame ? "fathom_ultrakill.dll" : "fathom.dll");
+                      sn1 ? "Subnautica (Steam)" : sotf ? "Sons Of The Forest (Steam)" : ukGame ? "ULTRAKILL (Steam)" : gdGame ? "Geometry Dash (Steam)" : "Subnautica2 (Steam)",
+                      sn1 ? "fathom_sn1.dll" : sotf ? "fathom_sotf.dll" : ukGame ? "fathom_ultrakill.dll" : gdGame ? "fathom_gd.dll" : "fathom.dll");
         return;
     }
     float ch = S(132);

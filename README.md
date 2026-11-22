@@ -10,7 +10,7 @@ Every game has its own folder in [games](games).
 
 | Game | Status |
 |---|---|
-| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>), [ULTRAKILL](<games/ULTRAKILL>) | Ready |
+| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>), [ULTRAKILL](<games/ULTRAKILL>), [Geometry Dash](<games/Geometry Dash>) | Ready |
 | [Borderlands](<games/Borderlands>), [Borderlands 2](<games/Borderlands 2>), [Borderlands 3](<games/Borderlands 3>), [Borderlands 4](<games/Borderlands 4>) | Coming soon |
 | [Cyberpunk 2077](<games/Cyberpunk 2077>) | Coming soon |
 | [Fallout 4](<games/Fallout 4>), [Fallout: New Vegas](<games/Fallout New Vegas>) | Coming soon |
@@ -23,10 +23,11 @@ Every game has its own folder in [games](games).
 | [Dune: Awakening](<games/Dune Awakening>), [Icarus](<games/Icarus>), [Raft](<games/Raft>) | Coming soon |
 | [Dying Light](<games/Dying Light>) | Coming soon |
 | [Escape the Backrooms](<games/Escape the Backrooms>), [Hello Neighbor](<games/Hello Neighbor>), [Poppy Playtime](<games/Poppy Playtime>) | Coming soon |
-| [Geometry Dash](<games/Geometry Dash>) | Being built |
 | [Schedule I](<games/Schedule I>) | Coming soon |
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
+
+The Geometry Dash menu has game speed, noclip, unlimited jumps, hitboxes, complete level, a macro recorder and player, an icon unlocker that only changes what you see, and a troll page with RGB colors and random jumpscares. Runs with cheats on never count: they don't save progress or give stars, orbs or diamonds. It works on Geometry Dash 2.2091; on other versions only the jumpscares work until Fathom gets an update.
 
 Minecraft: Java Edition needs Fabric. Press **Start game** on its page and Fathom makes a **Fathom** install in the Minecraft Launcher, with the newest Fabric API and the Fathom mod, `fathom_mc.jar`, which has all the cheats and Baritone inside. In the game, **Right Shift** opens the Fathom menu while you play. The menu needs OpenGL, so leave Graphics API on Default or Prefer OpenGL.
 

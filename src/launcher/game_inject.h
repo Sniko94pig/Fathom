@@ -14,11 +14,13 @@ struct Spec {
     int appId;
     const wchar_t* backupName;
     std::filesystem::path (*saves)(const inject::Paths& p);
+    bool (*keep)(const std::wstring& name) = nullptr;
 };
 
 extern const Spec kSubnautica;
 extern const Spec kSonsOfTheForest;
 extern const Spec kUltrakill;
+extern const Spec kGeometryDash;
 
 inject::Paths Locate(const Spec& s);
 inject::GameState State(const Spec& s);

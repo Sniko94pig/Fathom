@@ -289,10 +289,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     auto ukKnownTime = FileTime(ukSettingsPath);
     core::Model gdModel;
     gd::BuildFeatures(gdModel);
-    gdModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"geometrydash-settings.json").wstring());
+    home.gdPaths = gameinject::Locate(gameinject::kGeometryDash);
+    std::wstring gdSettingsPath = home.gdPaths.found ? home.gdPaths.settings : (std::filesystem::path(ExeDir()) / L"geometrydash-settings.json").wstring();
+    if (home.gdPaths.found) { std::error_code ec; std::filesystem::create_directories(home.gdPaths.folder, ec); }
+    gdModel.settingsPath = Narrow(gdSettingsPath);
+    for (core::Feature& f : gdModel.features)
+    {
+        f.available = false;
+        f.missing = "Turn this on inside the game. Cheats always start off.";
+    }
+    gdModel.backupSaves = [&home] { return gameinject::BackupSaves(gameinject::kGeometryDash, home.gdPaths); };
     gdModel.openUrl = model.openUrl;
     core::LoadSettings(gdModel);
     std::string gdLastText = core::SettingsText(gdModel);
+    auto gdKnownTime = FileTime(gdSettingsPath);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -392,7 +402,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         ULONGLONG since = 0;
         bool tried = false;
     };
-    Watch watch[4];
+    Watch watch[5];
     auto openPath = [](const std::wstring& path) {
         std::error_code ec;
         std::filesystem::create_directories(path, ec);
@@ -405,7 +415,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         std::string last;
         for (const std::string& p : { inject::BackupSaves(), gameinject::BackupSaves(gameinject::kSubnautica, home.sn1Paths),
                                       gameinject::BackupSaves(gameinject::kSonsOfTheForest, home.sotfPaths),
-                                      gameinject::BackupSaves(gameinject::kUltrakill, home.ukPaths) })
+                                      gameinject::BackupSaves(gameinject::kUltrakill, home.ukPaths),
+                                      gameinject::BackupSaves(gameinject::kGeometryDash, home.gdPaths) })
             if (!p.empty())
                 last = p;
         return last;
@@ -414,6 +425,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         std::vector<launcher::backups::Root> roots{ { (std::filesystem::path(ExeDir()) / L"save-backups").wstring(), nullptr } };
         if (home.ukPaths.found)
             roots.push_back({ (std::filesystem::path(home.ukPaths.folder) / L"save_backup").wstring(), "ULTRAKILL" });
+        if (home.gdPaths.found)
+            roots.push_back({ (std::filesystem::path(home.gdPaths.folder) / L"save_backup").wstring(), "Geometry Dash" });
         return roots;
     };
     loader.listBackups = [backupRoots] { return launcher::backups::List(backupRoots()); };
@@ -571,10 +584,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             home.sn1State = gameinject::State(gameinject::kSubnautica);
             home.sotfState = gameinject::State(gameinject::kSonsOfTheForest);
             home.ukState = gameinject::State(gameinject::kUltrakill);
-            for (int gi = 0; gi < 4; ++gi)
+            home.gdState = gameinject::State(gameinject::kGeometryDash);
+            for (int gi = 0; gi < 5; ++gi)
             {
-                inject::GameState st = gi == 1 ? home.sn1State : gi == 2 ? home.sotfState : gi == 3 ? home.ukState : home.state;
-                bool found = gi == 1 ? home.sn1Paths.found : gi == 2 ? home.sotfPaths.found : gi == 3 ? home.ukPaths.found : home.paths.found;
+                inject::GameState st = gi == 1 ? home.sn1State : gi == 2 ? home.sotfState : gi == 3 ? home.ukState : gi == 4 ? home.gdState : home.state;
+                bool found = gi == 1 ? home.sn1Paths.found : gi == 2 ? home.sotfPaths.found : gi == 3 ? home.ukPaths.found : gi == 4 ? home.gdPaths.found : home.paths.found;
                 Watch& wt = watch[gi];
                 if (wt.last == inject::GameState::Injected && st == inject::GameState::Running)
                     menu.Notify("The menu was unloaded from the game", ICON_INFO);
@@ -725,8 +739,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             }
             else if (gdOpen)
             {
-                menu.status = "Being built";
-                menu.statusGood = false;
+                menu.status = home.gdState == inject::GameState::Injected ? "Menu active in game" : home.gdState == inject::GameState::Running ? "Game running" : "Game not running";
+                menu.statusGood = home.gdState != inject::GameState::NotRunning;
             }
             else
             {
@@ -837,11 +851,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     gameinject::StartGame(gameinject::kSonsOfTheForest);
                 else if (ukOpen)
                     gameinject::StartGame(gameinject::kUltrakill);
+                else if (gdOpen)
+                    gameinject::StartGame(gameinject::kGeometryDash);
                 else
                     inject::StartGame();
                 menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6"
                             : sotfOpen ? "Starting Sons of the Forest\xe2\x80\xa6"
                             : ukOpen ? "Starting ULTRAKILL\xe2\x80\xa6"
+                            : gdOpen ? "Starting Geometry Dash\xe2\x80\xa6"
                                      : "Starting Subnautica 2\xe2\x80\xa6",
                             ICON_PLAY);
             }
@@ -886,6 +903,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 ukLastText = core::SettingsText(ukModel);
                 ukKnownTime = FileTime(ukSettingsPath);
             }
+            else if (target == 4)
+            {
+                core::SaveSettings(gdModel);
+                gdLastText = core::SettingsText(gdModel);
+                gdKnownTime = FileTime(gdSettingsPath);
+            }
             else
             {
                 core::SaveSettings(model);
@@ -893,8 +916,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 knownTime = FileTime(settingsPath);
             }
             workerDone = false;
-            inject::Paths paths = target == 1 ? home.sn1Paths : target == 2 ? home.sotfPaths : target == 3 ? home.ukPaths : home.paths;
-            std::string key = core::KeyName(target == 2 ? sotfModel.keyOpen : target == 3 ? ukModel.keyOpen : sn1Model.keyOpen);
+            inject::Paths paths = target == 1 ? home.sn1Paths : target == 2 ? home.sotfPaths : target == 3 ? home.ukPaths : target == 4 ? home.gdPaths : home.paths;
+            std::string key = core::KeyName(target == 2 ? sotfModel.keyOpen : target == 3 ? ukModel.keyOpen : target == 4 ? gdModel.keyOpen : sn1Model.keyOpen);
             bool backupFirst = loader.s.backupOnInject;
             worker = std::thread([&, paths, target, key, backupFirst] {
                 if (backupFirst)
@@ -905,12 +928,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                         gameinject::BackupSaves(gameinject::kSonsOfTheForest, paths);
                     else if (target == 3)
                         gameinject::BackupSaves(gameinject::kUltrakill, paths);
+                    else if (target == 4)
+                        gameinject::BackupSaves(gameinject::kGeometryDash, paths);
                     else
                         inject::BackupSaves();
                 }
                 workerResult = target == 1 ? gameinject::Inject(gameinject::kSubnautica, paths, workerOk, key)
                              : target == 2 ? gameinject::Inject(gameinject::kSonsOfTheForest, paths, workerOk, key)
                              : target == 3 ? gameinject::Inject(gameinject::kUltrakill, paths, workerOk, key)
+                             : target == 4 ? gameinject::Inject(gameinject::kGeometryDash, paths, workerOk, key)
                                            : inject::Inject(paths, workerOk);
                 workerDone = true;
             });
@@ -949,6 +975,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             sync(sn1Model, sn1Menu, sn1SettingsPath, sn1LastText, sn1KnownTime);
             sync(sotfModel, sotfMenu, sotfSettingsPath, sotfLastText, sotfKnownTime);
             sync(ukModel, ukMenu, ukSettingsPath, ukLastText, ukKnownTime);
+            sync(gdModel, gdMenu, gdSettingsPath, gdLastText, gdKnownTime);
         }
         if (closeAt && now >= closeAt)
             done = true;

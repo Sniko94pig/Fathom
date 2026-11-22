@@ -564,6 +564,20 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"48-launcher-geometrydash", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             m = core::Model();
+             gd::BuildFeatures(m);
+             home.game = launcher::FindGame("geometrydash");
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Geometry Dash";
+             u.homePage = [] { home.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
         {"30-launcher-minecraft", [&](core::Model& m, ui::Menu& u) {
              static launcher::Home home;
              LoadShotArt(home, outDir);
