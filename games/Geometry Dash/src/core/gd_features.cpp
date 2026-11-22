@@ -62,15 +62,15 @@ void BuildFeatures(Model& m) {
                    {Level, "Level", ICON_PLAY},
                    {Troll, "Troll", ICON_SKULL}};
 
-    Slider(m, Player, "Speed", "game_speed", "Game speed", "Speeds up or slows down the whole game, music too", 0.1f, 3.0f, 1.0f, 0.05f, "%.2fx");
-    Toggle(m, Player, "Cheats", "noclip", "Noclip", "Spikes, blocks and saws can't kill you");
-    Toggle(m, Player, "Cheats", "unlimited_jumps", "Unlimited jumps", "Jump again in mid-air as often as you want");
-    Toggle(m, Player, "Cheats", "hitboxes", "Show hitboxes", "Draws the hitboxes of you, blocks, spikes and orbs");
+    Slider(m, Player, "Speed", "game_speed", "Game speed", "Speeds up or slows down the whole game, music too. Attempts not at 1x don't count", 0.1f, 3.0f, 1.0f, 0.05f, "%.2fx");
+    Toggle(m, Player, "Cheats", "noclip", "Noclip", "Nothing can kill you. Attempts with it on don't count");
+    Toggle(m, Player, "Cheats", "unlimited_jumps", "Unlimited jumps", "Jump again in mid-air as often as you want. Attempts with it on don't count");
+    Toggle(m, Player, "Cheats", "hitboxes", "Show hitboxes", "Draws the hitboxes of you and every object");
     Toggle(m, Player, "Unlocks", "unlock_icons", "Unlock all icons", "Every icon, color and trail can be picked, only on your screen, other players don't see it");
 
-    Action(m, Level, "Level", "complete_level", "Complete level", "Finishes the level you are playing right away", "Apply", true);
+    Action(m, Level, "Level", "complete_level", "Complete level", "Finishes the level you are playing right away. It won't count", "Apply");
     Toggle(m, Level, "Macro", "macro_record", "Record macro", "Play normally; when you beat the level, your run is saved as a macro for it");
-    Toggle(m, Level, "Macro", "macro_play", "Play macro", "The bot replays your saved macro for this level");
+    Toggle(m, Level, "Macro", "macro_play", "Play macro", "The bot replays your saved macro for this level. Its runs don't count");
 
     Toggle(m, Troll, "Colors", "rgb", "RGB", "Your icon and the level cycle through rainbow colors");
     Slider(m, Troll, "Colors", "rgb_speed", "RGB speed", "How fast the colors change", 0.1f, 5.0f, 1.0f, 0.1f, "%.1fx", false);

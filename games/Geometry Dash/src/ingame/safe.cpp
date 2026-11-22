@@ -478,7 +478,7 @@ bool InLevel() { return layer.load() != nullptr; }
 
 bool Cheated() { return layer.load() && cheated.load(); }
 
-bool Holding() { return levelReady && layer.load() && tainted.load(); }
+bool Holding() { return locked.load() || (levelReady && layer.load() && tainted.load()); }
 
 bool Locked() { return locked.load(); }
 

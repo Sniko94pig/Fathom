@@ -201,8 +201,13 @@ void Unload() {
     while (game::Holding()) {
         if (!told2) {
             told2 = true;
-            gd::Note("Fathom unloads when you leave this level");
-            LOG("waiting for the level to close so safe mode can finish");
+            if (safe::Locked()) {
+                gd::Note("Fathom stays on until you close Geometry Dash, so nothing gets saved");
+                LOG("safe mode lock is on, staying loaded until the game closes");
+            } else {
+                gd::Note("Fathom unloads when you leave this level");
+                LOG("waiting for the level to close so safe mode can finish");
+            }
         }
         Sleep(100);
     }
