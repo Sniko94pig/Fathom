@@ -27,7 +27,7 @@ Every game has its own folder in [games](games).
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
 
-The Geometry Dash menu has game speed, noclip, unlimited jumps, hitboxes, complete level, a macro recorder and player, an icon unlocker that only changes what you see, and a troll page with RGB colors and random jumpscares. Runs with cheats on never count: they don't save progress or give stars, orbs or diamonds. It works on Geometry Dash 2.2091; on other versions only the jumpscares work until Fathom gets an update.
+The Geometry Dash menu has game speed, noclip, unlimited jumps, hitboxes, complete level, a macro recorder and player, an icon unlocker that only changes what you see, and a troll page with RGB colors. Runs with cheats on never count: they don't save progress or give stars, orbs or diamonds. It works on Geometry Dash 2.2091; on other versions every module waits for a Fathom update.
 
 Minecraft: Java Edition needs Fabric. Press **Start game** on its page and Fathom makes a **Fathom** install in the Minecraft Launcher, with the newest Fabric API and the Fathom mod, `fathom_mc.jar`, which has all the cheats and Baritone inside. In the game, **Right Shift** opens the Fathom menu while you play. The menu needs OpenGL, so leave Graphics API on Default or Prefer OpenGL.
 
