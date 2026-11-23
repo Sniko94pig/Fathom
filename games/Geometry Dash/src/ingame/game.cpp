@@ -30,7 +30,6 @@ std::wstring PrefsPath() { return gd::Folder() + L"\\gd.json"; }
 
 void AllOff() {
     try {
-        scare::Off();
         rgb::Off();
         macro::Off();
         icons::Off();
@@ -60,7 +59,6 @@ void __fastcall hkSched(void* self, float dt) {
             player::Tick();
             icons::Tick();
             macro::Tick();
-            scare::Tick(dt);
         } catch (...) {
             static int reported = 0;
             if (reported++ < 5) LOG("error in the frame update");
@@ -110,13 +108,6 @@ void Apply(Feature& f) {
     } else if (id == "rgb_speed") {
         c.rgbSpeed = std::clamp(f.value, 0.1f, 5.0f);
         prefsDirty = true;
-    } else if (id == "jumpscares") {
-        c.scares = f.on;
-    } else if (id == "jumpscare_every") {
-        c.scareEvery = std::clamp(f.value, 1.0f, 30.0f);
-        prefsDirty = true;
-    } else if (id == "jumpscare_now") {
-        scare::Now();
     }
 }
 
@@ -136,10 +127,6 @@ void LoadPrefs() {
         if (Feature* f = Find("rgb_speed")) {
             f->value = std::clamp(PrefNumber(j, "rgb_speed", f->def), f->min, f->max);
             gd::C().rgbSpeed = f->value;
-        }
-        if (Feature* f = Find("jumpscare_every")) {
-            f->value = std::clamp(PrefNumber(j, "jumpscare_every", f->def), f->min, f->max);
-            gd::C().scareEvery = f->value;
         }
     } catch (...) {
         LOG("gd.json could not be read, using the defaults");
@@ -168,9 +155,6 @@ void UpdateAvailability() {
     SetAvail("macro_play", sm && macro::PlayReady(), sm ? noGame : noSafe);
     SetAvail("rgb", rgb::Ready(), noGame);
     SetAvail("rgb_speed", rgb::Ready(), noGame);
-    SetAvail("jumpscares", scare::Ready(), noGame);
-    SetAvail("jumpscare_every", scare::Ready(), noGame);
-    SetAvail("jumpscare_now", scare::Ready(), noGame);
     int on = 0;
     for (const Feature& f : model->features)
         if (f.available) ++on;
@@ -197,7 +181,6 @@ bool Start(std::string& err) {
     if (!icons::Install()) LOG("unlock all icons is not available");
     if (!macro::Install()) LOG("macros are not available");
     if (!rgb::Install()) LOG("rgb is not available");
-    if (!scare::Install()) LOG("jumpscares are not available");
     if (!gd::Hook(gd::cc::SchedulerUpdateTarget(), (void*)&hkSched, (void**)&oSched, "frame update")) {
         err = "could not attach to the game's frame update";
         return false;
@@ -219,7 +202,6 @@ void AfterMenu() {
     try {
         safe::Frame();
         macro::Frame();
-        scare::Frame();
     } catch (...) {
         static int reported = 0;
         if (reported++ < 5) LOG("error while drawing the labels");
@@ -241,7 +223,6 @@ void SavePrefs(bool force) {
     if (!force && !prefsDirty.exchange(false)) return;
     nlohmann::json j;
     j["rgb_speed"] = gd::C().rgbSpeed.load();
-    j["jumpscare_every"] = gd::C().scareEvery.load();
     std::wstring path = PrefsPath();
     std::wstring tmp = path + L".tmp";
     {

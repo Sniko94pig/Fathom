@@ -17,10 +17,7 @@ add_library(fathom_gd SHARED
   ${GD_SRC}/ingame/icons.cpp
   ${GD_SRC}/ingame/macro.cpp
   ${GD_SRC}/ingame/rgb.cpp
-  ${GD_SRC}/ingame/scare.cpp
-  ${GD_SRC}/ingame/scare_art.cpp
   ${GD_SRC}/ingame/audio.cpp
-  ${GD_SRC}/ingame/image.cpp
   ${GD_SRC}/core/gd_features.cpp
   ${minhook_SOURCE_DIR}/src/buffer.c
   ${minhook_SOURCE_DIR}/src/hook.c

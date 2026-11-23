@@ -91,16 +91,3 @@ void Tick(float dt);
 void Off();
 
 }
-
-namespace scare {
-
-bool Install();
-bool Ready();
-void Tick(float dt);
-void Frame();
-void Now();
-void Off();
-void Cleanup();
-void Forget();
-
-}

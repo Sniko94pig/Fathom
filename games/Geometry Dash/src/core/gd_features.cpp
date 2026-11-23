@@ -73,9 +73,6 @@ void BuildFeatures(Model& m) {
 
     Toggle(m, Troll, "Colors", "rgb", "RGB", "Rainbow colors on your icon and the level");
     Slider(m, Troll, "Colors", "rgb_speed", "RGB speed", "How fast the colors change", 0.1f, 5.0f, 1.0f, 0.1f, "%.1fx", false);
-    Toggle(m, Troll, "Jumpscares", "jumpscares", "Random jumpscares", "A scary face and loud sound at random times");
-    Slider(m, Troll, "Jumpscares", "jumpscare_every", "Jumpscare every", "About how often, a bit random each time", 1.0f, 30.0f, 5.0f, 1.0f, "%.0f min", false);
-    Action(m, Troll, "Jumpscares", "jumpscare_now", "Jumpscare now", "Shows one jumpscare right away", "Scare");
 
     m.gameName = "Geometry Dash";
     m.keyOpen = ImGuiKey_RightShift;

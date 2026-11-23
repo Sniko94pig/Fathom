@@ -332,8 +332,6 @@ DWORD WINAPI MainThread(void*) {
         std::lock_guard<std::mutex> g(modelLock);
         model.logoTexture = tex;
     };
-    cb.cleanup = [] { scare::Cleanup(); };
-    cb.lost = [] { scare::Forget(); };
     cb.fatal = [] { unloadRequested = true; };
     bool overlayOk = overlay::Start(cb);
     if (!overlayOk) {

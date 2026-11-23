@@ -19,8 +19,6 @@ struct Cfg {
     std::atomic<bool> play{false};
     std::atomic<bool> rgb{false};
     std::atomic<float> rgbSpeed{1.0f};
-    std::atomic<bool> scares{false};
-    std::atomic<float> scareEvery{5.0f};
     std::atomic<bool> menuOpen{false};
     std::atomic<bool> stopping{false};
 };
