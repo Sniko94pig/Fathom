@@ -474,7 +474,7 @@ void Paint(HDC target, RECT rc) {
     SelectObject(dc, fBody);
     SetTextColor(dc, cDim);
     RECT sub{S(90), S(58), rc.right - S(32), S(78)};
-    DrawTextW(dc, L"Mod loader for your games", -1, &sub, DT_LEFT | DT_SINGLELINE);
+    DrawTextW(dc, L"Universal mod menu for your games", -1, &sub, DT_LEFT | DT_SINGLELINE);
     std::wstring s, d;
     {
         std::lock_guard<std::mutex> g(textLock);

@@ -218,7 +218,7 @@ void Menu::Sidebar(ImVec2 p, ImVec2 size) {
         Icon(dl, ImVec2(lp.x + S(17), lp.y + S(16)), S(18), White(), ICON_WAVES);
     }
     Upper(dl, T().semibold, 14, ImVec2(lp.x + S(44), lp.y), White(0.97f), "Fathom");
-    Text(dl, T().regular, 11, ImVec2(lp.x + S(44), lp.y + S(18)), White(0.45f), embedded ? "Mod loader" : m.gameName.c_str());
+    Text(dl, T().regular, 11, ImVec2(lp.x + S(44), lp.y + S(18)), White(0.45f), embedded ? "Universal mod menu" : m.gameName.c_str());
 
     float top = p.y + S(80), th = S(40), gap = S(4);
     struct Entry {
