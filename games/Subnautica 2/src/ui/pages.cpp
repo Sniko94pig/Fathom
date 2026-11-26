@@ -161,7 +161,9 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
     };
     chip("All");
     for (const std::string& c : cats) chip(c);
-    if (sp.hiddenChip) {
+    bool anyHidden = false;
+    for (const core::Item& it : items) anyHidden = anyHidden || it.hidden;
+    if (sp.hiddenChip && anyHidden) {
         const char* lbl = sp.hiddenChip;
         float cw = ChipWidth(lbl);
         if (cx + cw > b.x + lw) {
@@ -274,7 +276,8 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
                sel && sp.action && allowed))
         act(*sel, amount);
 
-    int extras = (sp.addAll ? 1 : 0) + (sp.duplicate ? 1 : 0);
+    bool dupe = sp.duplicate && m.duplicateButton;
+    int extras = (sp.addAll ? 1 : 0) + (dupe ? 1 : 0);
     if (extras == 0) return;
     float by = rp.y + H - S(16) - S(36) * extras - S(8) * (extras - 1);
     dl->AddLine(ImVec2(x, by - S(16)), ImVec2(x + iw, by - S(16)), White(0.06f));
@@ -289,7 +292,7 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
         }
         by += S(44);
     }
-    if (sp.duplicate &&
+    if (dupe &&
         Button("dupe", "Duplicate held item", ImVec2(x, by), ImVec2(iw, S(36)), Btn::Ghost, ICON_COPY, m.duplicateHeld && allowed)) {
         auto run = [this] {
             if (m.duplicateHeld) m.duplicateHeld();
@@ -535,8 +538,9 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     } else if (m.mapTexture && m.mapMaxX > m.mapMinX) {
         dl->AddImage((ImTextureID)m.mapTexture, toScreen(m.mapMinX, m.mapMinY), toScreen(m.mapMaxX, m.mapMaxY));
     } else {
-        ImVec2 ts = Measure(T().regular, 12, "The map fills in as you explore");
-        Text(dl, T().regular, 12, ImVec2(c.x - ts.x * 0.5f, a.y + S(18)), White(0.4f), "The map fills in as you explore");
+        const char* empty = m.mapWords.empty.c_str();
+        ImVec2 ts = Measure(T().regular, 12, empty);
+        Text(dl, T().regular, 12, ImVec2(c.x - ts.x * 0.5f, a.y + S(18)), White(0.4f), empty);
     }
     static const float steps[] = {10, 25, 50, 100, 250, 500, 1000, 2500, 5000};
     float step = steps[8];
@@ -593,8 +597,9 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     Text(dl, T().medium, 11, ImVec2(sb.x + bar + S(8), sb.y - S(8)), White(0.55f), buf);
     TextRight(dl, T().regular, 11, ImVec2(q.x - S(14), q.y - S(24)), White(0.36f), "Click to teleport  \xc2\xb7  drag to move  \xc2\xb7  scroll to zoom");
     if (m.mapTexture && m.mapMaxX > m.mapMinX) {
-        std::string photo = m.mapPhotos > 0 ? "Photo map  \xc2\xb7  " + std::to_string(m.mapPhotos) + " pieces here, more are added while this menu is open"
-                                             : "Pictures of the seabed are taken while this menu is open";
+        std::string photo = m.mapPhotos <= 0 ? m.mapWords.photos
+                            : "Photo map  \xc2\xb7  " + std::to_string(m.mapPhotos) + " pieces here" +
+                                  (m.mapWords.photosMore.empty() ? std::string() : ", " + m.mapWords.photosMore);
         Text(dl, T().regular, 11, ImVec2(a.x + S(16), a.y + S(14)), White(0.42f), photo.c_str());
     }
     dl->PopClipRect();
@@ -643,7 +648,8 @@ void Menu::MapView(ImVec2 b, float W, float H) {
     for (int k = 0; k < 4; ++k) {
         int i = types[k];
         ImVec2 cp(x + (k % 2) * (cw + S(8)), y + (k / 2) * S(36));
-        if (Chip(names[i], names[i], cp, showType[i], cw)) showType[i] = !showType[i];
+        const char* label = m.mapWords.chips[k].empty() ? names[i] : m.mapWords.chips[k].c_str();
+        if (Chip(names[i], label, cp, showType[i], cw)) showType[i] = !showType[i];
     }
     y += S(84);
     bool placesTab = drawn && !m.places.empty();
@@ -751,12 +757,9 @@ void Menu::MapView(ImVec2 b, float W, float H) {
             m.mapScan(false);
             Notify("Stopping the map scan", ICON_X);
         }
-    } else if (Button("scan", "Scan whole map", ImVec2(x, bottom - S(36)), ImVec2(iw, S(36)), Btn::Tint, ICON_MAP,
+    } else if (Button("scan", m.mapWords.scanButton.c_str(), ImVec2(x, bottom - S(36)), ImVec2(iw, S(36)), Btn::Tint, ICON_MAP,
                       m.mapScan && m.cheatsAllowed() && m.inWorld)) {
-        Ask("Scan the whole map?",
-            "A camera flies over the whole world and takes a picture of every part. Your character is frozen and can't be hurt while it "
-            "runs. It takes about 10 to 30 minutes, and you can stop it at any time.",
-            "Start scan", [this] {
+        Ask(m.mapWords.scanTitle, m.mapWords.scanBody, "Start scan", [this] {
                 if (m.mapScan) m.mapScan(true);
                 Notify("Map scan started", ICON_MAP);
             });

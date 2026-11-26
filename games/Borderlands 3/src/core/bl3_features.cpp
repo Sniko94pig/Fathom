@@ -197,6 +197,15 @@ void BuildFeatures(Model& m) {
     Action(m, Vehicle, "Teleport", "bring_vehicle", "Bring my car", "Moves the last car you drove next to you. The map teleport also takes your car with you",
            "Bring");
 
+    m.mapWords.chips = {"Vehicles", "Fast travel", "Places", "Challenges"};
+    m.mapWords.empty = "Press Scan this area for a picture of the map";
+    m.mapWords.photos = "Press Scan this area for a picture of the map";
+    m.mapWords.photosMore = "";
+    m.mapWords.scanButton = "Scan this area";
+    m.mapWords.scanTitle = "Scan this area?";
+    m.mapWords.scanBody = "A camera above you takes pictures of the area around you. It takes about 10 to 15 seconds, nothing freezes, "
+                          "and you can stop it at any time. It only works when you play alone.";
+    m.duplicateButton = false;
     m.gameName = "Borderlands 3";
     m.keyOpen = ImGuiKey_RightShift;
     m.keyUnload = ImGuiKey_End;

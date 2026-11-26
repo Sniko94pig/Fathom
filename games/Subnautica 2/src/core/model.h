@@ -43,6 +43,17 @@ struct Item {
     bool real = true;
 };
 
+struct MapWords {
+    std::array<std::string, 4> chips;
+    std::string empty = "The map fills in as you explore";
+    std::string photos = "Pictures of the seabed are taken while this menu is open";
+    std::string photosMore = "more are added while this menu is open";
+    std::string scanButton = "Scan whole map";
+    std::string scanTitle = "Scan the whole map?";
+    std::string scanBody = "A camera flies over the whole world and takes a picture of every part. Your character is frozen and can't be hurt "
+                           "while it runs. It takes about 10 to 30 minutes, and you can stop it at any time.";
+};
+
 struct Marker {
     MarkerType type = MarkerType::Wreck;
     std::string name;
@@ -163,6 +174,8 @@ struct Model {
     bool mapScanning = false;
     float mapScanProgress = 0;
     std::string mapScanText;
+    MapWords mapWords;
+    bool duplicateButton = true;
     std::vector<Location> locations;
     std::vector<Location> places;
     bool mapDrawn = false;

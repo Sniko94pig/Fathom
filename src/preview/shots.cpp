@@ -848,6 +848,33 @@ int main(int argc, char** argv) {
              bl3::BuildFeatures(m);
              Live(m, {"god_mode", "unlimited_shield"}, {});
          }, ImVec2(520, 220), Toasts("God mode on", "Unlimited shield on")},
+        {"50-bl3-map", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             bl3::BuildFeatures(m);
+             Live(m, {}, {});
+             m.mapScan = [](bool) {};
+             u.tab = core::Tab::Spawner;
+             u.page = "map";
+         }, ImVec2(0, 0), nullptr},
+        {"51-bl3-map-scan", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             bl3::BuildFeatures(m);
+             Live(m, {}, {});
+             m.mapScan = [](bool) {};
+             u.tab = core::Tab::Spawner;
+             u.page = "map";
+             u.Ask(m.mapWords.scanTitle, m.mapWords.scanBody, "Start scan", [] {});
+         }, ImVec2(0, 0), nullptr},
+        {"52-bl3-giver", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             bl3::BuildFeatures(m);
+             Live(m, {}, {});
+             m.spawn = [](const core::Item&, int) {};
+             m.items = {{"a", "Lucian's Call", "Assault rifles"}, {"b", "Hellwalker", "Shotguns"}, {"c", "Plaguebearer", "Heavy weapons"},
+                        {"d", "Front Loader", "Shields"}, {"e", "Hex", "Grenades"}};
+             u.tab = core::Tab::Spawner;
+             u.page = "add_items";
+         }, ImVec2(0, 0), nullptr},
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {
              m.session = core::Session::Client;
