@@ -12,6 +12,7 @@
 #include "core/mc_features.h"
 #include "core/ultrakill_features.h"
 #include "core/gd_features.h"
+#include "core/bl3_features.h"
 #include "launcher/prefs.h"
 #include "launcher/backups.h"
 #include "ui/icons.h"
@@ -303,6 +304,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::LoadSettings(gdModel);
     std::string gdLastText = core::SettingsText(gdModel);
     auto gdKnownTime = FileTime(gdSettingsPath);
+    core::Model bl3Model;
+    bl3::BuildFeatures(bl3Model);
+    home.bl3Paths = gameinject::Locate(gameinject::kBorderlands3);
+    std::wstring bl3SettingsPath = home.bl3Paths.found ? home.bl3Paths.settings : (std::filesystem::path(ExeDir()) / L"borderlands3-settings.json").wstring();
+    if (home.bl3Paths.found) { std::error_code ec; std::filesystem::create_directories(home.bl3Paths.folder, ec); }
+    bl3Model.settingsPath = Narrow(bl3SettingsPath);
+    for (core::Feature& f : bl3Model.features)
+    {
+        f.available = false;
+        f.missing = "Turn this on inside the game. Cheats always start off.";
+    }
+    bl3Model.backupSaves = [&home] { return gameinject::BackupSaves(gameinject::kBorderlands3, home.bl3Paths); };
+    bl3Model.openUrl = model.openUrl;
+    core::LoadSettings(bl3Model);
+    std::string bl3LastText = core::SettingsText(bl3Model);
+    auto bl3KnownTime = FileTime(bl3SettingsPath);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -376,7 +393,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ui::Menu mcMenu(mcModel);
     ui::Menu ukMenu(ukModel);
     ui::Menu gdMenu(gdModel);
-    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu, &ukMenu, &gdMenu })
+    ui::Menu bl3Menu(bl3Model);
+    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu, &ukMenu, &gdMenu, &bl3Menu })
     {
         mm->embedded = true;
         mm->homePage = [&home, mm] {
@@ -389,7 +407,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->homeIcon = ICON_LAYERS;
         mm->onHome = true;
         mm->showGameTabs = false;
-        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; gdMenu.onHome = true; };
+        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; gdMenu.onHome = true; bl3Menu.onHome = true; };
         mm->loader = &loader;
         mm->uiScale = loader.s.scale * g_dpi;
     }
@@ -402,7 +420,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         ULONGLONG since = 0;
         bool tried = false;
     };
-    Watch watch[5];
+    Watch watch[6];
     auto openPath = [](const std::wstring& path) {
         std::error_code ec;
         std::filesystem::create_directories(path, ec);
@@ -416,7 +434,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         for (const std::string& p : { inject::BackupSaves(), gameinject::BackupSaves(gameinject::kSubnautica, home.sn1Paths),
                                       gameinject::BackupSaves(gameinject::kSonsOfTheForest, home.sotfPaths),
                                       gameinject::BackupSaves(gameinject::kUltrakill, home.ukPaths),
-                                      gameinject::BackupSaves(gameinject::kGeometryDash, home.gdPaths) })
+                                      gameinject::BackupSaves(gameinject::kGeometryDash, home.gdPaths),
+                                      gameinject::BackupSaves(gameinject::kBorderlands3, home.bl3Paths) })
             if (!p.empty())
                 last = p;
         return last;
@@ -532,6 +551,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     mcModel.logoTexture = model.logoTexture;
     ukModel.logoTexture = model.logoTexture;
     gdModel.logoTexture = model.logoTexture;
+    bl3Model.logoTexture = model.logoTexture;
 
     std::thread worker;
     std::atomic<bool> workerDone{ false };
@@ -575,7 +595,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         bool mcOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "minecraft") == 0;
         bool ukOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "ultrakill") == 0;
         bool gdOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "geometrydash") == 0;
-        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : ukOpen ? ukMenu : gdOpen ? gdMenu : mainMenu;
+        bool bl3Open = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "borderlands3") == 0;
+        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : ukOpen ? ukMenu : gdOpen ? gdMenu : bl3Open ? bl3Menu : mainMenu;
         ULONGLONG now = GetTickCount64();
         if (now - lastPoll >= 1000)
         {
@@ -585,10 +606,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             home.sotfState = gameinject::State(gameinject::kSonsOfTheForest);
             home.ukState = gameinject::State(gameinject::kUltrakill);
             home.gdState = gameinject::State(gameinject::kGeometryDash);
-            for (int gi = 0; gi < 5; ++gi)
+            home.bl3State = gameinject::State(gameinject::kBorderlands3);
+            for (int gi = 0; gi < 6; ++gi)
             {
-                inject::GameState st = gi == 1 ? home.sn1State : gi == 2 ? home.sotfState : gi == 3 ? home.ukState : gi == 4 ? home.gdState : home.state;
-                bool found = gi == 1 ? home.sn1Paths.found : gi == 2 ? home.sotfPaths.found : gi == 3 ? home.ukPaths.found : gi == 4 ? home.gdPaths.found : home.paths.found;
+                inject::GameState st = gi == 1 ? home.sn1State : gi == 2 ? home.sotfState : gi == 3 ? home.ukState : gi == 4 ? home.gdState : gi == 5 ? home.bl3State : home.state;
+                bool found = gi == 1 ? home.sn1Paths.found : gi == 2 ? home.sotfPaths.found : gi == 3 ? home.ukPaths.found : gi == 4 ? home.gdPaths.found : gi == 5 ? home.bl3Paths.found : home.paths.found;
                 Watch& wt = watch[gi];
                 if (wt.last == inject::GameState::Injected && st == inject::GameState::Running)
                     menu.Notify("The menu was unloaded from the game", ICON_INFO);
@@ -667,7 +689,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
             bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
-            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen || ukOpen || gdOpen;
+            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen || ukOpen || gdOpen || bl3Open;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? (mainMenu.homeIndex == 1 ? "My games" : "All games") : nullptr;
@@ -679,7 +701,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 mainMenu.homeTabs.push_back({ "Maps", ICON_MAP });
                 mainMenu.homeTabs.push_back({ "Help", ICON_CIRCLE_HELP });
             }
-            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : gdOpen ? gdModel : model;
+            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : gdOpen ? gdModel : bl3Open ? bl3Model : model;
             home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;
             home.installedFirst = loader.s.installedFirst;
@@ -741,6 +763,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 menu.status = home.gdState == inject::GameState::Injected ? "Menu active in game" : home.gdState == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.gdState != inject::GameState::NotRunning;
+            }
+            else if (bl3Open)
+            {
+                menu.status = home.bl3State == inject::GameState::Injected ? "Menu active in game" : home.bl3State == inject::GameState::Running ? "Game running" : "Game not running";
+                menu.statusGood = home.bl3State != inject::GameState::NotRunning;
             }
             else
             {
@@ -853,12 +880,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     gameinject::StartGame(gameinject::kUltrakill);
                 else if (gdOpen)
                     gameinject::StartGame(gameinject::kGeometryDash);
+                else if (bl3Open)
+                    gameinject::StartGame(gameinject::kBorderlands3);
                 else
                     inject::StartGame();
                 menu.Notify(sn1Open ? "Starting Subnautica\xe2\x80\xa6"
                             : sotfOpen ? "Starting Sons of the Forest\xe2\x80\xa6"
                             : ukOpen ? "Starting ULTRAKILL\xe2\x80\xa6"
                             : gdOpen ? "Starting Geometry Dash\xe2\x80\xa6"
+                            : bl3Open ? "Starting Borderlands 3\xe2\x80\xa6"
                                      : "Starting Subnautica 2\xe2\x80\xa6",
                             ICON_PLAY);
             }
@@ -909,6 +939,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 gdLastText = core::SettingsText(gdModel);
                 gdKnownTime = FileTime(gdSettingsPath);
             }
+            else if (target == 5)
+            {
+                core::SaveSettings(bl3Model);
+                bl3LastText = core::SettingsText(bl3Model);
+                bl3KnownTime = FileTime(bl3SettingsPath);
+            }
             else
             {
                 core::SaveSettings(model);
@@ -916,8 +952,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 knownTime = FileTime(settingsPath);
             }
             workerDone = false;
-            inject::Paths paths = target == 1 ? home.sn1Paths : target == 2 ? home.sotfPaths : target == 3 ? home.ukPaths : target == 4 ? home.gdPaths : home.paths;
-            std::string key = core::KeyName(target == 2 ? sotfModel.keyOpen : target == 3 ? ukModel.keyOpen : target == 4 ? gdModel.keyOpen : sn1Model.keyOpen);
+            inject::Paths paths = target == 1 ? home.sn1Paths : target == 2 ? home.sotfPaths : target == 3 ? home.ukPaths : target == 4 ? home.gdPaths : target == 5 ? home.bl3Paths : home.paths;
+            std::string key = core::KeyName(target == 2 ? sotfModel.keyOpen : target == 3 ? ukModel.keyOpen : target == 4 ? gdModel.keyOpen : target == 5 ? bl3Model.keyOpen : sn1Model.keyOpen);
             bool backupFirst = loader.s.backupOnInject;
             worker = std::thread([&, paths, target, key, backupFirst] {
                 if (backupFirst)
@@ -930,6 +966,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                         gameinject::BackupSaves(gameinject::kUltrakill, paths);
                     else if (target == 4)
                         gameinject::BackupSaves(gameinject::kGeometryDash, paths);
+                    else if (target == 5)
+                        gameinject::BackupSaves(gameinject::kBorderlands3, paths);
                     else
                         inject::BackupSaves();
                 }
@@ -937,6 +975,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                              : target == 2 ? gameinject::Inject(gameinject::kSonsOfTheForest, paths, workerOk, key)
                              : target == 3 ? gameinject::Inject(gameinject::kUltrakill, paths, workerOk, key)
                              : target == 4 ? gameinject::Inject(gameinject::kGeometryDash, paths, workerOk, key)
+                             : target == 5 ? gameinject::Inject(gameinject::kBorderlands3, paths, workerOk, key)
                                            : inject::Inject(paths, workerOk);
                 workerDone = true;
             });
@@ -976,6 +1015,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             sync(sotfModel, sotfMenu, sotfSettingsPath, sotfLastText, sotfKnownTime);
             sync(ukModel, ukMenu, ukSettingsPath, ukLastText, ukKnownTime);
             sync(gdModel, gdMenu, gdSettingsPath, gdLastText, gdKnownTime);
+            sync(bl3Model, bl3Menu, bl3SettingsPath, bl3LastText, bl3KnownTime);
         }
         if (closeAt && now >= closeAt)
             done = true;
@@ -1050,6 +1090,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mcModel.requestUnload = false;
         ukModel.requestUnload = false;
         gdModel.requestUnload = false;
+        bl3Model.requestUnload = false;
         ImGui::Render();
 
         FrameContext* frameCtx = WaitForNextFrameContext();
@@ -1101,6 +1142,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(ukModel);
     if (core::SettingsText(gdModel) != gdLastText)
         core::SaveSettings(gdModel);
+    if (core::SettingsText(bl3Model) != bl3LastText)
+        core::SaveSettings(bl3Model);
 
     launcher::art::Stop();
     launcher::maps::Stop();

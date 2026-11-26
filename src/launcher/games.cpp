@@ -16,7 +16,7 @@ const std::vector<GameDef>& Games() {
         {"subnautica2", "Subnautica 2", 1962700, "SN2", true},
         {"borderlands", "Borderlands", 729040, "BL", false},
         {"borderlands2", "Borderlands 2", 49520, "BL2", false},
-        {"borderlands3", "Borderlands 3", 397540, "BL3", false},
+        {"borderlands3", "Borderlands 3", 397540, "BL3", true},
         {"borderlands4", "Borderlands 4", 1285190, "BL4", false},
         {"cyberpunk2077", "Cyberpunk 2077", 1091500, "CP", false},
         {"doom", "DOOM + DOOM II", 2280, "DOOM", false},

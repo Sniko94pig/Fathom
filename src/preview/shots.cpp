@@ -17,6 +17,7 @@
 #include "core/mc_features.h"
 #include "core/ultrakill_features.h"
 #include "core/gd_features.h"
+#include "core/bl3_features.h"
 #include "ui/ui.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -619,6 +620,20 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"49-launcher-borderlands3", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             m = core::Model();
+             bl3::BuildFeatures(m);
+             home.game = launcher::FindGame("borderlands3");
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Borderlands 3";
+             u.homePage = [] { home.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
         {"30-launcher-minecraft", [&](core::Model& m, ui::Menu& u) {
              static launcher::Home home;
              LoadShotArt(home, outDir);
@@ -828,6 +843,11 @@ int main(int argc, char** argv) {
              Live(m, {"killaura", "criticals"}, {});
              u.tab = core::Tab::Biomods;
          }, ImVec2(520, 220), Toasts("Kill aura on", "Criticals on")},
+        {"menu-borderlands-3", [](core::Model& m, ui::Menu&) {
+             m = core::Model();
+             bl3::BuildFeatures(m);
+             Live(m, {"god_mode", "unlimited_shield"}, {});
+         }, ImVec2(520, 220), Toasts("God mode on", "Unlimited shield on")},
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {
              m.session = core::Session::Client;

@@ -41,6 +41,7 @@ std::string GameFor(const std::string& prefix, std::string& note) {
     if (prefix == "SonsOfTheForest") return "Sons of the Forest";
     if (prefix == "ULTRAKILL") return "ULTRAKILL";
     if (prefix == "GeometryDash") return "Geometry Dash";
+    if (prefix == "Borderlands3") return "Borderlands 3";
     if (prefix.rfind("Revive", 0) == 0) {
         note = "Before a revive";
         return "Sons of the Forest";

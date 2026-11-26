@@ -2,6 +2,7 @@
 #include "launcher/games.h"
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <tlhelp32.h>
 #include <filesystem>
 #include <fstream>
@@ -118,6 +119,15 @@ fs::path GdSaves(const inject::Paths&) {
     return fs::path(buf) / L"GeometryDash";
 }
 
+fs::path Bl3Saves(const inject::Paths&) {
+    PWSTR docs = nullptr;
+    fs::path out;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs)) && docs)
+        out = fs::path(docs) / L"My Games" / L"Borderlands 3" / L"Saved" / L"SaveGames";
+    CoTaskMemFree(docs);
+    return out;
+}
+
 bool GdKeep(const std::wstring& name) {
     std::wstring low = name;
     for (wchar_t& c : low) c = (wchar_t)towlower(c);
@@ -133,6 +143,8 @@ const Spec kSonsOfTheForest{L"SonsOfTheForest.exe", L"Sons Of The Forest", L"fat
 const Spec kUltrakill{L"ULTRAKILL.exe", L"ULTRAKILL", L"fathom_ultrakill.dll", L"fathom_ultrakill.run.dll", "ULTRAKILL", 1229490, L"ULTRAKILL", UkSaves};
 const Spec kGeometryDash{L"GeometryDash.exe", L"Geometry Dash", L"fathom_gd.dll", L"fathom_gd.run.dll", "Geometry Dash", 322170, L"GeometryDash", GdSaves,
                          GdKeep};
+const Spec kBorderlands3{L"Borderlands3.exe", L"Borderlands 3\\OakGame\\Binaries\\Win64", L"fathom_bl3.dll", L"fathom_bl3.run.dll", "Borderlands 3", 397540,
+                         L"Borderlands3", Bl3Saves};
 
 inject::Paths Locate(const Spec& s) {
     inject::Paths p;

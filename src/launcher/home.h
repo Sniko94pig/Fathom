@@ -31,6 +31,8 @@ struct Home {
     inject::GameState ukState = inject::GameState::NotRunning;
     inject::Paths gdPaths;
     inject::GameState gdState = inject::GameState::NotRunning;
+    inject::Paths bl3Paths;
+    inject::GameState bl3State = inject::GameState::NotRunning;
     bool busy = false;
     bool injectNow = false;
     int injectGame = 0;

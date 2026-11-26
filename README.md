@@ -10,8 +10,8 @@ Every game has its own folder in [games](games).
 
 | Game | Status |
 |---|---|
-| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>), [ULTRAKILL](<games/ULTRAKILL>), [Geometry Dash](<games/Geometry Dash>) | Ready |
-| [Borderlands](<games/Borderlands>), [Borderlands 2](<games/Borderlands 2>), [Borderlands 3](<games/Borderlands 3>), [Borderlands 4](<games/Borderlands 4>) | Coming soon |
+| [Subnautica 2](<games/Subnautica 2>), [Subnautica](<games/Subnautica>), [Sons of the Forest](<games/Sons of the Forest>), [Minecraft: Java Edition](<games/Minecraft Java>), [ULTRAKILL](<games/ULTRAKILL>), [Geometry Dash](<games/Geometry Dash>), [Borderlands 3](<games/Borderlands 3>) | Ready |
+| [Borderlands](<games/Borderlands>), [Borderlands 2](<games/Borderlands 2>), [Borderlands 4](<games/Borderlands 4>) | Coming soon |
 | [Cyberpunk 2077](<games/Cyberpunk 2077>) | Coming soon |
 | [Fallout 4](<games/Fallout 4>), [Fallout: New Vegas](<games/Fallout New Vegas>) | Coming soon |
 | [Outlast](<games/Outlast>) | Coming soon |
@@ -29,6 +29,8 @@ The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creat
 
 The Geometry Dash menu has game speed, noclip, unlimited jumps, hitboxes, complete level, a macro recorder and player, an icon unlocker that only changes what you see, and a troll page with RGB colors. Runs with cheats on never count: they don't save progress or give stars, orbs or diamonds. It works on Geometry Dash 2.2091; on other versions every module waits for a Fathom update.
 
+The Borderlands 3 menu has god mode, unlimited shield and ammo, money, eridium and golden keys, gun handling and damage, silent aim, aim assist, enemy and loot ESP, skill cooldowns, speed, fly, noclip and a free camera, a giver for guns and gear, a map with teleport, drop filters, and vehicle cheats. Borderlands 3 has online co-op, so cheats only work when you play alone or are the host, and some only work when you play alone. They never touch other players or anything sent to SHiFT.
+
 Minecraft: Java Edition needs Fabric. Press **Start game** on its page and Fathom makes a **Fathom** install in the Minecraft Launcher, with the newest Fabric API and the Fathom mod, `fathom_mc.jar`, which has all the cheats and Baritone inside. In the game, **Right Shift** opens the Fathom menu while you play. The menu needs OpenGL, so leave Graphics API on Default or Prefer OpenGL.
 
 The **Maps** tab in Fathom has the maps of Subnautica, Subnautica 2 and Sons of the Forest. Pick a game to open its map, then filter and search the places on it: lifepods, wrecks, Degasi bases and alien sites in Subnautica, signals, black boxes, supply crates and quartz chips in Subnautica 2, and caves, bunkers and villages in Sons of the Forest. Scroll to zoom, drag to move and click a place to see where it is. All three maps come with Fathom, so they show even before you play. The Subnautica and Sons of the Forest maps are drawn from the games' own world data.
@@ -44,8 +46,8 @@ The **Maps** tab in Fathom has the maps of Subnautica, Subnautica 2 and Sons of 
 | ![Subnautica menu](shots/menu-subnautica.png) | ![Sons of the Forest menu](shots/menu-sons-of-the-forest.png) |
 | **ULTRAKILL** | **Geometry Dash** |
 | ![ULTRAKILL menu](shots/menu-ultrakill.png) | ![Geometry Dash menu](shots/menu-geometry-dash.png) |
-| **Minecraft: Java Edition** | |
-| ![Minecraft menu](shots/menu-minecraft.png) | |
+| **Minecraft: Java Edition** | **Borderlands 3** |
+| ![Minecraft menu](shots/menu-minecraft.png) | ![Borderlands 3 menu](shots/menu-borderlands-3.png) |
 
 ### The Fathom app
 

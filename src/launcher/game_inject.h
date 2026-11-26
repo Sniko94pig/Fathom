@@ -21,6 +21,7 @@ extern const Spec kSubnautica;
 extern const Spec kSonsOfTheForest;
 extern const Spec kUltrakill;
 extern const Spec kGeometryDash;
+extern const Spec kBorderlands3;
 
 inject::Paths Locate(const Spec& s);
 inject::GameState State(const Spec& s);
