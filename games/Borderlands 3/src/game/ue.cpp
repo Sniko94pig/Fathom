@@ -437,7 +437,11 @@ bool Alive(const void* obj) {
     if (!Valid(obj)) return false;
     uint32_t f = 0;
     if (!SafeRead((const uint8_t*)obj + off.flags, f)) return false;
-    return (f & (0x8000u | 0x10000u | 0x40000000u)) == 0;
+    if (f & (0x8000u | 0x10000u)) return false;
+    uint8_t* item = ItemAt(IndexOf(obj));
+    int32_t internal = 0;
+    if (item) SafeRead(item + 8, internal);
+    return (internal & 0x30000000) == 0;
 }
 
 bool IsDefault(const void* obj) {
@@ -583,8 +587,9 @@ void ForEachOf(const void* cls, const std::function<bool(void*)>& fn) {
 
 Prop FindProp(const void* type, const char* name) {
     if (!type || off.children < 0) return {};
-    char key[300];
-    std::snprintf(key, sizeof(key), "%p.%s", type, name);
+    char key[340];
+    FWeak tw = MakeWeak(type);
+    std::snprintf(key, sizeof(key), "%p.%d.%d.%s", type, tw.index, tw.serial, name);
     {
         std::lock_guard<std::mutex> g(cacheLock);
         auto it = propCache.find(key);
@@ -623,8 +628,9 @@ void* PropClass(const Prop& p) { return p.field ? PtrAt(p.field, off.propExtra) 
 
 void* FindFunction(const void* cls, const char* name) {
     if (!cls || off.children < 0) return nullptr;
-    char key[300];
-    std::snprintf(key, sizeof(key), "%p.%s", cls, name);
+    char key[340];
+    FWeak cw = MakeWeak(cls);
+    std::snprintf(key, sizeof(key), "%p.%d.%d.%s", cls, cw.index, cw.serial, name);
     {
         std::lock_guard<std::mutex> g(cacheLock);
         auto it = funcCache.find(key);

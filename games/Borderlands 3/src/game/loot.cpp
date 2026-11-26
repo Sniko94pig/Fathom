@@ -10,7 +10,9 @@ namespace {
 
 struct WeightSave {
     ue::FWeak pool;
-    uint8_t* addr = nullptr;
+    uint8_t* data = nullptr;
+    int index = 0;
+    void* attr = nullptr;
     float value = 0;
 };
 
@@ -36,7 +38,8 @@ void ApplyPool(void* pool, int mask) {
     auto arr = ue::Read<ue::TArray<uint8_t>>(pool, p);
     if (!arr.data || arr.num <= 0 || arr.num > 2000) return;
     struct Entry {
-        uint8_t* e;
+        int index;
+        void* attr;
         int rarity;
     };
     std::vector<Entry> list;
@@ -45,23 +48,31 @@ void ApplyPool(void* pool, int mask) {
         void* attr = ue::At<void*>(e, 0x58);
         if (!attr || !ue::Valid(attr)) continue;
         int r = RarityOf(attr);
-        if (r) list.push_back({e, r});
+        if (r) list.push_back({i, attr, r});
     }
     if (list.empty()) return;
     bool anyKept = std::any_of(list.begin(), list.end(), [&](const Entry& x) { return (mask & (1 << x.rarity)) != 0; });
     if (!anyKept) return;
     for (const Entry& x : list) {
         if (mask & (1 << x.rarity)) continue;
-        uint8_t* addr = x.e + 0x68;
-        float v = ue::At<float>(addr, 0);
-        weightSaves.push_back({ue::MakeWeak(pool), addr, v});
-        ue::Put<float>(addr, 0, 0.0f);
+        uint8_t* e = arr.data + (size_t)x.index * 0x70;
+        float v = ue::At<float>(e, 0x68);
+        weightSaves.push_back({ue::MakeWeak(pool), arr.data, x.index, x.attr, v});
+        ue::Put<float>(e, 0x68, 0.0f);
     }
 }
 
 void RestoreWeights() {
-    for (WeightSave& w : weightSaves)
-        if (ue::WeakGet(w.pool)) ue::Put<float>(w.addr, 0, w.value);
+    for (WeightSave& w : weightSaves) {
+        void* pool = ue::WeakGet(w.pool);
+        if (!pool) continue;
+        ue::Prop p = ue::FindProp(ue::ClassOf(pool), "BalancedItems");
+        auto arr = ue::Read<ue::TArray<uint8_t>>(pool, p);
+        if (!p || arr.data != w.data || w.index >= arr.num) continue;
+        uint8_t* e = arr.data + (size_t)w.index * 0x70;
+        if (ue::At<void*>(e, 0x58) != w.attr) continue;
+        ue::Put<float>(e, 0x68, w.value);
+    }
     weightSaves.clear();
     processedPools.clear();
     poolCursor = expCursor = 0;

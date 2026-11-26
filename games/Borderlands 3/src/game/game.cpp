@@ -52,7 +52,7 @@ std::vector<void*> scanBuilding[(int)Scan::Count], scanReady[(int)Scan::Count];
 bool scanDone[(int)Scan::Count] = {};
 int32_t scanCursor = 0;
 std::unordered_map<void*, uint32_t> classMask;
-void* lastWorld = nullptr;
+ue::FWeak lastWorld;
 
 double Now() {
     using namespace std::chrono;
@@ -79,8 +79,9 @@ uint32_t MaskFor(void* cls) {
 }
 
 void ScanStep() {
-    if (st.world != lastWorld) {
-        lastWorld = st.world;
+    ue::FWeak w = ue::MakeWeak(st.world);
+    if (w.index != lastWorld.index || w.serial != lastWorld.serial) {
+        lastWorld = w;
         classMask.clear();
         scanCursor = 0;
         for (int k = 0; k < (int)Scan::Count; ++k) {
@@ -89,9 +90,12 @@ void ScanStep() {
             scanDone[k] = false;
         }
     }
+    if (!st.inWorld) return;
     int32_t n = ue::ObjectCount();
+    double until = Now() + 0.00025;
     int budget = 30000;
     for (; budget > 0 && scanCursor < n; --budget, ++scanCursor) {
+        if ((budget & 255) == 0 && Now() > until) break;
         void* o = ue::ObjectAt(scanCursor);
         if (!o) continue;
         uint32_t mask = MaskFor(ue::ClassOf(o));
@@ -508,7 +512,7 @@ std::vector<void*> PlayerWeapons() {
     std::vector<void*> out;
     void* held = HeldWeapon();
     if (held) out.push_back(held);
-    if (st.vehicle) {
+    if (st.vehicle && DrivingAlone()) {
         static void* vehWeaponCls = nullptr;
         if (!vehWeaponCls) vehWeaponCls = ue::FindClass("OakWeapon_Vehicle");
         void* awc = ComponentOf(st.vehicle, "ActiveWeaponsComponent");
@@ -536,21 +540,25 @@ std::string DisplayName(void* obj) {
 
 void* Globals() {
     static ue::FWeak w;
+    static double retry = 0;
     void* g = ue::WeakGet(w);
-    if (g) return g;
+    if (g || st.time < retry) return g;
     g = ue::FindFirstOf(ue::FindClass("OakGlobalsData"));
     if (g) w = ue::MakeWeak(g);
+    else retry = st.time + 5.0;
     return g;
 }
 
 void* GameplayGlobals() {
     static ue::FWeak w;
+    static double retry = 0;
     void* gg = ue::WeakGet(w);
-    if (gg) return gg;
+    if (gg || st.time < retry) return gg;
     void* g = Globals();
     gg = g ? ue::Ptr(g, "GameplayGlobals") : nullptr;
     if (!gg) gg = ue::FindFirstOf(ue::FindClass("GameplayGlobals"));
     if (gg) w = ue::MakeWeak(gg);
+    else retry = st.time + 5.0;
     return gg;
 }
 
@@ -757,8 +765,8 @@ bool Shutdown() {
     ULONGLONG start = GetTickCount64();
     while (!stopped) {
         Sleep(20);
-        if (GetTickCount64() - start > 15000) {
-            LOG("the game did not run an update in 15 seconds, cheats may still be on");
+        if (GetTickCount64() - start > 60000) {
+            LOG("the game did not run an update in 60 seconds");
             return false;
         }
     }

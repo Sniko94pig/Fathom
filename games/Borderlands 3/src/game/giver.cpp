@@ -19,7 +19,7 @@ struct GiverItem {
 std::vector<GiverItem> list;
 bool built = false, building = false, failed = false;
 double worldSince = 0;
-void* lastWorld = nullptr;
+ue::FWeak lastWorld;
 std::mutex queueLock;
 std::vector<std::pair<int, int>> queue;
 std::deque<std::vector<uint8_t>> keepAlive;
@@ -241,6 +241,12 @@ void SpawnItem(const GiverItem& it, int count) {
         Note("Could not load " + it.name);
         return;
     }
+    void* dlcSet = ue::Ptr(bal, "DlcInventorySetData");
+    if (dlcSet && !DlcOwnedPath(ue::Path(dlcSet))) {
+        Note(it.name + " comes from paid content the menu can't confirm you own, so it was skipped");
+        LOG("giver: skipped %s, DLC set %s", it.assetName.c_str(), ue::Path(dlcSet).c_str());
+        return;
+    }
     void* data = ue::Ptr(bal, "InventoryData");
     void* manufacturer = nullptr;
     ue::Prop mp = ue::FindProp(ue::ClassOf(bal), "Manufacturers");
@@ -277,6 +283,8 @@ void SpawnItem(const GiverItem& it, int count) {
         return;
     }
     if (ctx) ue::Put<void*>(req.data(), ctx.offset, st.pawn);
+    ue::Prop mass = ue::FindProp(reqStruct, "InitialLootMassScale");
+    if (mass) ue::Put<float>(req.data(), mass.offset, 1.0f);
     ue::TArray<uint8_t> arr{sel.data(), count, count};
     ue::Put(req.data(), infos.offset, arr);
     if (policy && player) {
@@ -318,8 +326,9 @@ void GiverInit(core::Model& m) {
 }
 
 void GiverTick() {
-    if (st.world != lastWorld) {
-        lastWorld = st.world;
+    ue::FWeak w = ue::MakeWeak(st.world);
+    if (w.index != lastWorld.index || w.serial != lastWorld.serial) {
+        lastWorld = w;
         worldSince = st.time;
     }
     if (!built && !building && !failed && st.time - worldSince > 6.0 && (DlcKnown() || st.time - worldSince > 20.0)) Build();

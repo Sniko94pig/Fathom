@@ -197,6 +197,7 @@ bool WantsKeyboard() { return cbs.wantsKeyboard && cbs.wantsKeyboard(); }
 
 LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     Guard guard;
+    if (stopping) return CallWindowProcW(oWndProc, h, msg, w, l);
     bool want = !stopping && !failed && WantsInput();
     menuCapture = want;
     bool keys = want && WantsKeyboard();
@@ -1135,14 +1136,22 @@ bool Start(Callbacks cb) {
     return true;
 }
 
-void Stop() {
+bool Stop() {
     stopping = true;
+    bool safe = true;
     if (tPresent) MH_DisableHook(tPresent);
     if (tPresent1) MH_DisableHook(tPresent1);
     if (tResize) MH_DisableHook(tResize);
     if (tResize1) MH_DisableHook(tResize1);
     for (int i = 0; i < 200 && inflight.load() > 0; ++i) Sleep(10);
-    if (hwnd && oWndProc) SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)oWndProc);
+    if (hwnd && oWndProc) {
+        if (GetWindowLongPtrW(hwnd, GWLP_WNDPROC) == (LONG_PTR)&WndProc) {
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)oWndProc);
+        } else {
+            safe = false;
+            LOG("another program hooked the game window after the menu, the menu file stays loaded");
+        }
+    }
     if (tExec) MH_DisableHook(tExec);
     for (int i = 0; i < 200 && (inflight.load() > 0 || execInflight.load() > 0); ++i) Sleep(10);
     Sleep(100);
@@ -1150,6 +1159,8 @@ void Stop() {
     if (api == Api::Dx11) Shutdown11();
     if (api == Api::Dx12) Shutdown12();
     running = false;
+    if (inflight.load() > 0 || execInflight.load() > 0) safe = false;
+    return safe;
 }
 
 bool Running() { return running; }

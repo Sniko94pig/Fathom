@@ -93,7 +93,11 @@ void StopFly() {
     void* pawn = ue::WeakGet(fly.pawn);
     if (pawn) {
         void* mc = ue::Ptr(pawn, "CharacterMovement");
-        if (fly.collisionOff) SetCollision(pawn, true);
+        if (fly.collisionOff) {
+            SetCollision(pawn, true);
+            ue::FVector at = Location(pawn);
+            Teleport(pawn, {at.x, at.y, at.z + 20.0f}, Rotation(pawn));
+        }
         if (mc && Mode(mc) == kFlying) SetMode(mc, kFalling);
     }
     if (!flyAttrs.empty()) RestoreAttrs(flyAttrs);

@@ -2,6 +2,7 @@
 #include "ingame/log.h"
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace bl3 {
 
@@ -70,6 +71,7 @@ struct ShotMod {
     ue::FWeak pawn;
     bool registered = false;
     bool failed = false;
+    double failedAt = 0;
     float mult = 1.0f;
     bool crit = false;
 } shot;
@@ -80,6 +82,7 @@ struct FlagSave {
     bool value = false;
 };
 std::vector<FlagSave> levelFlags;
+std::unordered_set<int64_t> levelKnown;
 bool levelReqActive = false;
 size_t levelScanned = 0;
 
@@ -144,7 +147,7 @@ void ConfigureShot(void* mod, float mult, bool crit) {
     ue::Prop md = ue::FindProp(cls, "bModifyDamage");
     if (md) ue::WriteBool(mod, md, mult > 1.001f);
     ue::Prop type = ue::FindProp(cls, "DamageModifierType");
-    if (type) ue::Put<uint8_t>(mod, type.offset, 0);
+    if (type) ue::Put<int32_t>(mod, type.offset, 2);
     ue::Prop dm = ue::FindProp(cls, "DamageModifier");
     if (dm) {
         ue::Put<float>(mod, dm.offset, mult);
@@ -168,24 +171,29 @@ void DropShot() {
     void* pawn = ue::WeakGet(shot.pawn);
     if (shot.registered && mod && pawn) RegisterShot(pawn, mod, false);
     bool failed = shot.failed;
+    double failedAt = shot.failedAt;
     shot = {};
     shot.failed = failed;
+    shot.failedAt = failedAt;
 }
 
 void UpdateShot(float mult, bool crit) {
     bool want = mult > 1.001f || crit;
     if (shot.registered && (!want || ue::WeakGet(shot.pawn) != st.pawn || !ue::WeakGet(shot.mod))) DropShot();
+    if (shot.failed && st.time - shot.failedAt > 10.0) shot.failed = false;
     if (!want || shot.failed) return;
     if (!shot.registered) {
         void* mod = SpawnShotModifier();
         if (!mod) {
             shot.failed = true;
+            shot.failedAt = st.time;
             LOG("could not create the shot modifier, using weapon damage instead");
             return;
         }
         ConfigureShot(mod, mult, crit);
         if (!RegisterShot(st.pawn, mod, true)) {
             shot.failed = true;
+            shot.failedAt = st.time;
             LOG("could not register the shot modifier, using weapon damage instead");
             return;
         }
@@ -211,6 +219,7 @@ void LevelRequirements(bool want) {
                 if (o) ue::WriteBool(o, f.prop, f.value);
             }
             levelFlags.clear();
+            levelKnown.clear();
             levelReqActive = false;
             levelScanned = 0;
         }
@@ -225,11 +234,9 @@ void LevelRequirements(bool want) {
         if (!ue::Alive(d)) continue;
         ue::Prop p = ue::FindProp(ue::ClassOf(d), "bUsesPlayerLevelRequirement");
         if (!p || !ue::ReadBool(d, p)) continue;
-        bool known = false;
-        for (FlagSave& f : levelFlags)
-            if (ue::WeakGet(f.obj) == d) known = true;
-        if (known) continue;
-        levelFlags.push_back({ue::MakeWeak(d), p, true});
+        ue::FWeak w = ue::MakeWeak(d);
+        if (!levelKnown.insert(((int64_t)w.index << 32) | (uint32_t)w.serial).second) continue;
+        levelFlags.push_back({w, p, true});
         ue::WriteBool(d, p, false);
     }
     levelScanned = end >= data.size() ? 0 : end;

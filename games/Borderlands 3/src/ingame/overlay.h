@@ -22,7 +22,7 @@ struct Callbacks {
 bool Start(Callbacks cb);
 void LoadAtlas(const std::wstring& folder);
 void SetMapImage(std::vector<uint8_t>&& rgba, int width, int height);
-void Stop();
+bool Stop();
 bool Running();
 int VirtualKeyFor(int imguiKey);
 uint64_t FrameCount();

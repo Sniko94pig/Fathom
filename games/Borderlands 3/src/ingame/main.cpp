@@ -124,17 +124,30 @@ bool Unload(bool hooked) {
         std::lock_guard<std::mutex> g(modelLock);
         core::SaveSettings(model);
     }
-    overlay::Stop();
+    bool overlaySafe = overlay::Stop();
+    if (!safe) {
+        {
+            std::lock_guard<std::mutex> g(modelLock);
+            menu.reset();
+        }
+        if (ImGui::GetCurrentContext()) ImGui::DestroyContext();
+        LOG("cheats are switched off on the next game update, the menu file stays loaded until the game closes");
+        glog::Close();
+        return false;
+    }
     game::Unhook();
     MH_DisableHook(MH_ALL_HOOKS);
     Sleep(150);
     MH_Uninitialize();
-    menu.reset();
+    {
+        std::lock_guard<std::mutex> g(modelLock);
+        menu.reset();
+    }
     if (ImGui::GetCurrentContext()) ImGui::DestroyContext();
-    if (!safe) LOG("the menu file stays loaded but does nothing until the game closes");
+    if (!overlaySafe) LOG("the menu file stays loaded but does nothing until the game closes");
     LOG("unloaded");
     glog::Close();
-    return safe;
+    return overlaySafe;
 }
 
 DWORD WINAPI MainThread(void*) {

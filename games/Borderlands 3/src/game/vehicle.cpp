@@ -115,6 +115,8 @@ void StopFly() {
         if (fly.noclip) {
             Collision(v, true);
             Physics(v, true);
+            ue::FVector at = Location(v);
+            Teleport(v, {at.x, at.y, at.z + 50.0f}, {0.0f, Rotation(v).yaw, 0.0f});
         }
         SetGravity(v, true);
         SetVelocity(v, {});
@@ -129,7 +131,7 @@ void Input(float& fwd, float& side, float& up) {
 }
 
 void TickFly(bool wantFly, bool wantNoclip) {
-    bool want = (wantFly || wantNoclip) && st.vehicle && !VehicleHasOtherPlayers(st.vehicle);
+    bool want = (wantFly || wantNoclip) && st.vehicle && DrivingAlone();
     void* cur = ue::WeakGet(fly.vehicle);
     if (fly.active && (!want || cur != st.vehicle || fly.noclip != wantNoclip)) StopFly();
     if (!want) return;
@@ -207,15 +209,45 @@ void BringVehicle() {
 
 bool VehicleHasOtherPlayers(void* vehicle) {
     if (!vehicle) return false;
+    struct Cached {
+        ue::FWeak v;
+        bool others = false;
+        double at = -100;
+    };
+    static Cached cache[4];
+    for (Cached& c : cache)
+        if (ue::WeakGet(c.v) == vehicle && st.time - c.at < 1.0) return c.others;
+    bool others = false;
     ue::Call c(vehicle, "GetAllOccupants");
     c.SetBool("bIncludeDetaching", true);
-    if (!c.Run()) return false;
-    auto a = c.Get<ue::TArray<void*>>("ReturnValue");
-    for (int i = 0; a.data && i < a.num && i < 16; ++i) {
-        void* p = ue::At<void*>(a.data + i, 0);
-        if (ue::Alive(p) && p != st.pawn && IsPlayerPawn(p)) return true;
+    if (c.Run()) {
+        auto a = c.Get<ue::TArray<void*>>("ReturnValue");
+        for (int i = 0; a.data && i < a.num && i < 16; ++i) {
+            void* p = ue::At<void*>(a.data + i, 0);
+            if (ue::Alive(p) && p != st.pawn && IsPlayerPawn(p)) others = true;
+        }
     }
-    return false;
+    Cached* slot = &cache[0];
+    for (Cached& x : cache)
+        if (x.at < slot->at) slot = &x;
+    *slot = {ue::MakeWeak(vehicle), others, st.time};
+    return others;
+}
+
+bool DrivingAlone() {
+    if (!st.vehicle) return false;
+    static ue::FWeak lastV;
+    static bool lastResult = false;
+    static double lastAt = -100;
+    if (ue::WeakGet(lastV) == st.vehicle && st.time - lastAt < 0.5) return lastResult;
+    bool driver = false;
+    ue::Call c(st.vehicle, "GetPrimaryOccupant");
+    c.SetBool("bIncludeDetaching", false);
+    if (c.Run()) driver = c.Get<void*>("ReturnValue") == st.pawn;
+    lastResult = driver && !VehicleHasOtherPlayers(st.vehicle);
+    lastV = ue::MakeWeak(st.vehicle);
+    lastAt = st.time;
+    return lastResult;
 }
 
 bool MoveVehicle(void* vehicle, const ue::FVector& loc, const ue::FRotator& rot) {
@@ -236,8 +268,9 @@ void VehicleInit() {
 
 void VehicleTick() {
     if (st.vehicle) lastVehicle = ue::MakeWeak(st.vehicle);
-    TickBoost(On("vehicle_boost"));
-    TickGod(On("vehicle_god"));
+    bool mine = st.vehicle && DrivingAlone();
+    TickBoost(On("vehicle_boost") && mine);
+    TickGod(On("vehicle_god") && mine);
     TickFly(On("vehicle_fly"), On("vehicle_noclip"));
     if (Pressed("bring_vehicle")) BringVehicle();
 }

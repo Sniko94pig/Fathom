@@ -1,8 +1,10 @@
 #include "game/internal.h"
 #include "ingame/log.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <future>
 
 namespace bl3 {
 
@@ -44,10 +46,12 @@ struct LevelJob {
 } levelJob;
 
 void* DamageGlobals() {
+    static double retry = 0;
     void* d = ue::WeakGet(selfGlobals);
-    if (d) return d;
+    if (d || st.time < retry) return d;
     d = ue::FindFirstOf(Cls("DamageGlobalsData"));
     if (d) selfGlobals = ue::MakeWeak(d);
+    else retry = st.time + 5.0;
     return d;
 }
 
@@ -112,7 +116,12 @@ void RefillShield() {
 }
 
 void SelfDamage(bool want) {
-    void* g = DamageGlobals();
+    if (want == selfDamageOff) return;
+    void* g = want ? DamageGlobals() : ue::WeakGet(selfGlobals);
+    if (!g && !want) {
+        selfDamageOff = false;
+        return;
+    }
     ue::Prop p = g ? ue::FindProp(ue::ClassOf(g), "DefaultInstigatorSelfDamageScale") : ue::Prop{};
     if (!p) return;
     if (want && !selfDamageOff) {
@@ -243,14 +252,17 @@ void SyncProfile(void* cat, int oldValue, int value) {
     }
 }
 
-void SetCurrency(const char* id, const char* catProp, const char* label, bool profile, long long cap) {
-    std::vector<std::string> in;
-    if (!Submitted(id, in)) return;
-    long long want = 0;
-    if (!ParseAmount(in, want)) {
-        Note(std::string("Type a number for ") + label);
-        return;
-    }
+struct CurrencyJob {
+    const char* catProp;
+    const char* label;
+    bool profile;
+    long long cap;
+    long long want;
+    std::future<std::string> backup;
+};
+std::vector<CurrencyJob> currencyJobs;
+
+void ApplyCurrency(const char* catProp, const char* label, bool profile, long long cap, long long want) {
     void* gg = GameplayGlobals();
     void* cat = gg ? ue::Ptr(gg, catProp) : nullptr;
     void* inv = Inventory();
@@ -261,7 +273,6 @@ void SetCurrency(const char* id, const char* catProp, const char* label, bool pr
     int mx = CategoryMax(inv, cat);
     long long limit = mx > 0 ? mx : cap;
     want = std::clamp(want, 0ll, std::min(limit, 2000000000ll));
-    BackupNow();
     int before = CategoryQuantity(inv, cat);
     if (!UpdateCategory(inv, cat, (int)want)) {
         Note(std::string(label) + ": the game refused the change");
@@ -276,6 +287,36 @@ void SetCurrency(const char* id, const char* catProp, const char* label, bool pr
     LOG("%s: %d -> %d (asked %lld, max %d)", label, before, after, want, mx);
     if (after == want) Note(std::string(label) + " set to " + std::to_string(want));
     else Note(std::string(label) + " is now " + std::to_string(after));
+}
+
+void SubmitCurrency(const char* id, const char* catProp, const char* label, bool profile, long long cap) {
+    std::vector<std::string> in;
+    if (!Submitted(id, in)) return;
+    long long want = 0;
+    if (!ParseAmount(in, want)) {
+        Note(std::string("Type a number for ") + label);
+        return;
+    }
+    for (CurrencyJob& j : currencyJobs)
+        if (j.label == label) {
+            j.want = want;
+            return;
+        }
+    currencyJobs.push_back({catProp, label, profile, cap, want, std::async(std::launch::async, [] { return BackupNow(); })});
+    Note("Backing up your saves first...");
+}
+
+void PumpCurrency() {
+    for (auto it = currencyJobs.begin(); it != currencyJobs.end();) {
+        if (it->backup.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            ++it;
+            continue;
+        }
+        std::string path = it->backup.get();
+        if (path.empty()) Note(std::string("Save backup failed, ") + it->label + " was not changed");
+        else ApplyCurrency(it->catProp, it->label, it->profile, it->cap, it->want);
+        it = currencyJobs.erase(it);
+    }
 }
 
 }
@@ -330,7 +371,6 @@ void PlayerTick() {
         } else if (lvl >= target) {
             Note("You are already level " + std::to_string(lvl) + ", Give level only goes up");
         } else {
-            BackupNow();
             levelJob = {};
             levelJob.active = true;
             levelJob.target = target;
@@ -339,9 +379,10 @@ void PlayerTick() {
         }
     }
     StepLevelJob();
-    SetCurrency("money", "CreditsInventoryType", "Money", false, 2000000000ll);
-    SetCurrency("eridium", "EridiumInventoryType", "Eridium", false, 2000000000ll);
-    SetCurrency("golden_keys", "GoldenKeyInventoryType", "Golden keys", true, 999ll);
+    SubmitCurrency("money", "CreditsInventoryType", "Money", false, 2000000000ll);
+    SubmitCurrency("eridium", "EridiumInventoryType", "Eridium", false, 2000000000ll);
+    SubmitCurrency("golden_keys", "GoldenKeyInventoryType", "Golden keys", true, 999ll);
+    PumpCurrency();
 }
 
 void PlayerOff() {

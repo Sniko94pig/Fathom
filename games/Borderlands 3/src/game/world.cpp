@@ -30,7 +30,7 @@ std::vector<Request> requests;
 bool haveUndo = false;
 ue::FVector undoPos;
 double placesAt = -100, markersAt = 0;
-void* lastWorld = nullptr;
+ue::FWeak lastWorld;
 std::vector<core::Marker> fixedMarkers;
 const float kTravelBase = -9000000.0f;
 
@@ -258,12 +258,56 @@ void PublishMarkers() {
     });
 }
 
+struct Landing {
+    bool active = false;
+    ue::FWeak pawn;
+    double until = 0;
+    float x = 0, y = 0;
+} landing;
+
+void SetMode(uint8_t mode) {
+    void* mc = st.pawn ? ue::Ptr(st.pawn, "CharacterMovement") : nullptr;
+    ue::Call c(mc, "SetMovementMode");
+    c.Set<uint8_t>("NewMovementMode", mode).Set<uint8_t>("NewCustomMode", 0);
+    c.Run();
+    ue::Prop vp = mc ? ue::FindProp(ue::ClassOf(mc), "Velocity") : ue::Prop{};
+    if (vp) ue::Write<ue::FVector>(mc, vp, ue::FVector{});
+}
+
+void StepLanding() {
+    if (!landing.active) return;
+    if (ue::WeakGet(landing.pawn) != st.pawn || !st.pawn || st.vehicle) {
+        landing.active = false;
+        return;
+    }
+    ue::FVector cur = Location(st.pawn), ground;
+    if (TraceDown({landing.x, landing.y, cur.z + 50000.0f}, 200000.0f, ground)) {
+        Teleport(st.pawn, {landing.x, landing.y, ground.z + 120.0f}, Rotation(st.pawn));
+        SetMode(3);
+        landing.active = false;
+        return;
+    }
+    if (st.time > landing.until) {
+        SetMode(3);
+        landing.active = false;
+        Note("The ground there did not load, you may fall");
+        return;
+    }
+    SetMode(5);
+}
+
 void DoTeleport(const Request& rq) {
     if (rq.undo) {
         if (!haveUndo) return;
-        void* who = st.vehicle ? st.vehicle : st.pawn;
-        if (st.vehicle) MoveVehicle(st.vehicle, undoPos, Rotation(st.vehicle));
-        else Teleport(who, undoPos, Rotation(who));
+        if (st.vehicle) {
+            if (VehicleHasOtherPlayers(st.vehicle)) {
+                Note("Someone else is in your car, undo skipped");
+                return;
+            }
+            MoveVehicle(st.vehicle, undoPos, Rotation(st.vehicle));
+        } else {
+            Teleport(st.pawn, undoPos, Rotation(st.pawn));
+        }
         haveUndo = false;
         Note("Teleport undone");
         return;
@@ -287,16 +331,25 @@ void DoTeleport(const Request& rq) {
         return;
     }
     ue::FVector target = FromMap(rq.x, rq.y, rq.z);
+    bool grounded = true;
     if (!rq.useZ) {
         ue::FVector ground;
         void* me = st.vehicle ? st.vehicle : st.pawn;
         ue::FVector cur = Location(me);
-        if (TraceDown({target.x, target.y, cur.z + 100000.0f}, 300000.0f, ground)) target.z = ground.z + 120.0f;
-        else target.z = cur.z + 200.0f;
+        if (TraceDown({target.x, target.y, cur.z + 100000.0f}, 300000.0f, ground)) {
+            target.z = ground.z + 120.0f;
+        } else {
+            target.z = cur.z + 300.0f;
+            grounded = false;
+        }
     }
     if (st.vehicle) {
         if (VehicleHasOtherPlayers(st.vehicle)) {
             Note("Someone else is in your car, teleport skipped");
+            return;
+        }
+        if (!grounded) {
+            Note("That spot is not loaded yet, get closer or get out of the car first");
             return;
         }
         undoPos = Location(st.vehicle);
@@ -304,8 +357,15 @@ void DoTeleport(const Request& rq) {
         return;
     }
     undoPos = Location(st.pawn);
-    if (Teleport(st.pawn, target, Rotation(st.pawn))) haveUndo = true;
-    else Note("Could not teleport there");
+    if (!Teleport(st.pawn, target, Rotation(st.pawn))) {
+        Note("Could not teleport there");
+        return;
+    }
+    haveUndo = true;
+    if (!grounded) {
+        landing = {true, ue::MakeWeak(st.pawn), st.time + 8.0, target.x, target.y};
+        SetMode(5);
+    }
 }
 
 }
@@ -321,6 +381,11 @@ bool DlcAllowed(const std::string& path) {
 }
 
 bool DlcKnown() { return dlcDone; }
+
+bool DlcOwnedPath(const std::string& path) {
+    std::string f = DlcFolder(path);
+    return !f.empty() && dlcOwned.count(f) > 0;
+}
 
 void WorldInit(core::Model& m) {
     bool tp = HasFunc("Actor", "K2_TeleportTo");
@@ -338,17 +403,30 @@ void WorldInit(core::Model& m) {
     (void)m;
 }
 
+void ResetWorldState() {
+    lastWorld = {};
+    placesAt = -100;
+    travels.clear();
+    haveUndo = false;
+    fixedMarkers.clear();
+    landing.active = false;
+    WithModel([](core::Model& m) {
+        m.places.clear();
+        m.markers.clear();
+        m.canUndoTeleport = false;
+    });
+}
+
 void WorldTick() {
     ComputeDlc();
-    if (st.world != lastWorld) {
-        lastWorld = st.world;
-        placesAt = st.time - 100.0;
-        travels.clear();
-        haveUndo = false;
-        fixedMarkers.clear();
+    ue::FWeak w = ue::MakeWeak(st.world);
+    if (w.index != lastWorld.index || w.serial != lastWorld.serial) {
+        ResetWorldState();
+        lastWorld = w;
     }
+    StepLanding();
     bool show = st.mapVisible || st.menuOpen;
-    if (show && st.time - placesAt > 5.0) {
+    if (show && (placesAt < 0 || st.time - placesAt > 60.0)) {
         placesAt = st.time;
         BuildPlaces();
     }
@@ -365,6 +443,7 @@ void WorldTick() {
 }
 
 void WorldOff() {
+    if (lastWorld.index != 0 || haveUndo || landing.active) ResetWorldState();
     std::lock_guard<std::mutex> g(reqLock);
     requests.clear();
 }
