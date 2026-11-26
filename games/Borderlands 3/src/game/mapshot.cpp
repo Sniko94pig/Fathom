@@ -23,7 +23,7 @@ const int kShotPx = 512;
 const int kPiecePx = 256;
 const float kPieceCm = 20000.0f;
 const float kAbove = 60000.0f;
-const double kGap = 0.12;
+const double kGap = 0.25;
 const uint8_t kHalfFloat = 5, kOrtho = 1;
 
 struct Setting {
@@ -79,6 +79,7 @@ std::atomic<int> ask{0};
 std::atomic<bool> cancel{false};
 int goodSetting = 0;
 uint8_t srgb[256][256] = {};
+uint8_t lin[256][256] = {};
 bool srgbReady = false;
 
 std::wstring ShotDir() { return Folder() + L"\\mapshot"; }
@@ -104,6 +105,7 @@ void BuildSrgb() {
         for (int m = 0; m < 256; ++m) {
             double v = e ? m / 255.0 * std::ldexp(1.0, e - 128) : 0.0;
             srgb[e][m] = (uint8_t)(std::upper_bound(edge, edge + 255, v) - edge);
+            lin[e][m] = (uint8_t)std::clamp(v * 255.0 + 0.5, 0.0, 255.0);
         }
     srgbReady = true;
 }
@@ -173,7 +175,8 @@ bool Scanline(const std::vector<uint8_t>& f, size_t& pos, int w, uint8_t* row) {
     return true;
 }
 
-bool DecodeHdr(const std::vector<uint8_t>& f, std::vector<uint8_t>& px, int& w, int& h) {
+bool DecodeHdr(const std::vector<uint8_t>& f, std::vector<uint8_t>& px, int& w, int& h, bool encoded) {
+    auto& table = encoded ? lin : srgb;
     size_t pos = 0;
     std::string line;
     if (!NextLine(f, pos, line) || line.rfind("#?", 0) != 0) return false;
@@ -191,29 +194,23 @@ bool DecodeHdr(const std::vector<uint8_t>& f, std::vector<uint8_t>& px, int& w, 
         for (int x = 0; x < w; ++x) {
             const uint8_t* s = row.data() + (size_t)x * 4;
             uint8_t* d = out + (size_t)(flipX ? w - 1 - x : x) * 4;
-            d[0] = srgb[s[3]][s[0]];
-            d[1] = srgb[s[3]][s[1]];
-            d[2] = srgb[s[3]][s[2]];
+            d[0] = table[s[3]][s[0]];
+            d[1] = table[s[3]][s[1]];
+            d[2] = table[s[3]][s[2]];
         }
     }
     return true;
 }
 
-bool Uniform(const std::vector<uint8_t>& px, int w, int h) {
+bool Empty(const std::vector<uint8_t>& px, int w, int h) {
     size_t total = (size_t)w * h;
-    double sum[3] = {0, 0, 0};
-    for (size_t i = 0; i < total; ++i)
-        for (int c = 0; c < 3; ++c) sum[c] += px[i * 4 + c];
-    size_t close = 0;
-    for (size_t i = 0; i < total; ++i) {
-        bool same = true;
-        for (int c = 0; c < 3 && same; ++c) same = std::fabs(px[i * 4 + c] - sum[c] / (double)total) <= 4.0;
-        if (same) ++close;
-    }
-    return close * 100 >= total * 97;
+    if (!total) return true;
+    double sum = 0;
+    for (size_t i = 0; i < total; ++i) sum += (double)px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
+    return sum / (double)(total * 3) <= 2.0;
 }
 
-Piece Develop(const std::wstring& file) {
+Piece Develop(const std::wstring& file, bool encoded) {
     Piece p;
     try {
         std::vector<uint8_t> bytes;
@@ -226,12 +223,12 @@ Piece Develop(const std::wstring& file) {
         int w = 0, h = 0;
         bool ok = false;
         if (!cancel && bytes.size() > sizeof(png))
-            ok = std::memcmp(bytes.data(), png, sizeof(png)) == 0 ? ui::LoadImageFile(file, px, w, h) : DecodeHdr(bytes, px, w, h);
+            ok = std::memcmp(bytes.data(), png, sizeof(png)) == 0 ? ui::LoadImageFile(file, px, w, h) : DecodeHdr(bytes, px, w, h, encoded);
         std::error_code ec;
         std::filesystem::remove(std::filesystem::path(file), ec);
         if (!ok || w < 1 || h < 1 || px.size() < (size_t)w * h * 4) return p;
         p.read = true;
-        p.blank = Uniform(px, w, h);
+        p.blank = Empty(px, w, h);
         p.rgba.assign((size_t)kPiecePx * kPiecePx * 4, 0);
         for (int oy = 0; oy < kPiecePx; ++oy) {
             int y0 = oy * h / kPiecePx, y1 = std::max(y0 + 1, (oy + 1) * h / kPiecePx);
@@ -297,7 +294,7 @@ void Forget() {
 }
 
 void CheckPhoto() {
-    if (!photo.shown || !st.world || st.world == photo.world) return;
+    if (!photo.shown || !st.world) return;
     if (ue::Name(st.world) == photo.map) {
         photo.world = st.world;
         return;
@@ -467,6 +464,10 @@ void Start() {
         Note("Load your save first");
         return;
     }
+    if (!st.alone) {
+        Note("Map photos only work when you play alone");
+        return;
+    }
     Sweep();
     std::error_code ec;
     std::filesystem::path dir(ShotDir());
@@ -547,10 +548,11 @@ void TickRun() {
         return;
     }
     std::wstring file = ShotFile(t);
+    bool encoded = kSettings[run.setting].source == 2;
     if (run.locked) {
-        run.pending[t] = std::async(std::launch::async, [file] { return Develop(file); });
+        run.pending[t] = std::async(std::launch::async, [file, encoded] { return Develop(file, encoded); });
     } else {
-        Piece p = Develop(file);
+        Piece p = Develop(file, encoded);
         if (!p.read) {
             LOG("map photos: the saved picture could not be read");
             End("Map photos could not be read");
@@ -599,6 +601,7 @@ void MapshotTick() {
     int a = ask.exchange(0);
     if (a == 1) Start();
     else if (a == 2) Stop();
+    if (run.active && !st.alone) Stop();
     if (run.active) TickRun();
 }
 

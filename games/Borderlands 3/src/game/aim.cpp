@@ -96,7 +96,11 @@ void RefreshEnemies(const ue::FVector& from) {
         if (!ue::Alive(a) || a == st.pawn) continue;
         ue::FVector center = Location(a);
         if (Dist(from, center) > 30000.0f) continue;
-        if (Dead(a) || !IsHostile(a)) continue;
+        void* dc = DamageComp(a);
+        if (!dc || ue::GetBool(dc, "bCurrentlyDead")) continue;
+        ue::Call hc(dc, "GetCurrentHealth");
+        float hp = hc.Run() ? hc.Get<float>("ReturnValue") : 0.0f;
+        if (hp <= 0.0f || !IsHostile(a)) continue;
         Enemy e;
         e.actor = a;
         float half = 90.0f;
@@ -109,8 +113,9 @@ void RefreshEnemies(const ue::FVector& from) {
         e.height = half * 2.0f;
         HeadOf(a, e.feet, e.height, e.head);
         e.dist = Dist(from, center) / 100.0f;
-        float mh = MaxHealth(a);
-        e.health = mh > 0 ? std::clamp(Health(a) / mh, 0.0f, 1.0f) : -1.0f;
+        ue::Call mc(dc, "GetMaxHealth");
+        float mh = mc.Run() ? mc.Get<float>("ReturnValue") : 0.0f;
+        e.health = mh > 0 ? std::clamp(hp / mh, 0.0f, 1.0f) : -1.0f;
         std::string cn = ue::Name(ue::ClassOf(a));
         e.badass = cn.find("Badass") != std::string::npos || cn.find("Boss") != std::string::npos;
         enemies.push_back(e);
@@ -139,9 +144,8 @@ const Enemy* PickTarget(const ue::FVector& from, const ue::FRotator& view, float
 }
 
 float Norm180(float a) {
-    while (a > 180.0f) a -= 360.0f;
-    while (a < -180.0f) a += 360.0f;
-    return a;
+    if (!std::isfinite(a)) return 0.0f;
+    return std::remainder(a, 360.0f);
 }
 
 void AimAssist(const ue::FVector& from, const ue::FRotator& view) {
@@ -150,6 +154,7 @@ void AimAssist(const ue::FVector& from, const ue::FRotator& view) {
     if (!t) return;
     ue::FRotator want = LookAt(from, t->head);
     ue::FRotator cur = ControlRotation();
+    if (!std::isfinite(want.pitch) || !std::isfinite(want.yaw) || !std::isfinite(cur.pitch) || !std::isfinite(cur.yaw)) return;
     float strength = std::clamp(Value("aim_strength"), 1.0f, 10.0f);
     float alpha = strength >= 9.99f ? 1.0f : 1.0f - std::exp(-strength * strength * 1.5f * st.dt);
     float dp = Norm180(want.pitch - Norm180(cur.pitch)), dy = Norm180(want.yaw - cur.yaw);
@@ -158,15 +163,45 @@ void AimAssist(const ue::FVector& from, const ue::FRotator& view) {
 }
 
 struct Bullet {
-    ue::FWeak obj;
+    int32_t serial = 0;
     float start = 0;
     double seen = 0;
+    bool changed = false;
+    float gravity = 1.0f;
 };
-std::vector<Bullet> handled;
+std::unordered_map<int32_t, Bullet> handled;
 
-float StartTime(void* p) {
-    ue::Prop sp = ue::FindProp(ue::ClassOf(p), "StartTime");
-    return sp ? ue::Read<float>(p, sp) : 0.0f;
+struct BulletProps {
+    void* cls = nullptr;
+    ue::Prop start, loc, vel, gravity;
+} bp;
+
+void BulletLayout(void* p) {
+    void* cls = ue::ClassOf(p);
+    if (cls == bp.cls) return;
+    bp.cls = cls;
+    bp.start = ue::FindProp(cls, "StartTime");
+    bp.loc = ue::FindProp(cls, "Location");
+    bp.vel = ue::FindProp(cls, "Velocity");
+    bp.gravity = ue::FindProp(cls, "GravityScale");
+}
+
+void UndoBullet(void* p, Bullet& b) {
+    if (!b.changed) return;
+    ue::Call(p, "DisableHoming").Run();
+    if (bp.gravity) ue::Write<float>(p, bp.gravity, b.gravity);
+    b.changed = false;
+}
+
+void UndoAllBullets() {
+    for (auto& entry : handled) {
+        Bullet& b = entry.second;
+        if (!b.changed) continue;
+        void* p = ue::WeakGet(ue::FWeak{entry.first, b.serial});
+        if (p && bp.start && ue::Read<float>(p, bp.start) == b.start) UndoBullet(p, b);
+        b.changed = false;
+    }
+    handled.clear();
 }
 
 struct WallSave {
@@ -188,16 +223,23 @@ void* Manager() {
     return m;
 }
 
-bool Handled(void* p, float start) {
-    for (Bullet& b : handled)
-        if (ue::WeakGet(b.obj) == p) {
-            if (b.start == start) return true;
-            b.start = start;
-            b.seen = st.time;
-            return false;
-        }
-    handled.push_back({ue::MakeWeak(p), start, st.time});
-    return false;
+Bullet* Fresh(void* p) {
+    ue::FWeak w = ue::MakeWeak(p);
+    float start = bp.start ? ue::Read<float>(p, bp.start) : 0.0f;
+    auto it = handled.find(w.index);
+    if (it != handled.end() && it->second.serial == w.serial) {
+        if (it->second.start == start) return nullptr;
+        it->second.changed = false;
+        it->second.start = start;
+        it->second.seen = st.time;
+        return &it->second;
+    }
+    Bullet& b = handled[w.index];
+    b = Bullet{};
+    b.serial = w.serial;
+    b.start = start;
+    b.seen = st.time;
+    return &b;
 }
 
 void MakeWallPiercing(void* bullet) {
@@ -225,9 +267,7 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
     bool throughWalls = On("silent_walls");
     if (!throughWalls && !walls.empty()) RestoreWalls();
     float area = std::clamp(Value("silent_area"), 5.0f, 180.0f);
-    if (handled.size() > 2048) handled.clear();
-    handled.erase(std::remove_if(handled.begin(), handled.end(), [](const Bullet& b) { return st.time - b.seen > 30.0 || !ue::WeakGet(b.obj); }),
-                  handled.end());
+    if (handled.size() > 4096) handled.clear();
     bool picked = false;
     const Enemy* t = nullptr;
     for (const char* listName : {"ActiveProjectiles", "ProjectilesWaitingBatch"}) {
@@ -235,7 +275,10 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
         auto list = ue::Read<ue::TArray<void*>>(mgr, lp);
         for (int i = 0; lp && list.data && i < list.num && i < 512; ++i) {
             void* p = ue::At<void*>(list.data + i, 0);
-            if (!ue::Alive(p) || Handled(p, StartTime(p))) continue;
+            if (!ue::Alive(p)) continue;
+            BulletLayout(p);
+            Bullet* b = Fresh(p);
+            if (!b) continue;
             ue::Call ins(p, "GetInstigator");
             if (!ins.Run() || ins.Get<void*>("ReturnValue") != st.pawn) continue;
             if (throughWalls) MakeWallPiercing(p);
@@ -244,20 +287,20 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
                 picked = true;
             }
             if (!t) continue;
-            ue::Prop locP = ue::FindProp(ue::ClassOf(p), "Location");
-            ue::Prop velP = ue::FindProp(ue::ClassOf(p), "Velocity");
-            if (locP && velP) {
-                ue::FVector loc = ue::Read<ue::FVector>(p, locP);
-                ue::FVector vel = ue::Read<ue::FVector>(p, velP);
+            if (bp.loc && bp.vel) {
+                ue::FVector loc = ue::Read<ue::FVector>(p, bp.loc);
+                ue::FVector vel = ue::Read<ue::FVector>(p, bp.vel);
                 float speed = Len(vel);
                 ue::FVector dir = Sub(t->head, loc);
                 float len = Len(dir);
-                if (speed > 1.0f && len > 1.0f) ue::Write<ue::FVector>(p, velP, Mul(dir, speed / len));
+                if (speed > 1.0f && len > 1.0f) ue::Write<ue::FVector>(p, bp.vel, Mul(dir, speed / len));
             }
+            b->gravity = bp.gravity ? ue::Read<float>(p, bp.gravity) : 1.0f;
+            b->changed = true;
             ue::Call home(p, "SetHomingTarget");
             home.Set<void*>("HomingTarget", t->actor).Set("TargetOffset", Sub(t->head, Location(t->actor)));
             if (home.Run()) ue::Call(p, "EnableHoming").Run();
-            ue::SetFloat(p, "GravityScale", 0.0f);
+            if (bp.gravity) ue::Write<float>(p, bp.gravity, 0.0f);
         }
     }
 }
@@ -300,6 +343,25 @@ std::string PickupName(void* pickup, int kind) {
 
 double espAt = 0;
 
+struct PlaceCache {
+    int32_t serial = 0;
+    ue::FVector loc;
+    double at = -100;
+};
+std::unordered_map<int32_t, PlaceCache> places;
+
+ue::FVector CachedLocation(void* actor) {
+    if (places.size() > 8192) places.clear();
+    ue::FWeak w = ue::MakeWeak(actor);
+    PlaceCache& c = places[w.index];
+    if (c.serial != w.serial || st.time - c.at > 1.0) {
+        c.serial = w.serial;
+        c.loc = Location(actor);
+        c.at = st.time;
+    }
+    return c.loc;
+}
+
 void PublishEsp(bool enemyOn, bool lootOn, const ue::FVector& camLoc, const ue::FRotator& camRot, float fov, bool camOk) {
     if (st.time - espAt < 0.05) return;
     espAt = st.time;
@@ -321,12 +383,20 @@ void PublishEsp(bool enemyOn, bool lootOn, const ue::FVector& camLoc, const ue::
     }
     if (lootOn) {
         bool want[6] = {false, On("lootesp_common"), On("lootesp_uncommon"), On("lootesp_rare"), On("lootesp_epic"), On("lootesp_legendary")};
+        static void* skip[3] = {};
+        if (!skip[0]) {
+            skip[0] = Cls("OakInventoryDisplayItem");
+            skip[1] = Cls("GunRackDisplayItem");
+            skip[2] = Cls("OakMissionPickup");
+        }
         for (void* p : Objects(Scan::Pickups)) {
             if (!ue::Alive(p) || items.size() >= 300) continue;
+            if (ue::IsA(p, skip[0]) || ue::IsA(p, skip[1]) || ue::IsA(p, skip[2])) continue;
+            if (!ue::GetBool(p, "bIsActive") || ue::Ptr(p, "PickedUpBy")) continue;
             int k = RarityKind(p);
             if (k > 0 && !want[k]) continue;
             if (k == 0 && !want[1]) continue;
-            ue::FVector l = Location(p);
+            ue::FVector l = CachedLocation(p);
             float dist = Dist(camLoc, l) / 100.0f;
             if (dist > 400.0f) continue;
             core::EspDot d;
@@ -434,6 +504,7 @@ void AimTick() {
         kill = false;
     }
     if (!silent && !walls.empty()) RestoreWalls();
+    if (!silent && !handled.empty()) UndoAllBullets();
     if (!silent && !assist && !enemyEsp && !lootEsp && !kill) {
         ClearEsp();
         return;
@@ -460,7 +531,7 @@ void AimTick() {
 
 void AimOff() {
     RestoreWalls();
-    handled.clear();
+    UndoAllBullets();
     ClearEsp();
 }
 
