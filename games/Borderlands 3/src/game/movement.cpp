@@ -67,18 +67,78 @@ void SetMode(void* mc, uint8_t mode) {
     c.Run();
 }
 
-void SetVelocityZ(void* mc, float z, bool zeroXY) {
+int MoveIgnored(void* pc) {
+    ue::Call q(pc, "IsMoveInputIgnored");
+    if (!q.Run()) return -1;
+    return q.GetBool("ReturnValue") ? 1 : 0;
+}
+
+void SetMoveIgnore(void* pc, bool on) {
+    ue::Call c(pc, "SetIgnoreMoveInput");
+    c.SetBool("bNewMoveInput", on);
+    c.Run();
+}
+
+const unsigned kFlyUser = 1, kCamUser = 2;
+
+struct InputLock {
+    ue::FWeak pc;
+    unsigned users = 0;
+    bool added = false;
+    int total = 0;
+    double checkAt = -100;
+} lock;
+
+void LockMove(unsigned user) {
+    if (!st.pc) return;
+    if (lock.users && ue::WeakGet(lock.pc) != st.pc) lock = {};
+    lock.users |= user;
+    lock.pc = ue::MakeWeak(st.pc);
+    if (st.time - lock.checkAt < 0.5) return;
+    lock.checkAt = st.time;
+    if (lock.total >= 20 || MoveIgnored(st.pc) != 0) return;
+    SetMoveIgnore(st.pc, true);
+    lock.added = true;
+    ++lock.total;
+}
+
+void UnlockMove(unsigned user) {
+    if (!(lock.users & user)) return;
+    lock.users &= ~user;
+    if (lock.users) return;
+    void* pc = ue::WeakGet(lock.pc);
+    if (pc && lock.added && MoveIgnored(pc) != 0) SetMoveIgnore(pc, false);
+    lock = {};
+}
+
+float Axis(int plus, int minus) { return (KeyDown(plus) ? 1.0f : 0.0f) - (KeyDown(minus) ? 1.0f : 0.0f); }
+
+float UpAxis() { return (KeyDown(VK_SPACE) ? 1.0f : 0.0f) - ((KeyDown(VK_LCONTROL)) ? 1.0f : 0.0f); }
+
+ue::FVector Wish(const ue::FRotator& view, bool withPitch, float up) {
+    float fwd = Axis('W', 'S'), side = Axis('D', 'A');
+    float P = withPitch ? view.pitch * 3.14159265f / 180.0f : 0.0f, Y = view.yaw * 3.14159265f / 180.0f;
+    ue::FVector f{std::cos(P) * std::cos(Y), std::cos(P) * std::sin(Y), std::sin(P)};
+    ue::FVector r{-std::sin(Y), std::cos(Y), 0.0f};
+    ue::FVector d = Add(Add(Mul(f, fwd), Mul(r, side)), {0.0f, 0.0f, up});
+    float len = Len(d);
+    return len > 1.0f ? Mul(d, 1.0f / len) : d;
+}
+
+float PitchOf(const ue::FRotator& r) {
+    float p = std::remainder(r.pitch, 360.0f);
+    return std::clamp(p, -89.0f, 89.0f);
+}
+
+void SetVelocity(void* mc, const ue::FVector& v) {
     int o = Off(mc, "Velocity");
-    if (o < 0) return;
-    ue::FVector v = ue::At<ue::FVector>(mc, o);
-    v.z = z;
-    if (zeroXY) v.x = v.y = 0;
-    ue::Put<ue::FVector>(mc, o, v);
+    if (o >= 0) ue::Put<ue::FVector>(mc, o, v);
 }
 
 struct FlyState {
     bool active = false;
     bool noclip = false;
+    bool paused = false;
     ue::FWeak pawn;
     bool collisionOff = false;
 } fly;
@@ -95,23 +155,68 @@ void StopFly() {
         void* mc = ue::Ptr(pawn, "CharacterMovement");
         if (fly.collisionOff) {
             SetCollision(pawn, true);
-            ue::FVector at = Location(pawn);
-            Teleport(pawn, {at.x, at.y, at.z + 20.0f}, Rotation(pawn));
+            if (!st.seated && !st.vehicle) {
+                ue::FVector at = Location(pawn);
+                Teleport(pawn, {at.x, at.y, at.z + 20.0f}, Rotation(pawn));
+            }
         }
-        if (mc && Mode(mc) == kFlying) SetMode(mc, kFalling);
+        if (mc && !st.seated && !st.vehicle) {
+            SetVelocity(mc, {});
+            if (Mode(mc) == kFlying) SetMode(mc, kFalling);
+        }
     }
+    UnlockMove(kFlyUser);
     if (!flyAttrs.empty()) RestoreAttrs(flyAttrs);
     fly = {};
 }
 
+void PauseFly() {
+    UnlockMove(kFlyUser);
+    if (!flyAttrs.empty()) RestoreAttrs(flyAttrs);
+    fly.active = false;
+    fly.paused = true;
+    LOG("fly paused while you are in a car or a turret");
+}
+
+void Settle(bool want, bool wantNoclip) {
+    void* pawn = ue::WeakGet(fly.pawn);
+    if (fly.paused) {
+        fly.paused = false;
+        void* mc = pawn ? ue::Ptr(pawn, "CharacterMovement") : nullptr;
+        if (!want && mc && Mode(mc) == kFlying) {
+            SetVelocity(mc, {});
+            SetMode(mc, kFalling);
+        }
+    }
+    if (fly.collisionOff && !(want && wantNoclip && pawn && pawn == st.pawn)) {
+        if (pawn) SetCollision(pawn, true);
+        fly.collisionOff = false;
+    }
+    if (!fly.collisionOff) fly.pawn = {};
+}
+
+float FloorFollow(void* pawn) {
+    ue::FVector at = Location(pawn);
+    float half = 90.0f;
+    void* cap = ue::Ptr(pawn, "CapsuleComponent");
+    if (cap) {
+        float h = ue::GetFloat(cap, "CapsuleHalfHeight", 90.0f);
+        if (h > 10.0f && h < 400.0f) half = h;
+    }
+    ue::FVector floor;
+    if (!TraceDown({at.x, at.y, at.z - half + 60.0f}, 20000.0f, floor)) return 0.0f;
+    float target = floor.z + half + 2.0f;
+    return std::clamp((target - at.z) * 12.0f, -3000.0f, 3000.0f);
+}
+
 void TickFly(bool wantFly, bool wantNoclip) {
     bool want = wantFly || wantNoclip;
+    bool seated = st.vehicle || st.seated;
     void* pawn = ue::WeakGet(fly.pawn);
+    if (fly.active && seated) PauseFly();
     if (fly.active && (!want || pawn != st.pawn || fly.noclip != wantNoclip)) StopFly();
-    if (!want || !st.pawn || st.vehicle) {
-        if (fly.active) StopFly();
-        return;
-    }
+    if (!fly.active && !seated && (fly.paused || fly.collisionOff)) Settle(want, wantNoclip);
+    if (!want || !st.pawn || seated) return;
     void* mc = Movement();
     if (!mc) return;
     if (!fly.active) {
@@ -122,52 +227,46 @@ void TickFly(bool wantFly, bool wantNoclip) {
             SetCollision(st.pawn, false);
             fly.collisionOff = true;
         }
+        LOG(wantNoclip ? "noclip on" : "fly on");
     }
+    LockMove(kFlyUser);
     if (Mode(mc) != kFlying) SetMode(mc, kFlying);
-    float speed = std::clamp(Value("fly_speed"), 1.0f, 10.0f);
-    float walk = 600.0f;
-    ue::Prop ws = ue::FindProp(ue::ClassOf(mc), "MaxWalkSpeed");
-    if (ws) {
-        float w = ue::At<float>(mc, ws.offset + 4);
-        if (w > 50.0f && w < 5000.0f) walk = w;
-    }
-    SetAttr(flyAttrs, mc, "MaxFlySpeed", (wantNoclip ? walk : 900.0f) * speed);
+    float slider = std::clamp(Value("fly_speed"), 1.0f, 10.0f);
+    bool fast = KeyDown(VK_LSHIFT);
+    ue::FRotator view = ControlRotation();
+    ue::FVector vel;
+    float speed;
     if (wantNoclip) {
-        ue::FVector at = Location(st.pawn);
-        ue::FVector floor;
-        float half = 90.0f;
-        void* cap = ue::Ptr(st.pawn, "CapsuleComponent");
-        if (cap) {
-            float h = ue::GetFloat(cap, "CapsuleHalfHeight", 90.0f);
-            if (h > 10.0f && h < 400.0f) half = h;
-        }
-        if (TraceDown({at.x, at.y, at.z - half + 60.0f}, 20000.0f, floor)) {
-            float target = floor.z + half + 2.0f;
-            SetVelocityZ(mc, std::clamp((target - at.z) * 12.0f, -3000.0f, 3000.0f), false);
-        } else {
-            SetVelocityZ(mc, 0.0f, false);
-        }
+        speed = 450.0f * slider * (fast ? 2.5f : 1.0f);
+        vel = Mul(Wish(view, false, 0.0f), speed);
+        vel.z = FloorFollow(st.pawn);
     } else {
-        float up = (KeyDown(VK_SPACE) ? 1.0f : 0.0f) - ((KeyDown(VK_LCONTROL) || KeyDown(VK_CONTROL)) ? 1.0f : 0.0f);
-        SetVelocityZ(mc, up * 700.0f * speed, false);
+        speed = 800.0f * slider * (fast ? 3.0f : 1.0f);
+        vel = Mul(Wish(view, true, UpAxis()), speed);
     }
+    SetAttr(flyAttrs, mc, "MaxFlySpeed", std::max(speed, 3000.0f) * 1.5f);
+    SetVelocity(mc, vel);
 }
 
 struct FreeCam {
     bool active = false;
     ue::FWeak actor;
     ue::FWeak pc;
-    float x = 0, y = 0, z = 0, yaw = 0, pitch = 0;
+    ue::FRotator startRot;
+    ue::FVector pos;
     double lastCheck = 0;
 } cam;
 
 void StopFreeCam() {
     if (!cam.active) return;
-    if (ue::WeakGet(cam.pc) == st.pc && st.pc) {
-        void* back = st.vehicle ? st.vehicle : st.pawn;
+    void* pc = ue::WeakGet(cam.pc);
+    if (pc && pc == st.pc) {
+        void* back = ue::Ptr(st.pc, "Pawn");
+        if (!ue::Alive(back)) back = st.vehicle ? st.vehicle : st.pawn;
         if (back) SetViewTarget(back);
-        IgnoreInput(false, false);
+        SetControlRotation(cam.startRot);
     }
+    UnlockMove(kCamUser);
     DestroyActor(ue::WeakGet(cam.actor));
     cam = {};
     LOG("freecam off");
@@ -193,15 +292,10 @@ bool StartFreeCam() {
     cam.active = true;
     cam.actor = ue::MakeWeak(actor);
     cam.pc = ue::MakeWeak(st.pc);
-    cam.x = pos.x;
-    cam.y = pos.y;
-    cam.z = pos.z;
-    cam.yaw = rot.yaw;
-    cam.pitch = std::clamp(rot.pitch > 180 ? rot.pitch - 360 : rot.pitch, -89.0f, 89.0f);
+    cam.startRot = ControlRotation();
+    cam.pos = pos;
     SetViewTarget(actor);
-    IgnoreInput(true, true);
-    float dx, dy;
-    TakeMouse(dx, dy);
+    LockMove(kCamUser);
     LOG("freecam on");
     return true;
 }
@@ -219,25 +313,16 @@ void TickFreeCam(bool want) {
     if (st.time - cam.lastCheck > 0.5) {
         cam.lastCheck = st.time;
         if (ViewTarget() != actor) SetViewTarget(actor);
+        LockMove(kCamUser);
     }
-    float mx = 0, my = 0;
-    TakeMouse(mx, my);
-    if (!(st.menuOpen)) {
-        cam.yaw += mx * 0.07f;
-        cam.pitch = std::clamp(cam.pitch - my * 0.07f, -89.0f, 89.0f);
-    }
-    float fwd = (KeyDown('W') ? 1.0f : 0.0f) - (KeyDown('S') ? 1.0f : 0.0f);
-    float side = (KeyDown('D') ? 1.0f : 0.0f) - (KeyDown('A') ? 1.0f : 0.0f);
-    float up = (KeyDown(VK_SPACE) ? 1.0f : 0.0f) - ((KeyDown(VK_LCONTROL) || KeyDown(VK_CONTROL)) ? 1.0f : 0.0f);
+    ue::FRotator view = ControlRotation();
+    view.pitch = PitchOf(view);
+    view.roll = 0.0f;
     float speed = 800.0f * std::clamp(Value("fly_speed"), 1.0f, 10.0f) * (KeyDown(VK_LSHIFT) ? 3.0f : 1.0f);
-    float P = cam.pitch * 3.14159265f / 180.0f, Y = cam.yaw * 3.14159265f / 180.0f;
-    float fx = std::cos(P) * std::cos(Y), fy = std::cos(P) * std::sin(Y), fz = std::sin(P);
-    float rx = -std::sin(Y), ry = std::cos(Y);
-    cam.x += (fx * fwd + rx * side) * speed * st.dt;
-    cam.y += (fy * fwd + ry * side) * speed * st.dt;
-    cam.z += (fz * fwd + up) * speed * st.dt;
+    float dt = std::min(st.dt, 0.1f);
+    cam.pos = Add(cam.pos, Mul(Wish(view, true, UpAxis()), speed * dt));
     ue::Call c(actor, "K2_SetActorLocationAndRotation");
-    c.Set("NewLocation", ue::FVector{cam.x, cam.y, cam.z}).Set("NewRotation", ue::FRotator{cam.pitch, cam.yaw, 0.0f});
+    c.Set("NewLocation", cam.pos).Set("NewRotation", view);
     c.SetBool("bSweep", false).SetBool("bTeleport", true);
     c.Run();
 }
@@ -315,7 +400,7 @@ void MovementTick() {
 void MovementOff() {
     if (!speedAttrs.empty()) RestoreAttrs(speedAttrs);
     RestoreFloats(0, 0x7FFFFFFF);
-    if (fly.active) StopFly();
+    if (fly.active || fly.collisionOff || fly.paused) StopFly();
     StopFreeCam();
     if (timeChanged) GameSpeed(false);
 }

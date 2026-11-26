@@ -357,7 +357,7 @@ void PlayerTick() {
         RefillShield();
         Note("Shield restored");
     }
-    SelfDamage(On("no_self_damage") && st.alone);
+    SelfDamage((On("no_self_damage") || On("one_hit_kill") || Value("damage_mult") > 1.001f) && st.alone);
     ToggleHidden(On("invisibility") && st.alone);
     float m = Value("mega_xp");
     void* b = Balance();

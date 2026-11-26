@@ -61,7 +61,8 @@ double Now() {
 
 void InitScanRoots() {
     const char* names[(int)Scan::Count] = {"OakCharacter",  "OakVehicle",    "InventoryItemPickup", "LootableObject",        "LightProjectile",
-                                           "OakActionAbility", "InventoryData", "ItemPoolData",        "ItemPoolExpansionData"};
+                                           "OakActionAbility", "InventoryData", "ItemPoolData",        "ItemPoolExpansionData",
+                                           "InventoryBalanceData"};
     for (int k = 0; k < (int)Scan::Count; ++k) scanRoots[k] = ue::FindClass(names[k]);
 }
 
@@ -142,12 +143,29 @@ void Refresh() {
     void* lp = ArrayAt(lps, 0);
     st.pc = ue::Alive(lp) ? ue::Ptr(lp, "PlayerController") : nullptr;
     static void* playerCls = nullptr;
+    static void* vehicleCls = nullptr;
     if (!playerCls) playerCls = ue::FindClass("OakCharacter_Player");
+    if (!vehicleCls) vehicleCls = ue::FindClass("OakVehicle");
     void* pawn = st.pc ? ue::Ptr(st.pc, "Pawn") : nullptr;
-    st.pawn = pawn && ue::IsA(pawn, playerCls) ? pawn : nullptr;
+    if (!ue::Alive(pawn)) pawn = nullptr;
+    static void* seatCls = nullptr;
+    if (!seatCls) seatCls = ue::FindClass("SeatPawn");
+    void* character = nullptr;
+    if (pawn && ue::IsA(pawn, playerCls)) {
+        character = pawn;
+    } else if (pawn && ((vehicleCls && ue::IsA(pawn, vehicleCls)) || (seatCls && ue::IsA(pawn, seatCls)))) {
+        for (void* c : {ue::Ptr(st.pc, "OakCharacter"), ue::Ptr(st.pc, "CachedPrimaryCharacter")})
+            if (c && ue::Alive(c) && ue::IsA(c, playerCls)) {
+                character = c;
+                break;
+            }
+    }
+    st.pawn = character;
+    st.seated = pawn && character && pawn != character;
     st.camera = st.pc ? ue::Ptr(st.pc, "PlayerCameraManager") : nullptr;
     st.vehicle = nullptr;
-    if (st.pawn) {
+    if (pawn && pawn != character && vehicleCls && ue::IsA(pawn, vehicleCls)) st.vehicle = pawn;
+    if (!st.vehicle && st.pawn) {
         ue::Call c(st.pawn, "GetVehicle");
         if (c.Run()) {
             void* v = c.Get<void*>("ReturnValue");
@@ -477,16 +495,72 @@ bool Dead(void* actor) {
 }
 
 bool IsPlayerPawn(void* actor) {
+    if (!actor) return false;
+    static void* playerCls = nullptr;
+    if (!playerCls) playerCls = ue::FindClass("OakCharacter_Player");
+    if (playerCls && ue::IsA(actor, playerCls)) return true;
     ue::Call c(actor, "IsPlayerControlled");
     return c.Run() && c.GetBool("ReturnValue");
 }
 
-bool IsHostile(void* actor) {
-    if (!actor || actor == st.pawn || IsPlayerPawn(actor)) return false;
+namespace {
+
+int Attitude(void* actor) {
     ue::Call c(Lib("OakBlueprintLibrary"), "GetAttitudeTowardPlayer");
     c.Set<void*>("SourceActor", actor);
-    if (!c.Run()) return false;
-    return c.Get<uint8_t>("ReturnValue") == 2;
+    return c.Run() ? (int)c.Get<uint8_t>("ReturnValue") : -1;
+}
+
+bool TeamHostile(void* actor) {
+    void* team = st.pawn ? ue::Ptr(actor, "TargetableComponent") : nullptr;
+    if (!ue::Alive(team)) return false;
+    ue::Call t(team, "GetTeamAttitudeTowardsActor");
+    t.Set<void*>("Actor", st.pawn);
+    return t.Run() && t.Get<uint8_t>("ReturnValue") == 2;
+}
+
+}
+
+bool IsHostile(void* actor) {
+    if (!actor || actor == st.pawn || IsPlayerPawn(actor)) return false;
+    int a = Attitude(actor);
+    return a >= 0 ? a == 2 : TeamHostile(actor);
+}
+
+bool IsEnemy(void* actor) {
+    if (!actor || actor == st.pawn || IsPlayerPawn(actor)) return false;
+    return Attitude(actor) == 2 || TeamHostile(actor);
+}
+
+int Hostility(void* actor, bool& strict, bool& loose) {
+    strict = loose = false;
+    if (!actor || actor == st.pawn || IsPlayerPawn(actor)) return 0;
+    int a = Attitude(actor);
+    if (a == 2) {
+        strict = loose = true;
+        return a;
+    }
+    loose = TeamHostile(actor);
+    strict = a < 0 && loose;
+    return a;
+}
+
+ue::FVector QuickLocation(void* actor) {
+    static int ro = -2, lo = -1, ao = -1;
+    if (ro == -2) {
+        ue::Prop r = ue::FindProp(Cls("Actor"), "RootComponent");
+        ue::Prop l = ue::FindProp(Cls("SceneComponent"), "RelativeLocation");
+        ue::Prop a = ue::FindProp(Cls("SceneComponent"), "AttachParent");
+        ro = r ? r.offset : -1;
+        lo = l ? l.offset : -1;
+        ao = a ? a.offset : -1;
+    }
+    void* root = (actor && ro >= 0) ? ue::At<void*>(actor, ro) : nullptr;
+    if (root && lo >= 0 && ao >= 0 && !ue::At<void*>(root, ao)) {
+        ue::FVector v = ue::At<ue::FVector>(root, lo);
+        if (std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z)) return v;
+    }
+    return Location(actor);
 }
 
 void* ComponentOf(void* actor, const char* cls) {

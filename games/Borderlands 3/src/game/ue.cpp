@@ -410,6 +410,7 @@ FWeak MakeWeak(const void* obj) {
     FWeak w;
     if (!Valid(obj)) return w;
     w.index = IndexOf(obj);
+    w.ptr = obj;
     uint8_t* item = ItemAt(w.index);
     if (item) SafeRead(item + off.serial, w.serial);
     return w;
@@ -421,8 +422,12 @@ void* WeakGet(const FWeak& w) {
     if (!item) return nullptr;
     int32_t serial = 0;
     SafeRead(item + off.serial, serial);
-    if (serial != w.serial) return nullptr;
     void* o = ObjectAt(w.index);
+    if (w.serial == 0) {
+        if (!w.ptr || o != w.ptr) return nullptr;
+    } else if (serial != w.serial) {
+        return nullptr;
+    }
     return Alive(o) ? o : nullptr;
 }
 

@@ -17,6 +17,7 @@ struct State {
     void* pawn = nullptr;
     void* camera = nullptr;
     void* vehicle = nullptr;
+    bool seated = false;
     core::Session session = core::Session::Solo;
     int others = 0;
     bool inWorld = false;
@@ -31,7 +32,7 @@ struct State {
 
 extern State st;
 
-enum class Scan { Characters, Vehicles, Pickups, Lootables, Projectiles, Abilities, InventoryData, ItemPools, PoolExpansions, Count };
+enum class Scan { Characters, Vehicles, Pickups, Lootables, Projectiles, Abilities, InventoryData, ItemPools, PoolExpansions, Balances, Count };
 
 bool On(const char* id);
 float Value(const char* id);
@@ -63,6 +64,10 @@ float Health(void* actor);
 float MaxHealth(void* actor);
 bool Dead(void* actor);
 bool IsHostile(void* actor);
+bool IsEnemy(void* actor);
+int Hostility(void* actor, bool& strict, bool& loose);
+ue::FVector QuickLocation(void* actor);
+bool CritMarked(void* region);
 bool IsPlayerPawn(void* actor);
 void* ComponentOf(void* actor, const char* cls);
 void* HeldWeapon();

@@ -117,15 +117,15 @@ void BuildFeatures(Model& m) {
     Input(m, Player, "Currency", "eridium", "Eridium", "Type the amount and press Set, your saves are backed up first", "Amount");
     Input(m, Player, "Currency", "golden_keys", "Golden keys", "Type the amount and press Set, your saves are backed up first", "Amount");
 
-    Toggle(m, Weapons, "Ammo", "unlimited_ammo", "Unlimited ammo", "Your guns never run out of ammo");
+    Toggle(m, Weapons, "Ammo", "unlimited_ammo", "Unlimited ammo", "Your guns never run out of ammo and never need a reload");
     Toggle(m, Weapons, "Ammo", "no_reload", "No reload", "The magazine stays full while your spare ammo still goes down");
     Toggle(m, Weapons, "Ammo", "instant_reload", "Instant reload", "Reloading is done right away");
     Slider(m, Weapons, "Handling", "fire_rate", "Fire rate", "How fast your guns shoot", 1.0f, 10.0f, 1.0f, 0.5f);
     Toggle(m, Weapons, "Handling", "no_recoil", "No recoil", "No recoil, spread or sway");
     Toggle(m, Weapons, "Handling", "no_charge", "No charge time", "Guns that charge up fire right away");
     Toggle(m, Weapons, "Handling", "no_overheat", "No overheat", "Guns and vehicle guns never overheat");
-    Slider(m, Weapons, "Damage", "damage_mult", "Damage multiplier", "How much damage your guns do", 1.0f, 100.0f, 1.0f, 1.0f, true, "%.0fx");
-    Toggle(m, Weapons, "Damage", "one_hit_kill", "One-hit kills", "Your guns kill any enemy in one hit");
+    Slider(m, Weapons, "Damage", "damage_mult", "Damage multiplier", "How much damage your guns do. When you play alone, your own explosions cannot hurt you while this is above 1x", 1.0f, 100.0f, 1.0f, 1.0f, true, "%.0fx");
+    Toggle(m, Weapons, "Damage", "one_hit_kill", "One-hit kills", "Your guns kill any enemy in one hit. When you play alone, your own explosions cannot hurt you while this is on");
     Toggle(m, Weapons, "Damage", "always_crit", "Always crits", "Every hit counts as a critical hit");
     Toggle(m, Weapons, "Gear", "ignore_level_req", "Ignore level requirements",
            "Alone only: use and equip gear above your level");
@@ -134,13 +134,13 @@ void BuildFeatures(Model& m) {
            "Alone only: bullets fly to the enemy head nearest your crosshair, your camera stays put");
     Option(m, Aim, "Silent aim", "silent_walls", "Shoot through walls", false);
     Option(m, Aim, "Silent aim", "silent_headshot", "Every shot is a headshot", true);
-    Slider(m, Aim, "Silent aim", "silent_area", "Silent aim area", "How far from the crosshair silent aim picks an enemy, in degrees", 5.0f,
+    Slider(m, Aim, "Silent aim", "silent_area", "Silent aim area", "How far from the crosshair silent aim picks an enemy, in degrees. The white circle on screen shows it when it fits on the screen", 5.0f,
            180.0f, 30.0f, 5.0f, false, "%.0f");
     Toggle(m, Aim, "Aim assist", "aim_assist", "Aim assist",
            "Alone only: pulls your aim to enemies while you aim or shoot");
     Slider(m, Aim, "Aim assist", "aim_strength", "Aim strength", "How hard aim assist pulls, 10 locks on", 1.0f, 10.0f, 5.0f, 1.0f, false,
            "%.0f");
-    Slider(m, Aim, "Aim assist", "aim_area", "Aim area", "How far from the crosshair aim assist grabs an enemy, in degrees", 5.0f, 90.0f,
+    Slider(m, Aim, "Aim assist", "aim_area", "Aim area", "How far from the crosshair aim assist grabs an enemy, in degrees. The blue circle on screen shows it when it fits on the screen", 5.0f, 90.0f,
            20.0f, 5.0f, false, "%.0f");
     Toggle(m, Aim, "Enemy ESP", "enemy_esp", "Enemy ESP", "Alone only: shows enemies through walls");
     Option(m, Aim, "Enemy ESP", "esp_name", "Show name", true);
@@ -167,10 +167,10 @@ void BuildFeatures(Model& m) {
 
     Slider(m, Movement, "Speed", "player_speed", "Player speed", "How fast you walk and sprint", 1.0f, 5.0f, 1.0f, 0.1f);
     Slider(m, Movement, "Speed", "jump_height", "Jump height", "How high you jump", 1.0f, 10.0f, 1.0f, 0.5f);
-    Toggle(m, Movement, "Flying", "fly", "Fly", "Fly in any direction, walls still stop you. Space goes up, Ctrl goes down");
-    Toggle(m, Movement, "Flying", "noclip", "Noclip", "Walk through walls and objects while you stay on the ground");
-    Slider(m, Movement, "Flying", "fly_speed", "Fly speed", "Speed for fly, noclip and freecam", 1.0f, 10.0f, 2.0f, 0.5f, false);
-    Toggle(m, Movement, "Camera", "freecam", "Freecam", "Move the camera freely with WASD, Space and Ctrl while your character stays put");
+    Toggle(m, Movement, "Flying", "fly", "Fly", "Fly where you look with WASD, walls still stop you. Space goes up, Ctrl goes down, hold Left Shift to go faster");
+    Toggle(m, Movement, "Flying", "noclip", "Noclip", "Walk through walls and objects while you stay on the ground. Hold Left Shift to go faster");
+    Slider(m, Movement, "Flying", "fly_speed", "Fly speed", "Speed for fly, noclip, freecam and vehicle fly", 1.0f, 10.0f, 2.0f, 0.5f, false);
+    Toggle(m, Movement, "Camera", "freecam", "Freecam", "Look around with the mouse and move the camera with WASD, Space and Ctrl while your character stays put. Hold Left Shift to go faster. Works best on foot");
     Slider(m, Movement, "Time", "game_speed", "Game speed", "Alone only: speeds up or slows down the whole game", 0.1f, 5.0f,
            1.0f, 0.1f);
 
@@ -192,8 +192,8 @@ void BuildFeatures(Model& m) {
 
     Toggle(m, Vehicle, "Vehicle", "vehicle_boost", "Unlimited vehicle boost", "Boost never runs out in the car you drive");
     Toggle(m, Vehicle, "Vehicle", "vehicle_god", "Invincible vehicle", "The car you drive can't be damaged");
-    Toggle(m, Vehicle, "Vehicle", "vehicle_fly", "Vehicle fly", "Your car flies where you look, Space goes up, Ctrl goes down");
-    Toggle(m, Vehicle, "Vehicle", "vehicle_noclip", "Vehicle noclip", "Your car drives through everything, use with care");
+    Toggle(m, Vehicle, "Vehicle", "vehicle_fly", "Vehicle fly", "Your car flies where you look with WASD, Space goes up, Ctrl goes down, hold Left Shift to go faster");
+    Toggle(m, Vehicle, "Vehicle", "vehicle_noclip", "Vehicle noclip", "Your car floats through walls and the ground where you look, use with care");
     Action(m, Vehicle, "Teleport", "bring_vehicle", "Bring my car", "Moves the last car you drove next to you. The map teleport also takes your car with you",
            "Bring");
 

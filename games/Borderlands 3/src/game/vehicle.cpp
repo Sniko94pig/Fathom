@@ -42,6 +42,7 @@ struct FlyState {
     ue::FWeak vehicle;
     bool active = false;
     bool noclip = false;
+    float yaw = 0;
 } fly;
 
 ue::FWeak lastVehicle;
@@ -72,6 +73,7 @@ void TickGod(bool want) {
         SetGod(st.vehicle, true);
         god.active = true;
         god.vehicle = ue::MakeWeak(st.vehicle);
+        LOG("invincible car on");
     }
     if (god.active && st.vehicle) {
         PoolRef hp;
@@ -113,21 +115,37 @@ void StopFly() {
     void* v = ue::WeakGet(fly.vehicle);
     if (v) {
         if (fly.noclip) {
-            Collision(v, true);
-            Physics(v, true);
             ue::FVector at = Location(v);
-            Teleport(v, {at.x, at.y, at.z + 50.0f}, {0.0f, Rotation(v).yaw, 0.0f});
+            ue::FRotator level{0.0f, Rotation(v).yaw, 0.0f};
+            std::vector<ue::FVector> spots;
+            for (float up : {100.0f, 2000.0f}) {
+                ue::FVector ground;
+                if (TraceDown({at.x, at.y, at.z + up}, 5000.0f + up, ground)) spots.push_back({at.x, at.y, ground.z + 160.0f});
+            }
+            spots.push_back({at.x, at.y, at.z + 60.0f});
+            Collision(v, true);
+            bool placed = false;
+            for (const ue::FVector& s : spots)
+                if (Teleport(v, s, level)) {
+                    placed = true;
+                    break;
+                }
+            if (!placed) {
+                LOG("car noclip off: no free spot found near %.0f %.0f %.0f", at.x, at.y, at.z);
+                Note("Could not find a free spot for your car, it may jump a little");
+            }
+            Physics(v, true);
         }
         SetGravity(v, true);
         SetVelocity(v, {});
     }
+    if (fly.active) LOG(fly.noclip ? "car noclip off" : "car fly off");
     fly = {};
 }
 
-void Input(float& fwd, float& side, float& up) {
-    fwd = (KeyDown('W') ? 1.0f : 0.0f) - (KeyDown('S') ? 1.0f : 0.0f);
-    side = (KeyDown('D') ? 1.0f : 0.0f) - (KeyDown('A') ? 1.0f : 0.0f);
-    up = (KeyDown(VK_SPACE) ? 1.0f : 0.0f) - ((KeyDown(VK_LCONTROL) || KeyDown(VK_CONTROL)) ? 1.0f : 0.0f);
+float Approach(float from, float to, float maxStep) {
+    float d = std::remainder(to - from, 360.0f);
+    return from + std::clamp(d, -maxStep, maxStep);
 }
 
 void TickFly(bool wantFly, bool wantNoclip) {
@@ -140,39 +158,60 @@ void TickFly(bool wantFly, bool wantNoclip) {
         fly.active = true;
         fly.noclip = wantNoclip;
         fly.vehicle = ue::MakeWeak(v);
+        fly.yaw = Rotation(v).yaw;
         SetGravity(v, false);
         if (wantNoclip) {
             Physics(v, false);
             Collision(v, false);
         }
+        LOG(wantNoclip ? "car noclip on" : "car fly on");
     }
     ue::FVector camLoc;
     ue::FRotator camRot;
     float fov;
     if (!CameraView(camLoc, camRot, fov)) camRot = ControlRotation();
-    float f, s, u;
-    Input(f, s, u);
-    float speed = 1200.0f * std::clamp(Value("fly_speed"), 1.0f, 10.0f) * (KeyDown(VK_LSHIFT) ? 2.0f : 1.0f);
+    float f = (KeyDown('W') ? 1.0f : 0.0f) - (KeyDown('S') ? 1.0f : 0.0f);
+    float s = (KeyDown('D') ? 1.0f : 0.0f) - (KeyDown('A') ? 1.0f : 0.0f);
+    float u = (KeyDown(VK_SPACE) ? 1.0f : 0.0f) - ((KeyDown(VK_LCONTROL)) ? 1.0f : 0.0f);
+    float speed = 1200.0f * std::clamp(Value("fly_speed"), 1.0f, 10.0f) * (KeyDown(VK_LSHIFT) ? 2.5f : 1.0f);
     ue::FVector fw = Forward(camRot);
     float Y = camRot.yaw * 3.14159265f / 180.0f;
     ue::FVector right{-std::sin(Y), std::cos(Y), 0.0f};
-    ue::FVector vel = Add(Add(Mul(fw, f * speed), Mul(right, s * speed)), {0, 0, u * speed});
+    ue::FVector dir = Add(Add(Mul(fw, f), Mul(right, s)), {0, 0, u});
+    float len = Len(dir);
+    if (len > 1.0f) dir = Mul(dir, 1.0f / len);
+    ue::FVector vel = Mul(dir, speed);
+    float dt = std::min(st.dt, 0.1f);
+    fly.yaw = Approach(fly.yaw, camRot.yaw, 240.0f * dt);
+    ue::FRotator level{0.0f, fly.yaw, 0.0f};
     if (wantNoclip) {
-        ue::FVector at = Location(v);
-        ue::FVector next = Add(at, Mul(vel, st.dt));
+        ue::FVector next = Add(Location(v), Mul(vel, dt));
         ue::Call c(v, "K2_SetActorLocationAndRotation");
-        c.Set("NewLocation", next).Set("NewRotation", ue::FRotator{0.0f, camRot.yaw, 0.0f}).SetBool("bSweep", false).SetBool("bTeleport", true);
+        c.Set("NewLocation", next).Set("NewRotation", level).SetBool("bSweep", false).SetBool("bTeleport", true);
         c.Run();
+        SetVelocity(v, {});
     } else {
+        ue::Call r(v, "K2_SetActorRotation");
+        r.Set("NewRotation", level).SetBool("bTeleportPhysics", true);
+        r.Run();
         SetVelocity(v, vel);
     }
 }
 
 void TickBoost(bool want) {
-    if (!want || !st.vehicle) return;
+    static bool logged = false;
+    if (!want || !st.vehicle) {
+        logged = false;
+        return;
+    }
     void* boost = ue::Ptr(st.vehicle, "BoostComponent");
     PoolRef ref;
-    if (boost && ReadPool(boost, "BoostPool", ref)) FillPool(ref);
+    bool ok = boost && ReadPool(boost, "BoostPool", ref);
+    if (ok) FillPool(ref);
+    if (!logged) {
+        logged = true;
+        LOG(ok ? "car boost refill on" : "this car has no boost");
+    }
 }
 
 void BringVehicle() {
@@ -218,13 +257,24 @@ bool VehicleHasOtherPlayers(void* vehicle) {
     for (Cached& c : cache)
         if (ue::WeakGet(c.v) == vehicle && st.time - c.at < 1.0) return c.others;
     bool others = false;
-    ue::Call c(vehicle, "GetAllOccupants");
-    c.SetBool("bIncludeDetaching", true);
-    if (c.Run()) {
-        auto a = c.Get<ue::TArray<void*>>("ReturnValue");
-        for (int i = 0; a.data && i < a.num && i < 16; ++i) {
-            void* p = ue::At<void*>(a.data + i, 0);
-            if (ue::Alive(p) && p != st.pawn && IsPlayerPawn(p)) others = true;
+    ue::Call n(vehicle, "GetSeatCount");
+    int seats = n.Run() ? std::clamp(n.Get<int32_t>("ReturnValue"), 0, 16) : 0;
+    for (int i = 0; i < seats; ++i) {
+        ue::Call c(vehicle, "GetSeatOccupant");
+        c.Set<int32_t>("SeatSlot", i).SetBool("bIncludeDetaching", true);
+        if (!c.Run()) continue;
+        void* p = c.Get<void*>("ReturnValue");
+        if (ue::Alive(p) && p != st.pawn && IsPlayerPawn(p)) others = true;
+    }
+    if (seats == 0) {
+        ue::Call c(vehicle, "GetAllOccupants");
+        c.SetBool("bIncludeDetaching", true);
+        if (c.Run()) {
+            auto a = c.Get<ue::TArray<void*>>("ReturnValue");
+            for (int i = 0; a.data && i < a.num && i < 16; ++i) {
+                void* p = ue::At<void*>(a.data + i, 0);
+                if (ue::Alive(p) && p != st.pawn && IsPlayerPawn(p)) others = true;
+            }
         }
     }
     Cached* slot = &cache[0];
@@ -262,7 +312,8 @@ void VehicleInit() {
     Ready("vehicle_god", Has("OakVehicle", "DamageComponent") && HasFunc("DamageComponent", "SetGodMode"));
     Ready("vehicle_fly", Has("Vehicle", "Mesh") && HasFunc("PrimitiveComponent", "SetEnableGravity") &&
                              HasFunc("PrimitiveComponent", "SetAllPhysicsLinearVelocity"));
-    Ready("vehicle_noclip", HasFunc("OakVehicle", "DisableVehiclePhysics") && HasFunc("OakVehicle", "EnableVehiclePhysics"));
+    Ready("vehicle_noclip", HasFunc("OakVehicle", "DisableVehiclePhysics") && HasFunc("OakVehicle", "EnableVehiclePhysics") &&
+                                HasFunc("Actor", "K2_SetActorLocationAndRotation"));
     Ready("bring_vehicle", HasFunc("OakCharacter", "GetOwnedVehicle") && HasFunc("Actor", "K2_TeleportTo"));
 }
 

@@ -18,6 +18,7 @@ add_library(fathom_bl3 SHARED
   ${BL3_SRC}/game/aim.cpp
   ${BL3_SRC}/game/loot.cpp
   ${BL3_SRC}/game/giver.cpp
+  ${BL3_SRC}/game/giver_icons.cpp
   ${BL3_SRC}/game/world.cpp
   ${BL3_SRC}/game/mapshot.cpp
   ${BL3_SRC}/game/vehicle.cpp

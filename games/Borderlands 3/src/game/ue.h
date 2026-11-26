@@ -44,6 +44,7 @@ struct FLinearColor {
 struct FWeak {
     int32_t index = 0;
     int32_t serial = 0;
+    const void* ptr = nullptr;
 };
 
 struct Prop {
