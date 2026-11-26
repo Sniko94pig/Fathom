@@ -244,6 +244,47 @@ void LoadShotMaps(launcher::Home& home) {
 }
 #endif
 
+void Live(core::Model& m, std::initializer_list<const char*> ons, std::initializer_list<std::pair<const char*, float>> values) {
+    m.inWorld = true;
+    for (core::Feature& f : m.features) f.available = true;
+    for (const char* id : ons)
+        if (core::Feature* f = m.find(id)) core::SetFeature(m, *f, true);
+    for (const auto& [id, v] : values)
+        if (core::Feature* f = m.find(id)) core::SetValue(m, *f, v);
+}
+
+std::function<void(core::Model&, ui::Menu&, int)> Toasts(const char* a, const char* b) {
+    return [a, b](core::Model&, ui::Menu& u, int f) {
+        if (f == 60) u.Notify(a, ICON_CHECK);
+        if (f == 75) u.Notify(b, ICON_CHECK);
+    };
+}
+
+#ifdef FATHOM_LAUNCHER_SHOTS
+void ShowcaseApp(ui::Menu& u, int index, std::function<void(launcher::Home&)> prep) {
+    static launcher::Home home;
+    home.game = -1;
+    home.mapGame = -1;
+    LoadShotMaps(home);
+    prep(home);
+    static int page = 0;
+    page = index;
+    u.embedded = true;
+    u.showGameTabs = false;
+    u.homePage = [] {
+        home.mine = page == 1;
+        home.maps = page == 2;
+        home.help = page == 3;
+        home.Draw();
+    };
+    u.homeName = "Games";
+    u.homeIcon = ICON_LAYERS;
+    u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}, {"Help", ICON_CIRCLE_HELP}};
+    u.homeIndex = index;
+    u.onHome = true;
+}
+#endif
+
 int main(int argc, char** argv) {
     std::string outDir = argc > 1 ? argv[1] : ".";
     float density = argc > 2 ? (float)std::atof(argv[2]) : 2.0f;
@@ -616,6 +657,42 @@ int main(int argc, char** argv) {
              u.status = "In a world";
              u.statusGood = true;
          }, ImVec2(0, 0), nullptr},
+        {"app-maps", [&](core::Model&, ui::Menu& u) { ShowcaseApp(u, 2, [](launcher::Home&) {}); }, ImVec2(0, 0), nullptr},
+        {"app-map", [&](core::Model&, ui::Menu& u) {
+             ShowcaseApp(u, 2, [](launcher::Home& home) {
+                 home.mapGame = 0;
+                 home.mapPick[0] = 5;
+                 home.mapCx[0] = 0.49f;
+                 home.mapCy[0] = 0.43f;
+             });
+         }, ImVec2(0, 0), nullptr},
+        {"app-help", [&](core::Model&, ui::Menu& u) {
+             ShowcaseApp(u, 3, [](launcher::Home& home) { home.helpOpen = 1; });
+         }, ImVec2(0, 0), nullptr},
+        {"app-settings", [&](core::Model&, ui::Menu& u) {
+             ShowcaseApp(u, 0, [](launcher::Home&) {});
+             static ui::Loader loader;
+             loader.version = FATHOM_VERSION;
+             loader.updateText = "You have the newest version";
+             loader.gameFound = true;
+             loader.s.backupOnInject = true;
+             loader.checkUpdates = [] {};
+             loader.openHome = [] {};
+             loader.openBackups = [] {};
+             loader.openGame = [] {};
+             loader.refreshArt = [] {};
+             loader.backupSaves = [] { return std::string(); };
+             loader.listBackups = [] { return std::vector<ui::BackupEntry>(); };
+             loader.recycleBackups = [](const std::vector<std::wstring>&) { return 0; };
+             loader.scanOldBuilds = [](std::string& size) {
+                 size = "36.1 MB";
+                 return 2;
+             };
+             loader.deleteOldBuilds = [] { return 0; };
+             u.loader = &loader;
+             u.onHome = false;
+             u.tab = core::Tab::Settings;
+         }, ImVec2(0, 0), nullptr},
 #endif
         {"31-mc-combat", [](core::Model& m, ui::Menu& u) {
              m = core::Model();
@@ -725,6 +802,32 @@ int main(int argc, char** argv) {
              sn1::BuildFeatures(m);
              u.tab = core::Tab::Spawner;
          }, ImVec2(0, 0), nullptr},
+        {"menu-subnautica", [](core::Model& m, ui::Menu&) {
+             m = core::Model();
+             sn1::BuildFeatures(m);
+             Live(m, {"godmode", "infinite_oxygen", "unlimited_food"}, {{"player_speed", 1.5f}});
+         }, ImVec2(520, 220), Toasts("Godmode on", "Infinite oxygen on")},
+        {"menu-sons-of-the-forest", [](core::Model& m, ui::Menu&) {
+             m = core::Model();
+             sotf::BuildFeatures(m);
+             Live(m, {"godmode", "unlimited_stamina", "unlimited_hydration"}, {});
+         }, ImVec2(520, 220), Toasts("Godmode on", "Unlimited stamina on")},
+        {"menu-ultrakill", [](core::Model& m, ui::Menu&) {
+             m = core::Model();
+             uk::BuildFeatures(m);
+             Live(m, {"godmode"}, {{"game_speed", 0.5f}});
+         }, ImVec2(520, 220), Toasts("God mode on", "Game speed 0.5x")},
+        {"menu-geometry-dash", [](core::Model& m, ui::Menu&) {
+             m = core::Model();
+             gd::BuildFeatures(m);
+             Live(m, {"noclip", "hitboxes"}, {{"game_speed", 0.75f}});
+         }, ImVec2(520, 220), Toasts("Noclip on", "Show hitboxes on")},
+        {"menu-minecraft", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             mc::BuildFeatures(m);
+             Live(m, {"killaura", "criticals"}, {});
+             u.tab = core::Tab::Biomods;
+         }, ImVec2(520, 220), Toasts("Kill aura on", "Criticals on")},
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {
              m.session = core::Session::Client;

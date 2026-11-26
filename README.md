@@ -33,7 +33,27 @@ Minecraft: Java Edition needs Fabric. Press **Start game** on its page and Fatho
 
 The **Maps** tab in Fathom has the maps of Subnautica, Subnautica 2 and Sons of the Forest. Pick a game to open its map, then filter and search the places on it: lifepods, wrecks, Degasi bases and alien sites in Subnautica, signals, black boxes, supply crates and quartz chips in Subnautica 2, and caves, bunkers and villages in Sons of the Forest. Scroll to zoom, drag to move and click a place to see where it is. All three maps come with Fathom, so they show even before you play. The Subnautica and Sons of the Forest maps are drawn from the games' own world data.
 
-![Survival page](<games/Subnautica 2/shots/1-survival.png>)
+## Showcase
+
+### The in-game menu
+
+![Subnautica 2 menu](<games/Subnautica 2/shots/1-survival.png>)
+
+| Subnautica | Sons of the Forest |
+|---|---|
+| ![Subnautica menu](shots/menu-subnautica.png) | ![Sons of the Forest menu](shots/menu-sons-of-the-forest.png) |
+| **ULTRAKILL** | **Geometry Dash** |
+| ![ULTRAKILL menu](shots/menu-ultrakill.png) | ![Geometry Dash menu](shots/menu-geometry-dash.png) |
+| **Minecraft: Java Edition** | |
+| ![Minecraft menu](shots/menu-minecraft.png) | |
+
+### The Fathom app
+
+| Maps | A map |
+|---|---|
+| ![Maps tab](shots/app-maps.png) | ![Subnautica map](shots/app-map.png) |
+| **Help** | **Settings** |
+| ![Help tab](shots/app-help.png) | ![Settings](shots/app-settings.png) |
 
 ## Install
 
