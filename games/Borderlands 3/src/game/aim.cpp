@@ -159,9 +159,15 @@ void AimAssist(const ue::FVector& from, const ue::FRotator& view) {
 
 struct Bullet {
     ue::FWeak obj;
+    float start = 0;
     double seen = 0;
 };
 std::vector<Bullet> handled;
+
+float StartTime(void* p) {
+    ue::Prop sp = ue::FindProp(ue::ClassOf(p), "StartTime");
+    return sp ? ue::Read<float>(p, sp) : 0.0f;
+}
 
 struct WallSave {
     ue::FWeak data;
@@ -182,9 +188,15 @@ void* Manager() {
     return m;
 }
 
-bool Handled(void* p) {
+bool Handled(void* p, float start) {
     for (Bullet& b : handled)
-        if (ue::WeakGet(b.obj) == p) return true;
+        if (ue::WeakGet(b.obj) == p) {
+            if (b.start == start) return true;
+            b.start = start;
+            b.seen = st.time;
+            return false;
+        }
+    handled.push_back({ue::MakeWeak(p), start, st.time});
     return false;
 }
 
@@ -213,19 +225,24 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
     bool throughWalls = On("silent_walls");
     if (!throughWalls && !walls.empty()) RestoreWalls();
     float area = std::clamp(Value("silent_area"), 5.0f, 180.0f);
-    handled.erase(std::remove_if(handled.begin(), handled.end(), [](const Bullet& b) { return st.time - b.seen > 3.0 || !ue::WeakGet(b.obj); }),
+    if (handled.size() > 2048) handled.clear();
+    handled.erase(std::remove_if(handled.begin(), handled.end(), [](const Bullet& b) { return st.time - b.seen > 30.0 || !ue::WeakGet(b.obj); }),
                   handled.end());
+    bool picked = false;
+    const Enemy* t = nullptr;
     for (const char* listName : {"ActiveProjectiles", "ProjectilesWaitingBatch"}) {
         ue::Prop lp = ue::FindProp(ue::ClassOf(mgr), listName);
         auto list = ue::Read<ue::TArray<void*>>(mgr, lp);
         for (int i = 0; lp && list.data && i < list.num && i < 512; ++i) {
             void* p = ue::At<void*>(list.data + i, 0);
-            if (!ue::Alive(p) || Handled(p)) continue;
+            if (!ue::Alive(p) || Handled(p, StartTime(p))) continue;
             ue::Call ins(p, "GetInstigator");
             if (!ins.Run() || ins.Get<void*>("ReturnValue") != st.pawn) continue;
-            handled.push_back({ue::MakeWeak(p), st.time});
             if (throughWalls) MakeWallPiercing(p);
-            const Enemy* t = PickTarget(from, view, area, throughWalls);
+            if (!picked) {
+                t = PickTarget(from, view, area, throughWalls);
+                picked = true;
+            }
             if (!t) continue;
             ue::Prop locP = ue::FindProp(ue::ClassOf(p), "Location");
             ue::Prop velP = ue::FindProp(ue::ClassOf(p), "Velocity");
