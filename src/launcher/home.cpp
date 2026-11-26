@@ -688,9 +688,9 @@ void Home::DrawLibrary() {
         std::vector<int> own;
         for (int i : feat)
             if (i < (int)installed.size() && installed[i]) own.push_back(i);
-        feat.swap(own);
-        rest.clear();
-        if (feat.empty()) {
+        rest.swap(own);
+        feat.clear();
+        if (rest.empty()) {
             float eh = S(110);
             Card(dl, ImVec2(o.x, top), ImVec2(o.x + w, top + eh));
             Caption(dl, ImVec2(o.x + S(16), top + S(15)), q.empty() ? "No games yet" : "Nothing found");
