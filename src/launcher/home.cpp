@@ -771,8 +771,9 @@ void Home::DrawLibrary() {
         }
     }
 
-    int cols = std::clamp((int)((w + gap) / (S(118) + gap)), 3, 14);
-    float cw = std::floor((w - gap * (cols - 1)) / cols), ph = std::floor(cw * 1.5f), ch = ph + S(46);
+    float minW = mine ? S(210) : S(118);
+    int cols = std::clamp((int)((w + gap) / (minW + gap)), mine ? 2 : 3, 14);
+    float cw = std::floor((w - gap * (cols - 1)) / cols), ph = std::floor(cw * 1.5f), ch = ph + (mine ? S(56) : S(46));
     for (int k = 0; k < (int)rest.size(); ++k) {
         int idx = rest[k];
         const GameDef& g = games[idx];
@@ -791,9 +792,9 @@ void Home::DrawLibrary() {
         dl->AddRect(pa, pb, hv > 0.01f ? Mix(ImVec4(1, 1, 1, 0.06f), T().accent, hv) : White(0.06f));
         if (g.ready || hv > 0.01f) dl->AddRectFilled(ImVec2(pa.x, pb.y - S(4)), pb, Accent(g.ready ? 1.0f : hv));
         Badge(dl, ImVec2(pa.x + S(8), pa.y + S(8)), g);
-        TextFit(dl, T().semibold, 13, ImVec2(a.x, a.y + ph + S(9)), cw, White(g.ready || g.building ? 0.96f : 0.8f), g.name);
+        TextFit(dl, T().semibold, mine ? 16.0f : 13.0f, ImVec2(a.x, a.y + ph + S(10)), cw, White(g.ready || g.building ? 0.96f : 0.8f), g.name);
         bool inst = idx < (int)installed.size() && installed[idx];
-        Status(dl, ImVec2(a.x, a.y + ph + S(28)), inst);
+        Status(dl, ImVec2(a.x, a.y + ph + (mine ? S(34) : S(28))), inst);
         if (clicked) game = idx;
     }
     if (shown.empty()) Text(dl, T().regular, 13, ImVec2(o.x, top + S(8)), White(0.45f), "No game matches your search");
