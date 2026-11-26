@@ -572,7 +572,10 @@ void* SpawnActor(const char* cls, const ue::FVector& at, float yaw) {
 }
 
 void DestroyActor(void* actor) {
-    if (ue::Alive(actor)) ue::Call(actor, "K2_DestroyActor").Run();
+    if (!ue::Alive(actor)) return;
+    ue::Call c(actor, "GbxDestroyActor");
+    c.SetBool("bDestroyImmediately", true);
+    if (!c.Run()) ue::Call(actor, "K2_DestroyActor_DEPRECATED").Run();
 }
 
 void SetViewTarget(void* target) {

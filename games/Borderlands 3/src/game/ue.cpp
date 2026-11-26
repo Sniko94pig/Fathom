@@ -78,7 +78,8 @@ bool CheckNames(uint8_t* base) {
     if (!SafeRead(base, chunk0) || !Plausible(chunk0)) return false;
     int32_t num = 0, chunks = 0;
     if (!SafeRead(base + 0x400, num) || !SafeRead(base + 0x404, chunks)) return false;
-    if (num < 1000 || num > 4 * 1024 * 1024 || chunks != (num + 16383) / 16384) return false;
+    int32_t need = (num + 16383) / 16384;
+    if (num < 1000 || num > 4 * 1024 * 1024 || chunks < need || chunks > need + 1 || chunks > 128) return false;
     uintptr_t e0 = 0, e1 = 0;
     if (!SafeRead((const void*)chunk0, e0) || !SafeRead((const void*)(chunk0 + 8), e1)) return false;
     if (!Plausible(e0) || !Plausible(e1)) return false;
@@ -147,7 +148,8 @@ bool FindObjects() {
             int32_t mx = *(int32_t*)(a + 0x10), num = *(int32_t*)(a + 0x14);
             int32_t maxChunks = *(int32_t*)(a + 0x18), numChunks = *(int32_t*)(a + 0x1C);
             if (num < 0x1000 || num > mx || mx > 0x4000000) continue;
-            if (numChunks != (num + 0xFFFF) / 0x10000 || maxChunks != (mx + 0xFFFF) / 0x10000) continue;
+            int32_t need = (num + 0xFFFF) / 0x10000;
+            if (numChunks < need || numChunks > need + 1 || maxChunks < numChunks || maxChunks > mx / 0x10000 + 2) continue;
             uintptr_t chunk0 = 0;
             if (!SafeRead((const void*)objects, chunk0) || !Plausible(chunk0)) continue;
             int size = 0;

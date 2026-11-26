@@ -256,7 +256,7 @@ void SpawnItem(const GiverItem& it, int count) {
         Note("Could not create " + it.name);
         return;
     }
-    count = std::clamp(count, 1, 10);
+    count = std::clamp(count, 1, 50);
     int level = PlayerLevel();
     keepAlive.emplace_back((size_t)selSize * count, 0);
     std::vector<uint8_t>& sel = keepAlive.back();

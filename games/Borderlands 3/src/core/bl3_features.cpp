@@ -106,12 +106,12 @@ void BuildFeatures(Model& m) {
     Action(m, Player, "Health", "heal_health", "Heal health", "Health back to full once", "Heal");
     Action(m, Player, "Health", "restore_shield", "Restore shield", "Shield back to full once", "Restore");
     Toggle(m, Player, "Health", "no_self_damage", "No self-damage",
-           "Your own explosions, splash and skills don't hurt you. Only when you play alone");
-    Toggle(m, Player, "Stealth", "invisibility", "Invisibility", "Enemies can't see or target you. Only when you play alone");
+           "Alone only: your own explosions and splash don't hurt you");
+    Toggle(m, Player, "Stealth", "invisibility", "Invisibility", "Alone only: enemies can't see or target you");
     Slider(m, Player, "Level & XP", "mega_xp", "Mega XP", "Every bit of XP you earn is multiplied", 1.0f, 100.0f, 1.0f, 1.0f, true, "%.0fx");
     Slider(m, Player, "Level & XP", "give_level", "Level to give", "Pick a level, then press Give. It only goes up", 2.0f, 72.0f, 72.0f, 1.0f,
            false, "%.0f");
-    Action(m, Player, "Level & XP", "give_level_apply", "Give level", "Raises your level to the one on the slider, your saves are backed up first",
+    Action(m, Player, "Level & XP", "give_level_apply", "Give level", "Raises your level to the slider value, saves are backed up first",
            "Give", true);
     Input(m, Player, "Currency", "money", "Money", "Type the amount and press Set, your saves are backed up first", "Amount");
     Input(m, Player, "Currency", "eridium", "Eridium", "Type the amount and press Set, your saves are backed up first", "Amount");
@@ -128,26 +128,26 @@ void BuildFeatures(Model& m) {
     Toggle(m, Weapons, "Damage", "one_hit_kill", "One-hit kills", "Your guns kill any enemy in one hit");
     Toggle(m, Weapons, "Damage", "always_crit", "Always crits", "Every hit counts as a critical hit");
     Toggle(m, Weapons, "Gear", "ignore_level_req", "Ignore level requirements",
-           "Use and equip gear above your level. Only when you play alone");
+           "Alone only: use and equip gear above your level");
 
     Toggle(m, Aim, "Silent aim", "silent_aim", "Silent aim",
-           "Your bullets fly to the head of the enemy closest to your crosshair without moving your camera. Only when you play alone");
+           "Alone only: bullets fly to the enemy head nearest your crosshair, your camera stays put");
     Option(m, Aim, "Silent aim", "silent_walls", "Shoot through walls", false);
     Option(m, Aim, "Silent aim", "silent_headshot", "Every shot is a headshot", true);
     Slider(m, Aim, "Silent aim", "silent_area", "Silent aim area", "How far from the crosshair silent aim picks an enemy, in degrees", 5.0f,
            180.0f, 30.0f, 5.0f, false, "%.0f");
     Toggle(m, Aim, "Aim assist", "aim_assist", "Aim assist",
-           "While you aim or shoot, your aim pulls to the enemy closest to your crosshair. Only when you play alone");
+           "Alone only: pulls your aim to enemies while you aim or shoot");
     Slider(m, Aim, "Aim assist", "aim_strength", "Aim strength", "How hard aim assist pulls, 10 locks on", 1.0f, 10.0f, 5.0f, 1.0f, false,
            "%.0f");
     Slider(m, Aim, "Aim assist", "aim_area", "Aim area", "How far from the crosshair aim assist grabs an enemy, in degrees", 5.0f, 90.0f,
            20.0f, 5.0f, false, "%.0f");
-    Toggle(m, Aim, "Enemy ESP", "enemy_esp", "Enemy ESP", "Shows enemies through walls. Only when you play alone");
+    Toggle(m, Aim, "Enemy ESP", "enemy_esp", "Enemy ESP", "Alone only: shows enemies through walls");
     Option(m, Aim, "Enemy ESP", "esp_name", "Show name", true);
     Option(m, Aim, "Enemy ESP", "esp_health", "Show health", true);
     Option(m, Aim, "Enemy ESP", "esp_distance", "Show distance", true);
     Option(m, Aim, "Enemy ESP", "esp_box", "Show box", true);
-    Toggle(m, Aim, "Loot ESP", "loot_esp", "Loot ESP", "Shows loot and chests through walls in their rarity colour. Only when you play alone");
+    Toggle(m, Aim, "Loot ESP", "loot_esp", "Loot ESP", "Alone only: shows loot and chests in their rarity colour");
     Option(m, Aim, "Loot ESP", "lootesp_common", "Show white (common)", false);
     Option(m, Aim, "Loot ESP", "lootesp_uncommon", "Show green (uncommon)", true);
     Option(m, Aim, "Loot ESP", "lootesp_rare", "Show blue (rare)", true);
@@ -156,7 +156,7 @@ void BuildFeatures(Model& m) {
     Option(m, Aim, "Loot ESP", "lootesp_chests", "Show chests", true);
     Option(m, Aim, "Loot ESP", "lootesp_name", "Show name", true);
     Option(m, Aim, "Loot ESP", "lootesp_distance", "Show distance", true);
-    Action(m, Aim, "Enemies", "kill_nearby", "Kill all nearby enemies", "Kills every enemy within Kill range. Only when you play alone", "Kill");
+    Action(m, Aim, "Enemies", "kill_nearby", "Kill all nearby enemies", "Alone only: kills every enemy within Kill range", "Kill");
     Slider(m, Aim, "Enemies", "kill_range", "Kill range", "How far Kill all nearby enemies reaches", 5.0f, 300.0f, 50.0f, 5.0f, false,
            "%.0f m");
 
@@ -171,23 +171,23 @@ void BuildFeatures(Model& m) {
     Toggle(m, Movement, "Flying", "noclip", "Noclip", "Walk through walls and objects while you stay on the ground");
     Slider(m, Movement, "Flying", "fly_speed", "Fly speed", "Speed for fly, noclip and freecam", 1.0f, 10.0f, 2.0f, 0.5f, false);
     Toggle(m, Movement, "Camera", "freecam", "Freecam", "Move the camera freely with WASD, Space and Ctrl while your character stays put");
-    Slider(m, Movement, "Time", "game_speed", "Game speed", "Speeds up or slows down the whole game. Only when you play alone", 0.1f, 5.0f,
+    Slider(m, Movement, "Time", "game_speed", "Game speed", "Alone only: speeds up or slows down the whole game", 0.1f, 5.0f,
            1.0f, 0.1f);
 
     Page(m, LootMap, "Giver", "giver", "Giver", "Give yourself the best guns, shields, grenades, class mods, artifacts and ammo", "add_items");
     Action(m, LootMap, "Giver", "refill_ammo", "Refill all ammo", "Fills every ammo type and your grenades", "Refill");
     Page(m, LootMap, "Map", "map", "Map", "Map of where you are with every location, click to teleport. Also lists every map in the game",
          "map");
-    Toggle(m, LootMap, "Drops", "legendary_drops", "Legendary drops", "Every gun and gear that drops is Legendary. Only when you play alone");
-    Toggle(m, LootMap, "Drops", "drop_filter", "Rarity drop filter", "Only the rarities you tick below drop. Only when you play alone");
+    Toggle(m, LootMap, "Drops", "legendary_drops", "Legendary drops", "Alone only: every gun and gear that drops is Legendary");
+    Toggle(m, LootMap, "Drops", "drop_filter", "Rarity drop filter", "Alone only: only the rarities you tick below drop");
     Option(m, LootMap, "Drops", "drop_common", "Drop white (common)", false);
     Option(m, LootMap, "Drops", "drop_uncommon", "Drop green (uncommon)", false);
     Option(m, LootMap, "Drops", "drop_rare", "Drop blue (rare)", true);
     Option(m, LootMap, "Drops", "drop_epic", "Drop purple (epic)", true);
     Option(m, LootMap, "Drops", "drop_legendary", "Drop orange (legendary)", true);
-    Toggle(m, LootMap, "Fun", "free_spins", "Free slot machine spins", "Moxxi's slot machines cost nothing. Only when you play alone");
+    Toggle(m, LootMap, "Fun", "free_spins", "Free slot machine spins", "Alone only: Moxxi's slot machines cost nothing");
     Action(m, LootMap, "Fun", "mayhem_reroll", "Mayhem modifier reroller",
-           "Picks new random Mayhem modifiers, the map reloads like changing Mayhem at the console. Only when you play alone", "Reroll",
+           "Alone only: new random Mayhem modifiers, the map reloads", "Reroll",
            true);
 
     Toggle(m, Vehicle, "Vehicle", "vehicle_boost", "Unlimited vehicle boost", "Boost never runs out in the car you drive");
