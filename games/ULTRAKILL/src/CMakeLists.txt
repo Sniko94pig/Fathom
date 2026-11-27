@@ -35,3 +35,17 @@ if(MSVC)
   target_compile_options(fathom_ultrakill PRIVATE /Zi /EHa)
   target_link_options(fathom_ultrakill PRIVATE /DEBUG /PDBALTPATH:fathom_ultrakill.pdb /OPT:REF /OPT:ICF)
 endif()
+
+set(UK_SOLO_MENU ${CMAKE_CURRENT_BINARY_DIR}/solo_menu.dll)
+file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/solo.rc CONTENT "1 RCDATA \"${UK_SOLO_MENU}\"\n")
+add_library(fathom_ultrakill_solo SHARED EXCLUDE_FROM_ALL
+  ${UK_SRC}/solo/solo.cpp
+  ${UK_SRC}/solo/solo.def
+  ${CMAKE_CURRENT_BINARY_DIR}/solo.rc)
+add_dependencies(fathom_ultrakill_solo fathom_ultrakill)
+add_custom_command(TARGET fathom_ultrakill_solo PRE_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:fathom_ultrakill> ${UK_SOLO_MENU})
+target_compile_definitions(fathom_ultrakill_solo PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+set_target_properties(fathom_ultrakill_solo PROPERTIES
+  OUTPUT_NAME version
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/ultrakill_solo/$<CONFIG>)
