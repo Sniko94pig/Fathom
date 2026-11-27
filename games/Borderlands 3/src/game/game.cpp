@@ -39,6 +39,7 @@ std::unordered_map<std::string, bool> implemented;
 std::unordered_map<std::string, std::string> missingWhy;
 
 std::atomic<bool> stopping{false}, stopped{false};
+double stopWait = 0;
 std::atomic<int> inflight{0};
 bool inTick = false;
 std::atomic<bool> menuOpen{false}, menuFocused{false}, mapVisible{false};
@@ -256,6 +257,7 @@ void OffAll() {
     GiverOff();
     WorldOff();
     MapshotOff();
+    ExploreOff();
     VehicleOff();
 }
 
@@ -272,6 +274,8 @@ void Tick() {
     ScanStep();
     if (stopping) {
         OffAll();
+        if (stopWait == 0) stopWait = now + 15.0;
+        if ((ExploreBusy() || PlayerBusy()) && now < stopWait) return;
         stopped = true;
         return;
     }
@@ -291,6 +295,7 @@ void Tick() {
     GiverTick();
     WorldTick();
     MapshotTick();
+    ExploreTick();
     VehicleTick();
     pressedNow.clear();
     submitNow.clear();
@@ -826,6 +831,7 @@ bool Hook() {
     GiverInit(*model);
     WorldInit(*model);
     MapshotInit(*model);
+    ExploreInit();
     VehicleInit();
     {
         std::lock_guard<std::mutex> g(*modelLock);

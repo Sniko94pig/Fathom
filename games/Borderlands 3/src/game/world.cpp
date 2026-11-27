@@ -6,6 +6,7 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <unordered_map>
 
 namespace bl3 {
 
@@ -14,6 +15,7 @@ namespace {
 struct TravelSpot {
     ue::FWeak station;
     std::string name;
+    bool dlc = false;
 };
 
 struct Request {
@@ -23,7 +25,10 @@ struct Request {
 };
 
 std::vector<TravelSpot> travels;
+bool travelsTagged = false;
 std::set<std::string> dlcAll, dlcOwned;
+std::map<std::string, std::string> dlcNames;
+std::unordered_map<void*, std::string> challengeNames;
 bool dlcDone = false;
 double dlcNext = 0;
 std::mutex reqLock;
@@ -131,6 +136,7 @@ void ComputeDlc() {
             void* dlc = ue::Ptr(z, "AssociatedDLC");
             std::string f = dlc ? DlcFolder(ue::Path(dlc)) : DlcFolder(ue::Path(z));
             if (!f.empty()) dlcAll.insert(f);
+            if (dlc && !f.empty() && !dlcNames.count(f)) dlcNames[f] = TextAt(dlc, "ContentDisplayName");
         }
         for (void* z : ZoneMaps(planet, true)) {
             void* dlc = ue::Ptr(z, "AssociatedDLC");
@@ -139,14 +145,16 @@ void ComputeDlc() {
         }
     }
     dlcDone = true;
-    std::string all, owned;
+    std::string all, owned, named;
     for (auto& s : dlcAll) all += s + " ";
     for (auto& s : dlcOwned) owned += s + " ";
-    LOG("DLC with maps: %s| owned: %s", all.c_str(), owned.c_str());
+    for (auto& d : dlcNames) named += d.first + "=" + d.second + "; ";
+    LOG("DLC with maps: %s| owned: %s| names: %s", all.c_str(), owned.c_str(), named.c_str());
 }
 
 void BuildTravels() {
     travels.clear();
+    travelsTagged = dlcDone;
     for (void* planet : Planets()) {
         std::string planetName = TextAt(planet, "DisplayName");
         ue::Call c(Lib("PlanetData"), "GetPlanetFastTravelStations");
@@ -155,13 +163,21 @@ void BuildTravels() {
         auto a = c.Get<ue::TArray<void*>>("OutFastTravelStations");
         for (int i = 0; a.data && i < a.num && i < 512; ++i) {
             void* s = ue::At<void*>(a.data + i, 0);
-            if (!ue::Alive(s) || !DlcAllowed(ue::Path(s))) continue;
+            std::string path = ue::Path(s);
+            if (!ue::Alive(s) || !DlcAllowed(path)) continue;
             std::string n = TextAt(s, "DisplayName");
             if (n.empty()) n = Clean(ue::Name(s));
-            travels.push_back({ue::MakeWeak(s), (planetName.empty() ? std::string() : planetName + ": ") + n});
+            std::string folder = DlcFolder(path);
+            bool dlc = !folder.empty() && dlcNames.count(folder) > 0;
+            std::string where = planetName.empty() ? std::string() : planetName + (dlc ? " (DLC): " : ": ");
+            if (where.empty() && dlc) where = "DLC: ";
+            travels.push_back({ue::MakeWeak(s), where + n, dlc});
         }
     }
-    std::sort(travels.begin(), travels.end(), [](const TravelSpot& a, const TravelSpot& b) { return a.name < b.name; });
+    std::sort(travels.begin(), travels.end(), [](const TravelSpot& a, const TravelSpot& b) {
+        if (a.dlc != b.dlc) return !a.dlc;
+        return a.name < b.name;
+    });
 }
 
 void* CurrentZoneMap() {
@@ -355,6 +371,27 @@ std::vector<core::Location> MissionRows() {
 
 bool IsMissionRow(const core::Location& l) { return l.z < kMissionZ * 0.5f; }
 
+std::string ChallengeName(void* zone, const uint8_t* entry, int size, void* cls) {
+    auto it = challengeNames.find(cls);
+    if (it != challengeNames.end()) return it->second;
+    std::string s;
+    ue::Call c(zone, "GetChallengeDisplayTextDirect");
+    c.SetRaw("MissionWaypointEntry", entry, size);
+    if (c.Ok() && c.Run()) {
+        const uint8_t* text = c.Raw("ReturnValue");
+        if (text) s = PlainText(ue::TextToString(text));
+    }
+    if (challengeNames.size() > 512) challengeNames.clear();
+    challengeNames[cls] = s;
+    return s;
+}
+
+bool ChallengeDone(void* zone, const uint8_t* entry, int size) {
+    ue::Call c(zone, "GetChallengeStatusDirect");
+    c.SetRaw("ChallengeEntry", entry, size).Set<void*>("Player", st.pc);
+    return c.Ok() && c.Run() && c.Get<uint8_t>("ReturnValue") == 1;
+}
+
 void BuildPlaces() {
     std::vector<core::Location> places = MissionRows();
     fixedMarkers.clear();
@@ -394,24 +431,49 @@ void BuildPlaces() {
             fixedMarkers.push_back({core::MarkerType::Place, n, mx, my, w.z / 100.0f, 0});
         }
     }
+    std::vector<ue::FVector> challengeSpots;
     if (zone && chalStruct) {
         ue::Prop lp = ue::FindProp(ue::ClassOf(zone), "ZoneMapChallengeList");
         auto list = ue::Read<ue::TArray<uint8_t>>(zone, lp);
         int size = ue::StructSize(chalStruct);
-        ue::Prop nameP = ue::FindProp(chalStruct, "ChallengeActorName"), xfP = ue::FindProp(chalStruct, "ChallengeWaypointTransform");
-        for (int i = 0; lp && list.data && size > 0 && xfP && i < list.num && i < 512; ++i) {
+        ue::Prop nameP = ue::FindProp(chalStruct, "ChallengeActorName"), xfP = ue::FindProp(chalStruct, "ChallengeWaypointTransform"),
+                 clsP = ue::FindProp(chalStruct, "ChallengeClass");
+        for (int i = 0; lp && list.data && size > 0 && size <= 0x200 && xfP && i < list.num && i < 512; ++i) {
             uint8_t* e = list.data + (size_t)i * size;
-            std::string n = nameP ? Clean(ue::FStringToUtf8(ue::At<ue::FString>(e, nameP.offset))) : std::string();
+            void* cls = clsP ? ue::At<void*>(e, clsP.offset) : nullptr;
+            bool known = cls && ue::Alive(cls);
+            std::string n = known ? ChallengeName(zone, e, size, cls) : std::string();
+            if (n.empty() && nameP) n = Clean(ue::FStringToUtf8(ue::At<ue::FString>(e, nameP.offset)));
             if (n.empty()) n = "Crew challenge";
+            if (known && ChallengeDone(zone, e, size)) n += " (done)";
             ue::FVector w = ue::At<ue::FVector>(e, xfP.offset + 0x10);
+            challengeSpots.push_back(w);
             float mx, my;
             ToMap(w, mx, my);
-            places.push_back({"Challenge: " + n, mx, my, w.z / 100.0f + 1.5f});
+            places.push_back({n, mx, my, w.z / 100.0f + 1.5f});
             fixedMarkers.push_back({core::MarkerType::DataBox, n, mx, my, w.z / 100.0f, 0});
         }
     }
+    int chests = 0;
+    for (void* c : Objects(Scan::Lootables)) {
+        if (chests >= 64) break;
+        if (!ue::Alive(c) || LootableName(c) != "Red chest") continue;
+        ue::Prop sp = ue::FindProp(ue::ClassOf(c), "CurrentInteractiveState");
+        if (sp && ue::At<uint8_t>(c, sp.offset) != 1) continue;
+        ue::FVector w = Location(c);
+        if (!Usable(w)) continue;
+        bool known = false;
+        for (const ue::FVector& s : challengeSpots)
+            if (std::hypot(s.x - w.x, s.y - w.y) < 300.0f && std::fabs(s.z - w.z) < 500.0f) known = true;
+        if (known) continue;
+        ++chests;
+        float mx, my;
+        ToMap(w, mx, my);
+        places.push_back({"Red chest", mx, my, w.z / 100.0f + 1.5f});
+        fixedMarkers.push_back({core::MarkerType::DataBox, "Red chest", mx, my, w.z / 100.0f, 0});
+    }
     if (st.alone) {
-        if (travels.empty()) BuildTravels();
+        if (travels.empty() || (!travelsTagged && dlcDone)) BuildTravels();
         for (size_t i = 0; i < travels.size(); ++i) places.push_back({"Travel to " + travels[i].name, kTravelBase - (float)i * 10.0f, 0.0f, (float)i});
     }
     WithModel([&](core::Model& m) {
@@ -698,6 +760,8 @@ void ResetWorldState() {
     lastWorld = {};
     placesAt = -100;
     travels.clear();
+    travelsTagged = false;
+    challengeNames.clear();
     haveUndo = false;
     fixedMarkers.clear();
     landing.active = false;

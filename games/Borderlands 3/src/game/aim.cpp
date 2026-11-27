@@ -954,6 +954,8 @@ void KillNearby(const ue::FVector& from) {
 
 }
 
+std::string LootableName(void* chest) { return ChestName(chest); }
+
 void AimInit() {
     bool chars = Cls("OakCharacter") && HasFunc("OakBlueprintLibrary", "GetAttitudeTowardPlayer");
     bool camera = HasFunc("PlayerCameraManager", "GetCameraLocation") && HasFunc("PlayerCameraManager", "GetFOVAngle");

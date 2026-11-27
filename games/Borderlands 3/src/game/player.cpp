@@ -434,6 +434,11 @@ void PumpCurrency() {
 
 }
 
+bool PlayerBusy() {
+    auto running = [](const auto& f) { return f.valid() && f.wait_for(std::chrono::seconds(0)) != std::future_status::ready; };
+    return running(runningBackup) || running(premium.scan);
+}
+
 void PlayerInit() {
     bool lib = HasFunc("GbxGameSystemCoreBlueprintLibrary", "ResourceLockGod") && HasFunc("GbxGameSystemCoreBlueprintLibrary", "ResourceUnlockGod");
     bool demi = HasFunc("GbxGameSystemCoreBlueprintLibrary", "ResourceLockDemigod") && HasFunc("GbxGameSystemCoreBlueprintLibrary", "ResourceUnlockDemigod");

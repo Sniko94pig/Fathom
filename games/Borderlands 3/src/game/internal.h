@@ -97,6 +97,7 @@ bool TraceDown(const ue::FVector& from, float depth, ue::FVector& hit);
 bool TraceLine(const ue::FVector& from, const ue::FVector& to, ue::FVector& hit);
 bool TraceHit(const ue::FVector& from, const ue::FVector& to, TraceHitInfo& info);
 void TakeMouse(float& dx, float& dy);
+std::string LootableName(void* chest);
 
 struct AttrFloat {
     int32_t base;
@@ -151,6 +152,11 @@ void WorldOff();
 void MapshotInit(core::Model& m);
 void MapshotTick();
 void MapshotOff();
+void ExploreInit();
+void ExploreTick();
+void ExploreOff();
+bool ExploreBusy();
+bool PlayerBusy();
 void VehicleInit();
 void VehicleTick();
 void VehicleOff();

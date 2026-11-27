@@ -21,7 +21,7 @@ const Tab LootMap = Tab::Spawner;
 const Tab Vehicle = Tab::Legit;
 
 const char* kAlone[] = {"no_self_damage", "invisibility", "ignore_level_req", "silent_aim", "aim_assist", "enemy_esp", "loot_esp",
-                        "kill_nearby", "game_speed", "legendary_drops", "drop_filter", "free_spins", "mayhem_reroll"};
+                        "kill_nearby", "game_speed", "legendary_drops", "drop_filter", "free_spins", "mayhem_reroll", "explore_map"};
 
 Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* label, const char* hint) {
     Feature f;
@@ -179,10 +179,14 @@ void BuildFeatures(Model& m) {
 
     Page(m, LootMap, "Giver", "giver", "Giver", "Give yourself the best guns, shields, grenades, class mods, artifacts and ammo", "add_items");
     Action(m, LootMap, "Giver", "refill_ammo", "Refill all ammo", "Fills every ammo type and your grenades", "Refill");
-    Page(m, LootMap, "Map", "map", "Map", "Map of where you are with every location, click to teleport. Also lists every map in the game",
+    Page(m, LootMap, "Map", "map", "Map",
+         "Map of where you are with every place, red chest and challenge, click to teleport. Also lists every map in the game, DLC maps marked",
          "map");
     Action(m, LootMap, "Map", "teleport_mission", "Teleport to mission",
            "Takes you to the waypoint of the mission you are tracking. If it is on another map, takes you to the way out towards it", "Go");
+    Toggle(m, LootMap, "Map", "explore_map", "Explore whole map",
+           "Alone only: the map of every area you are in turns all blue, as if you explored all of it. Your saves are backed up first, "
+           "and explored maps stay explored after you turn this off");
     Toggle(m, LootMap, "Drops", "legendary_drops", "Legendary drops", "Alone only: every gun and gear that drops is Legendary");
     Toggle(m, LootMap, "Drops", "drop_filter", "Rarity drop filter", "Alone only: only the rarities you tick below drop");
     Option(m, LootMap, "Drops", "drop_common", "Drop white (common)", false);
