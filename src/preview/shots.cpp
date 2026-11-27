@@ -219,6 +219,7 @@ void LoadShotPicture(const std::string& path, launcher::MapPic& pic, const char*
     pic.note = note;
     pic.partial = partial;
     if (!px) return;
+    pic.bg = IM_COL32(px[0], px[1], px[2], 255);
     ImTextureData* t = IM_NEW(ImTextureData)();
     t->Format = ImTextureFormat_RGBA32;
     t->Width = w;
@@ -233,15 +234,22 @@ void LoadShotPicture(const std::string& path, launcher::MapPic& pic, const char*
 }
 
 void LoadShotMaps(launcher::Home& home) {
-    static launcher::MapPic pics[3];
+    static launcher::MapPic pics[launcher::maps::Count];
+    static std::vector<launcher::MapPic> sheets;
     static bool done = false;
     if (!done) {
         done = true;
+        int sc = 0;
+        const launcher::maps::Sheet* list = launcher::maps::Sheets(launcher::maps::Borderlands3, sc);
+        sheets.resize(sc);
+        for (int s = 0; s < sc; ++s) LoadShotPicture(std::string("games/Borderlands 3/src/maps/") + list[s].file, sheets[s], "", false);
+        if (sc > 0) pics[launcher::maps::Borderlands3] = sheets[0];
         LoadShotPicture("assets/maps/subnautica.jpg", pics[0], "The whole map, drawn from Subnautica's world files.", false);
         LoadShotPicture("assets/maps/sonsoftheforest.jpg", pics[2], "The whole island, drawn from the game's terrain.", false);
         LoadShotPicture("assets/maps/subnautica2.jpg", pics[1], "The whole map of Subnautica 2.", false);
     }
-    for (int g = 0; g < 3; ++g) home.mapPics[g] = pics[g];
+    for (int g = 0; g < launcher::maps::Count; ++g) home.mapPics[g] = pics[g];
+    home.mapSheets[launcher::maps::Borderlands3] = sheets;
 }
 #endif
 
@@ -398,6 +406,23 @@ int main(int argc, char** argv) {
              u.homeIndex = 2;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"53-launcher-bl3-maps", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.mapGame = launcher::maps::Borderlands3;
+             home.mapSheet[launcher::maps::Borderlands3] = 6;
+             LoadShotMaps(home);
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.maps = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}};
+             u.homeIndex = 2;
+             u.onHome = true;
+         }, ImVec2(700, 300), nullptr},
         {"46-launcher-help", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              home.game = -1;

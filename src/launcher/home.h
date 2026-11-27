@@ -1,6 +1,7 @@
 #pragma once
 #include "imgui.h"
 #include "launcher/inject.h"
+#include "launcher/maps.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -15,6 +16,7 @@ struct Art {
 struct MapPic {
     ImTextureID tex = 0;
     float w = 0, h = 0;
+    ImU32 bg = 0;
     std::string note;
     bool partial = false;
     bool loaded = false;
@@ -70,18 +72,20 @@ struct Home {
     bool mapsReload = false;
     bool mapsBusy = false;
     int mapGame = -1;
-    MapPic mapPics[3];
-    std::string mapStatus[3];
-    float mapZoom[3] = {0, 0, 0};
-    float mapCx[3] = {0.5f, 0.5f, 0.5f};
-    float mapCy[3] = {0.5f, 0.5f, 0.5f};
-    bool mapHidden[3][8] = {};
-    bool mapAreaNames[3] = {true, true, true};
-    int mapPick[3] = {-1, -1, -1};
-    float mapFly[3] = {0, 0, 0};
-    float mapFlyU[3] = {0, 0, 0};
-    float mapFlyV[3] = {0, 0, 0};
-    float mapFlyZoom[3] = {0, 0, 0};
+    MapPic mapPics[maps::Count];
+    std::vector<MapPic> mapSheets[maps::Count];
+    int mapSheet[maps::Count] = {};
+    std::string mapStatus[maps::Count];
+    float mapZoom[maps::Count] = {};
+    float mapCx[maps::Count] = {0.5f, 0.5f, 0.5f, 0.5f};
+    float mapCy[maps::Count] = {0.5f, 0.5f, 0.5f, 0.5f};
+    bool mapHidden[maps::Count][8] = {};
+    bool mapAreaNames[maps::Count] = {true, true, true, true};
+    int mapPick[maps::Count] = {-1, -1, -1, -1};
+    float mapFly[maps::Count] = {};
+    float mapFlyU[maps::Count] = {};
+    float mapFlyV[maps::Count] = {};
+    float mapFlyZoom[maps::Count] = {};
     std::string mapSearch;
     std::unordered_map<long long, Art> art;
     void Draw();

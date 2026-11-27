@@ -24,6 +24,7 @@ namespace {
 const int kSubnauticaPicture = 201;
 const int kSonsPicture = 202;
 const int kSubnautica2Picture = 203;
+const int kBorderlands3Pictures = 211;
 
 std::thread worker;
 std::atomic<bool> stopping{false};
@@ -214,6 +215,18 @@ void Push(Image&& img) {
 
 void Run(Request r) {
     for (int g = 0; g < Count && !stopping; ++g) {
+        if (g == Borderlands3) {
+            int sc = 0;
+            Sheets(g, sc);
+            for (int s = 0; s < sc && !stopping; ++s) {
+                Image one;
+                one.game = g;
+                one.sheet = s;
+                if (!LoadBundled(kBorderlands3Pictures + s, one)) one.note = "The map could not be opened.";
+                Push(std::move(one));
+            }
+            continue;
+        }
         Image img;
         img.game = g;
         if (g == Subnautica) {

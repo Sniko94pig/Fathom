@@ -5,7 +5,7 @@
 
 namespace launcher::maps {
 
-enum Game { Subnautica = 0, Subnautica2 = 1, SonsOfTheForest = 2, Count = 3 };
+enum Game { Subnautica = 0, Subnautica2 = 1, SonsOfTheForest = 2, Borderlands3 = 3, Count = 4 };
 
 struct Kind {
     const char* name;
@@ -25,8 +25,16 @@ struct Area {
     float x, z, reach;
 };
 
+struct Sheet {
+    const char* file;
+    const char* name;
+    const char* note;
+    bool dlc;
+};
+
 struct Image {
     int game = 0;
+    int sheet = 0;
     int width = 0, height = 0;
     std::vector<uint8_t> rgba;
     std::string note;
@@ -35,11 +43,12 @@ struct Image {
 
 struct Request {
     std::wstring folder[Count];
-    bool found[Count] = {false, false, false};
+    bool found[Count] = {};
 };
 
 const char* Title(int game);
 const Kind* Kinds(int game, int& count);
+const Sheet* Sheets(int game, int& count);
 const Place* Places(int game, int& count);
 const Area* Areas(int game, int& count);
 bool World(int game, float& x0, float& z0, float& x1, float& z1);

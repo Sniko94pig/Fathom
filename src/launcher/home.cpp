@@ -272,6 +272,8 @@ void Home::DrawMapList() {
     float cw = std::floor((w - gap * (cols - 1)) / cols), ph = std::floor(cw * 0.66f), ch = ph + S(64);
     for (int g = 0; g < mapdata::Count; ++g) {
         const MapPic& pic = mapPics[g];
+        int sc = 0;
+        const mapdata::Sheet* sheets = mapdata::Sheets(g, sc);
         ImVec2 a(o.x + (g % cols) * (cw + gap), top + (g / cols) * (ch + gap));
         ImGui::SetCursorScreenPos(a);
         ImGui::PushID(g);
@@ -281,7 +283,7 @@ void Home::DrawMapList() {
         ImGui::PopID();
         float lift = std::floor(hv * S(3));
         ImVec2 pa(a.x, a.y - lift), pb(a.x + cw, a.y + ph - lift);
-        dl->AddRectFilled(pa, pb, ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
+        dl->AddRectFilled(pa, pb, sc > 0 && pic.bg ? pic.bg : ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
         if (pic.tex && pic.w > 0 && pic.h > 0) {
             float zoom = 1.0f + 0.05f * hv;
             float ar = (pb.x - pa.x) / (pb.y - pa.y), pr = pic.w / pic.h;
@@ -296,7 +298,8 @@ void Home::DrawMapList() {
         dl->AddRectFilledMultiColor(ImVec2(pa.x, pb.y - ph * 0.35f), pb, Bg(0.0f), Bg(0.0f), Bg(0.85f), Bg(0.85f));
         dl->AddRect(pa, pb, hv > 0.01f ? Mix(ImVec4(1, 1, 1, 0.07f), T().accent, hv, 0.9f) : White(0.07f));
         dl->AddRectFilled(ImVec2(pa.x, pb.y - S(4)), pb, Accent(0.35f + 0.65f * hv));
-        const char* badge = !pic.tex ? (pic.loaded ? "Not drawn yet" : "Loading") : pic.partial ? "Partly drawn" : "Full map";
+        std::string many = std::to_string(sc) + " maps";
+        const char* badge = !pic.tex ? (pic.loaded ? "Not drawn yet" : "Loading") : sc > 0 ? many.c_str() : pic.partial ? "Partly drawn" : "Full map";
         ImVec2 bs = MeasureUpper(T().semibold, 10, badge);
         ImVec2 ba(pa.x + S(10), pa.y + S(10)), bb(ba.x + bs.x + S(18), ba.y + S(20));
         ImU32 bcol = !pic.tex ? Black(0.72f) : pic.partial ? ImGui::GetColorU32(ImVec4(0.98f, 0.74f, 0.30f, 1.0f)) : Accent();
@@ -313,6 +316,11 @@ void Home::DrawMapList() {
             if (!line.empty()) line += "  \xc2\xb7  ";
             line += std::to_string(n) + " " + Lower(kinds[k].name);
         }
+        if (sc > 0) {
+            int dlc = 0;
+            for (int s = 0; s < sc; ++s) dlc += sheets[s].dlc ? 1 : 0;
+            line = std::to_string(sc - dlc) + " planets  \xc2\xb7  " + std::to_string(dlc) + " DLC maps";
+        }
         if (line.empty()) line = pic.partial ? "Shows the places you have been to" : "No places marked for this game yet";
         float ly = a.y + ph + S(12);
         float x = a.x;
@@ -321,7 +329,7 @@ void Home::DrawMapList() {
             x += S(11);
         }
         TextFit(dl, T().regular, 12, ImVec2(x + (kc ? S(4) : 0), ly), a.x + cw - x - S(4), White(0.6f), line.c_str());
-        Text(dl, T().regular, 11.5f, ImVec2(a.x, ly + S(22)), White(0.38f), pc ? (std::to_string(pc) + " places, click to open").c_str() : "Click to open");
+        Text(dl, T().regular, 11.5f, ImVec2(a.x, ly + S(22)), White(0.38f), pc ? (std::to_string(pc) + " places, click to open").c_str() : sc > 0 ? (many + ", click to open").c_str() : "Click to open");
         if (clicked) {
             mapGame = g;
             mapSearch.clear();
@@ -338,7 +346,12 @@ void Home::DrawMapView() {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 o = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x, avail = ImGui::GetContentRegionAvail().y;
-    MapPic& pic = mapPics[gi];
+    int sc = 0;
+    const mapdata::Sheet* sheets = mapdata::Sheets(gi, sc);
+    int& si = mapSheet[gi];
+    si = std::clamp(si, 0, std::max(0, sc - 1));
+    MapPic none;
+    MapPic& pic = sc <= 0 ? mapPics[gi] : si < (int)mapSheets[gi].size() ? mapSheets[gi][si] : none;
     const std::string& status = mapStatus[gi];
     int kc = 0, pc = 0, ac = 0;
     const mapdata::Kind* kinds = mapdata::Kinds(gi, kc);
@@ -356,12 +369,16 @@ void Home::DrawMapView() {
         return;
     }
     Upper(dl, T().semibold, 18, ImVec2(o.x + S(142), o.y + S(7)), White(0.98f), mapdata::Title(gi));
+    if (sc > 0) {
+        float tx = o.x + S(142) + MeasureUpper(T().semibold, 18, mapdata::Title(gi)).x + S(14);
+        TextFit(dl, T().regular, 14, ImVec2(tx, o.y + S(9)), o.x + w - tx, White(0.55f), sheets[si].name);
+    }
     if (gi == mapdata::Subnautica2 && pic.partial &&
         Button("mapredo", "Refresh", ImVec2(o.x + w - S(130), o.y), ImVec2(S(130), S(34)), Btn::Ghost, ICON_REFRESH_CW, !mapsBusy))
         mapsReload = true;
 
     float top = o.y + S(50), h = std::max(S(320), avail - S(50) - S(34));
-    float side = kc > 0 ? S(256) : 0.0f, sgap = kc > 0 ? S(16) : 0.0f;
+    float side = kc > 0 ? S(256) : sc > 0 ? S(300) : 0.0f, sgap = side > 0 ? S(16) : 0.0f;
     std::string q = Lower(mapSearch);
     auto visible = [&](int i) {
         const mapdata::Place& p = places[i];
@@ -459,11 +476,71 @@ void Home::DrawMapView() {
             ImGui::EndChild();
             dl = ImGui::GetWindowDrawList();
         }
+    } else if (sc > 0) {
+        ImVec2 sa(o.x, top), sb(o.x + side, top + h);
+        dl->AddRectFilled(sa, sb, White(0.03f));
+        dl->AddRect(sa, sb, White(0.06f));
+        float y = top + S(14);
+        std::string head = "Maps (" + std::to_string(sc) + ")";
+        Upper(dl, T().semibold, 10.5f, ImVec2(sa.x + S(14), y), White(0.5f), head.c_str());
+        y += S(22);
+        float lh = sb.y - S(8) - y;
+        if (lh > S(40)) {
+            ImGui::SetCursorScreenPos(ImVec2(sa.x + S(4), y));
+            ImGui::BeginChild("mapsheets", ImVec2(side - S(8), lh), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+            ImDrawList* cl = ImGui::GetWindowDrawList();
+            ImVec2 co = ImGui::GetCursorScreenPos();
+            float rw = ImGui::GetContentRegionAvail().x, rh = S(48);
+            for (int s = 0; s < sc; ++s) {
+                const mapdata::Sheet& sh = sheets[s];
+                ImVec2 ra(co.x, co.y + s * rh), rb(co.x + rw, co.y + (s + 1) * rh);
+                ImGui::SetCursorScreenPos(ra);
+                ImGui::PushID(s);
+                bool hit = ImGui::InvisibleButton("sheet", ImVec2(rw, rh));
+                bool hovered = ImGui::IsItemHovered();
+                ImGui::PopID();
+                bool sel = si == s;
+                if (sel) cl->AddRectFilled(ra, rb, Accent(0.16f));
+                else if (hovered) cl->AddRectFilled(ra, rb, White(0.04f));
+                if (sel) cl->AddRectFilled(ra, ImVec2(ra.x + S(3), rb.y), Accent());
+                ImVec2 c(ra.x + S(20), ra.y + rh * 0.5f);
+                cl->AddCircleFilled(c, S(9), sh.dlc ? Accent() : White(0.85f), 18);
+                Icon(cl, c, S(10.5f), sh.dlc ? White() : Black(0.8f), sh.dlc ? ICON_PACKAGE : ICON_GLOBE);
+                float tx = ra.x + S(38), tw = rw - S(44);
+                TextFit(cl, T().medium, 12.5f, ImVec2(tx, ra.y + S(7)), tw, White(0.92f), sh.name);
+                float ly = ra.y + S(26);
+                if (sh.dlc) {
+                    ImVec2 ds = MeasureUpper(T().semibold, 9.5f, "DLC");
+                    ImVec2 ca(tx, ly), cb(tx + ds.x + S(14), ly + S(16));
+                    Para(cl, ca, cb, Accent());
+                    Upper(cl, T().semibold, 9.5f, ImVec2(ca.x + S(7), ca.y + (S(16) - ds.y) * 0.5f), White(0.95f), "DLC");
+                    if (*sh.note) TextFit(cl, T().regular, 11, ImVec2(cb.x + S(8), ly + S(1)), tx + tw - cb.x - S(8), White(0.45f), sh.note);
+                } else {
+                    TextFit(cl, T().regular, 11, ImVec2(tx, ly + S(1)), tw, White(0.45f), "Main game");
+                }
+                if (hovered) {
+                    std::string tip = sh.name;
+                    if (sh.dlc) tip += "\nDLC";
+                    if (*sh.note) tip += std::string("\n") + sh.note;
+                    Tip(tip.c_str());
+                }
+                if (hit && !sel) {
+                    si = s;
+                    mapZoom[gi] = 0;
+                    mapCx[gi] = mapCy[gi] = 0.5f;
+                    mapFly[gi] = 0;
+                }
+            }
+            ImGui::SetCursorScreenPos(co);
+            ImGui::Dummy(ImVec2(rw, sc * rh));
+            ImGui::EndChild();
+            dl = ImGui::GetWindowDrawList();
+        }
     }
 
     ImVec2 a(o.x + side + sgap, top), b(o.x + w, top + h), c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
     float cw = b.x - a.x;
-    dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
+    dl->AddRectFilled(a, b, sc > 0 && pic.bg ? pic.bg : ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
     if (pic.tex && pic.w > 0 && pic.h > 0) {
         float fit = std::min(cw / pic.w, h / pic.h);
         float& zoom = mapZoom[gi];
@@ -644,8 +721,11 @@ void Home::DrawMapView() {
     }
     dl->AddRect(a, b, White(0.07f));
     std::string foot = !status.empty() ? status + "\xe2\x80\xa6"
-                       : pic.tex       ? pic.note + "  Scroll to zoom, drag to move, click a marker or a place in the list."
-                                       : std::string();
+                       : !pic.tex      ? std::string()
+                       : sc > 0        ? std::string(sheets[si].name) + (sheets[si].dlc ? " (DLC)." : ".") +
+                                      (*sheets[si].note ? std::string(" ") + sheets[si].note + "." : std::string()) +
+                                      "  Scroll to zoom, drag to move, pick another map in the list."
+                                       : pic.note + "  Scroll to zoom, drag to move, click a marker or a place in the list.";
     TextFit(dl, T().regular, 12, ImVec2(a.x, b.y + S(12)), cw, White(0.5f), foot.c_str());
     ImGui::SetCursorScreenPos(o);
     ImGui::Dummy(ImVec2(w, b.y + S(32) - o.y));

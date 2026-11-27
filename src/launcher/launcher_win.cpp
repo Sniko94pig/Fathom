@@ -488,6 +488,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     struct ArtTex { ID3D12Resource* tex; D3D12_CPU_DESCRIPTOR_HANDLE cpu; D3D12_GPU_DESCRIPTOR_HANDLE gpu; };
     std::vector<ArtTex> artTex;
     ArtTex mapTex[launcher::maps::Count] = {};
+    std::vector<ArtTex> sheetTex;
     bool mapsStarted = false;
 
     ImGui_ImplWin32_Init(hwnd);
@@ -795,7 +796,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             mapsStarted = true;
             home.mapsReload = false;
             launcher::maps::Request r;
-            const inject::Paths* gp[launcher::maps::Count] = { &home.sn1Paths, &home.paths, &home.sotfPaths };
+            const inject::Paths* gp[launcher::maps::Count] = { &home.sn1Paths, &home.paths, &home.sotfPaths, &home.bl3Paths };
             for (int g = 0; g < launcher::maps::Count; ++g)
             {
                 r.folder[g] = gp[g]->folder;
@@ -811,7 +812,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 }
                 mapTex[g] = {};
                 home.mapPics[g] = launcher::MapPic();
+                home.mapSheets[g].clear();
             }
+            for (const ArtTex& t : sheetTex)
+            {
+                t.tex->Release();
+                g_pd3dSrvDescHeapAlloc.Free(t.cpu, t.gpu);
+            }
+            sheetTex.clear();
             launcher::maps::Start(r);
         }
         home.mapsBusy = launcher::maps::Busy();
@@ -823,9 +831,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 if (mi.game < 0 || mi.game >= launcher::maps::Count)
                     continue;
+                int sheets = 0;
+                launcher::maps::Sheets(mi.game, sheets);
                 launcher::MapPic pic;
                 pic.loaded = true;
                 pic.note = mi.note;
+                if (sheets > 0 && mi.rgba.size() >= 4)
+                    pic.bg = IM_COL32(mi.rgba[0], mi.rgba[1], mi.rgba[2], 255);
                 pic.partial = mi.partial;
                 if (mi.width > 0 && mi.height > 0)
                 {
@@ -835,13 +847,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     ID3D12Resource* tex = dx12::CreateTexture(g_pd3dDevice, g_pd3dCommandQueue, mi.rgba.data(), mi.width, mi.height, cpu);
                     if (tex)
                     {
-                        mapTex[mi.game] = { tex, cpu, gpu };
+                        if (sheets > 0)
+                            sheetTex.push_back({ tex, cpu, gpu });
+                        else
+                            mapTex[mi.game] = { tex, cpu, gpu };
                         pic.tex = (ImTextureID)gpu.ptr;
                         pic.w = (float)mi.width;
                         pic.h = (float)mi.height;
                     }
                     else
                         g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
+                }
+                if (sheets > 0)
+                {
+                    std::vector<launcher::MapPic>& list = home.mapSheets[mi.game];
+                    if ((int)list.size() < sheets)
+                        list.resize(sheets);
+                    if (mi.sheet >= 0 && mi.sheet < sheets)
+                        list[mi.sheet] = pic;
+                    if (mi.sheet != 0)
+                        continue;
                 }
                 home.mapZoom[mi.game] = 0;
                 home.mapPics[mi.game] = std::move(pic);
@@ -1154,6 +1179,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     for (const ArtTex& t : mapTex)
         if (t.tex)
             t.tex->Release();
+    for (const ArtTex& t : sheetTex)
+        t.tex->Release();
     if (iconTex)
         iconTex->Release();
     if (logoTex)
