@@ -874,7 +874,17 @@ int main(int argc, char** argv) {
                         {"d", "Front Loader", "Shields"}, {"e", "Hex", "Grenades"}};
              u.tab = core::Tab::Spawner;
              u.page = "add_items";
-         }, ImVec2(0, 0), nullptr},
+         }, ImVec2(400, 369),
+         [](core::Model&, ui::Menu&, int f) {
+             ImGuiIO& io = ImGui::GetIO();
+             if (f == 40 || f == 60) io.AddMouseButtonEvent(0, true);
+             if (f == 42 || f == 62) io.AddMouseButtonEvent(0, false);
+             if (f == 50) io.AddMousePosEvent(975, 360);
+             if (f == 70) io.AddMousePosEvent(975, 410);
+             if (f == 80) io.AddMouseButtonEvent(0, true);
+             if (f == 82) io.AddMouseButtonEvent(0, false);
+             if (f == 90) io.AddMousePosEvent(600, 600);
+         }},
         {"10-settings", [](core::Model&, ui::Menu& u) { u.tab = core::Tab::Settings; }, ImVec2(0, 0), nullptr},
         {"11-not-host", [&](core::Model& m, ui::Menu& u) {
              m.session = core::Session::Client;

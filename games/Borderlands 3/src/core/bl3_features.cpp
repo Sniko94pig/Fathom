@@ -206,6 +206,9 @@ void BuildFeatures(Model& m) {
     m.mapWords.scanBody = "A camera above you takes pictures of the area around you. It takes about 10 to 15 seconds, nothing freezes, "
                           "and you can stop it at any time. It only works when you play alone.";
     m.duplicateButton = false;
+    m.itemNote = false;
+    m.itemMax = 50;
+    m.itemIds = false;
     m.gameName = "Borderlands 3";
     m.keyOpen = ImGuiKey_RightShift;
     m.keyUnload = ImGuiKey_End;

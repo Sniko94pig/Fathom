@@ -176,6 +176,9 @@ struct Model {
     std::string mapScanText;
     MapWords mapWords;
     bool duplicateButton = true;
+    bool itemNote = true;
+    int itemMax = 0;
+    bool itemIds = true;
     std::vector<Location> locations;
     std::vector<Location> places;
     bool mapDrawn = false;

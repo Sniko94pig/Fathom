@@ -136,9 +136,10 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
         core::Item copy = it;
         std::string msg = std::string(sp.doneVerb) + " " + std::to_string(n) + " x " + it.name;
         const char* icon = sp.actionIcon ? sp.actionIcon : ICON_PACKAGE;
-        auto run = [this, fn, copy, n, msg, icon] {
+        bool note = m.itemNote || std::string(sp.key) == "loadout";
+        auto run = [this, fn, copy, n, msg, icon, note] {
             if (fn) fn(copy, n);
-            Notify(msg, icon);
+            if (note) Notify(msg, icon);
         };
         if (sp.guarded) GuardedSpawn(run);
         else run();
@@ -250,7 +251,7 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
     }
     TextFit(dl, T().semibold, 15, ImVec2(x, y), iw, White(sel ? 0.96f : 0.4f), sel ? sel->name.c_str() : "Nothing selected");
     y += S(22);
-    TextFit(dl, T().regular, 11.5f, ImVec2(x, y), iw, White(0.4f), sel ? sel->id.c_str() : "Pick an item from the list");
+    TextFit(dl, T().regular, 11.5f, ImVec2(x, y), iw, White(0.4f), sel ? (m.itemIds ? sel->id.c_str() : sel->category.c_str()) : "Pick an item from the list");
     y += S(32);
 
     Label(dl, ImVec2(x, y), "AMOUNT");
@@ -258,7 +259,8 @@ void Menu::Browser(ImVec2 b, float W, float H, const BrowserSpec& sp) {
     int stepAmt = ImGui::GetIO().KeyShift ? 10 : 1;
     if (IconButton("minus", ICON_MINUS, ImVec2(x, y), S(36))) amount -= stepAmt;
     if (IconButton("plus", ICON_PLUS, ImVec2(x + iw - S(36), y), S(36))) amount += stepAmt;
-    amount = std::clamp(amount, 1, std::max(1, sp.maxAmount));
+    int maxAmount = m.itemMax > 0 && std::string(sp.key) != "loadout" ? std::min(sp.maxAmount, m.itemMax) : sp.maxAmount;
+    amount = std::clamp(amount, 1, std::max(1, maxAmount));
     dl->AddRectFilled(ImVec2(x + S(44), y), ImVec2(x + iw - S(44), y + S(36)), White(0.05f));
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%d", amount);
