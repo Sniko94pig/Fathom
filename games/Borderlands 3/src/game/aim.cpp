@@ -332,7 +332,7 @@ std::unordered_map<int32_t, Bullet> handled;
 
 struct BulletProps {
     void* cls = nullptr;
-    ue::Prop start, loc, vel, gravity, comp;
+    ue::Prop start, loc, vel, gravity, comp, damage, dtype, dsource;
 } bp;
 
 void BulletLayout(void* p) {
@@ -344,6 +344,9 @@ void BulletLayout(void* p) {
     bp.vel = ue::FindProp(cls, "Velocity");
     bp.gravity = ue::FindProp(cls, "GravityScale");
     bp.comp = ue::FindProp(cls, "ComponentLocation");
+    bp.damage = ue::FindProp(cls, "Damage");
+    bp.dtype = ue::FindProp(cls, "DamageType");
+    bp.dsource = ue::FindProp(cls, "DamageSource");
 }
 
 void UndoAllBullets() {
@@ -425,7 +428,110 @@ bool OffCourse(void* p, const Bullet& b) {
     return cosv < 0.995f;
 }
 
-int redirected = 0, retried = 0;
+void Retire(void* p) {
+    void* cls = ue::ClassOf(p);
+    ue::Prop dmg = ue::FindProp(cls, "Damage"), radius = ue::FindProp(cls, "DamageRadius");
+    ue::Prop life = ue::FindProp(cls, "Lifetime"), elapsed = ue::FindProp(cls, "ElapsedTime");
+    if (dmg) ue::Write<float>(p, dmg, 0.0f);
+    if (radius) ue::Write<float>(p, radius, 0.0f);
+    if (bp.vel) {
+        ue::FVector v = ue::Read<ue::FVector>(p, bp.vel);
+        float len = Len(v);
+        ue::Write<ue::FVector>(p, bp.vel, len > 1.0f ? Mul(v, 1.0f / len) : ue::FVector{});
+    }
+    if (bp.gravity) ue::Write<float>(p, bp.gravity, 0.0f);
+    if (life && elapsed) {
+        float e = ue::Read<float>(p, elapsed);
+        if (std::isfinite(e) && e >= 0.0f) ue::Write<float>(p, life, e + 0.02f);
+    }
+}
+
+struct WeakRaw {
+    int32_t index = 0;
+    int32_t serial = 0;
+};
+
+bool DirectHit(void* p, const Enemy& t, bool head, const ue::FVector& aim) {
+    static void* hitStruct = Cls("HitResult");
+    static void* inputStruct = Cls("PipelineDamageInput");
+    static void* critStruct = Cls("CriticalHitDamageOverrides");
+    int hsize = ue::StructSize(hitStruct), isize = ue::StructSize(inputStruct);
+    if (hsize < 0x40 || hsize > 0x200 || isize < 0x100 || isize > 0x600 || !bp.damage) return false;
+    float dmg = ue::Read<float>(p, bp.damage);
+    if (!(dmg > 0.0f) || !std::isfinite(dmg)) return false;
+    void* type = bp.dtype ? ue::Read<void*>(p, bp.dtype) : nullptr;
+    void* source = bp.dsource ? ue::Read<void*>(p, bp.dsource) : nullptr;
+    ue::FVector from = bp.loc ? ue::Read<ue::FVector>(p, bp.loc) : aim;
+    if (!Finite(from)) from = aim;
+    ue::FVector dir = Sub(aim, from);
+    float len = Len(dir);
+    ue::FVector unit = len > 1.0f ? Mul(dir, 1.0f / len) : ue::FVector{1.0f, 0.0f, 0.0f};
+    ue::FVector normal = Mul(unit, -1.0f);
+    std::vector<uint8_t> hit((size_t)hsize, 0);
+    auto put = [&](const char* name, const void* value, int size) {
+        ue::Prop q = ue::FindProp(hitStruct, name);
+        if (q && q.offset + size <= hsize) std::memcpy(hit.data() + q.offset, value, (size_t)size);
+    };
+    int32_t none = -1;
+    float one = 1.0f;
+    put("Location", &aim, sizeof(aim));
+    put("ImpactPoint", &aim, sizeof(aim));
+    put("Normal", &normal, sizeof(normal));
+    put("ImpactNormal", &normal, sizeof(normal));
+    put("TraceStart", &from, sizeof(from));
+    put("TraceEnd", &aim, sizeof(aim));
+    put("Distance", &len, sizeof(len));
+    put("Time", &one, sizeof(one));
+    put("FaceIndex", &none, sizeof(none));
+    put("Item", &none, sizeof(none));
+    ue::Prop blocking = ue::FindProp(hitStruct, "bBlockingHit");
+    if (blocking) ue::WriteBool(hit.data(), blocking, true);
+    ue::FWeak aw = ue::MakeWeak(t.actor);
+    if (aw.serial) {
+        WeakRaw r{aw.index, aw.serial};
+        put("Actor", &r, sizeof(r));
+    }
+    void* mesh = ue::Ptr(t.actor, "Mesh");
+    ue::FWeak mw = ue::MakeWeak(mesh);
+    if (mesh && mw.serial) {
+        WeakRaw r{mw.index, mw.serial};
+        put("Component", &r, sizeof(r));
+    }
+    if (head) {
+        ue::FName bone = Info(t.actor).bone;
+        if (bone.index) put("BoneName", &bone, sizeof(bone));
+    }
+    ue::Call mk(Lib("DamageStatics"), "MakePipelineDamageInput");
+    if (!mk.Ok()) return false;
+    mk.Set<void*>("DamageCauser", st.pawn).Set<void*>("DamageReceiver", t.actor).Set<void*>("DamageType", type).Set<void*>("DamageSource", source);
+    mk.SetRaw("HitInfo", hit.data(), hsize).Set("HitLocation", aim).Set("HitDirection", unit).Set("HitForceDirection", unit);
+    if (!mk.Run()) return false;
+    std::vector<uint8_t> input((size_t)isize, 0);
+    if (!mk.GetRaw("ReturnValue", input.data(), isize)) return false;
+    ue::Prop recv = ue::FindProp(inputStruct, "DamageReceiverComp");
+    ue::Prop able = ue::FindProp(inputStruct, "Damageable");
+    bool target = (recv && ue::At<void*>(input.data(), recv.offset)) || (able && ue::At<void*>(input.data(), able.offset));
+    if (!target) return false;
+    ue::Prop ic = ue::FindProp(inputStruct, "InstigatorController");
+    ue::Prop ip = ue::FindProp(inputStruct, "InstigatorPawn");
+    if (ic && !ue::At<void*>(input.data(), ic.offset)) ue::Put<void*>(input.data(), ic.offset, st.pc);
+    if (ip && !ue::At<void*>(input.data(), ip.offset)) ue::Put<void*>(input.data(), ip.offset, st.pawn);
+    if (head && critStruct) {
+        ue::Prop ch = ue::FindProp(inputStruct, "CriticalHitOverrides");
+        ue::Prop ct = ue::FindProp(critStruct, "Type");
+        ue::Prop cd = ue::FindProp(critStruct, "bUseDefaultCriticalHitMultiplier");
+        if (ch && ct) ue::Put<uint8_t>(input.data(), ch.offset + ct.offset, 1);
+        if (ch && cd) ue::WriteBool(input.data() + ch.offset, cd, true);
+    }
+    ue::Call ap(Lib("DamageStatics"), "ApplyDamageEx");
+    if (!ap.Ok()) return false;
+    ap.SetRaw("PipelineInput", input.data(), isize).Set<float>("BaseDamage", dmg);
+    if (!ap.Run()) return false;
+    Retire(p);
+    return true;
+}
+
+int redirected = 0, retried = 0, direct = 0;
 double redirectLogAt = -100;
 
 void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
@@ -436,7 +542,7 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
     float lead = throughWalls ? 60.0f : 120.0f;
     float area = std::clamp(Value("silent_area"), 5.0f, 180.0f);
     if (handled.size() > 4096) handled.clear();
-    bool picked = false;
+    bool picked = false, checked = false, seen = true;
     const Enemy* t = nullptr;
     void* held = HeldWeapon();
     ue::Prop lp = ue::FindProp(ue::ClassOf(mgr), "ActiveProjectiles");
@@ -459,6 +565,17 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
                 continue;
             }
             b->aim = head ? ue::FVector{t->head.x, t->head.y, t->head.z + 3.0f} : ue::FVector{t->center.x, t->center.y, t->center.z + t->extent.z * 0.2f};
+            if (throughWalls) {
+                if (!checked) {
+                    seen = Visible(t->actor, from);
+                    checked = true;
+                }
+                if (!seen && DirectHit(p, *t, head, b->aim)) {
+                    b->mine = false;
+                    ++direct;
+                    continue;
+                }
+            }
             Redirect(p, *b, lead);
             ++redirected;
         } else if (b->mine && b->changed && b->tries < 2 && OffCourse(p, *b)) {
@@ -467,10 +584,10 @@ void SilentAim(const ue::FVector& from, const ue::FRotator& view) {
             ++retried;
         }
     }
-    if ((redirected || retried) && st.time - redirectLogAt > 30.0) {
+    if ((redirected || retried || direct) && st.time - redirectLogAt > 30.0) {
         redirectLogAt = st.time;
-        LOG("silent aim: %d shots sent to targets, %d set back on course", redirected, retried);
-        redirected = retried = 0;
+        LOG("silent aim: %d shots sent to targets, %d set back on course, %d hit through walls", redirected, retried, direct);
+        redirected = retried = direct = 0;
     }
 }
 

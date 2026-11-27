@@ -227,7 +227,7 @@ void TickFly(bool wantFly, bool wantNoclip) {
             SetCollision(st.pawn, false);
             fly.collisionOff = true;
         }
-        LOG(wantNoclip ? "noclip on" : "fly on");
+        LOG(wantNoclip ? (wantFly ? "fly on through walls" : "noclip on") : "fly on");
     }
     LockMove(kFlyUser);
     if (Mode(mc) != kFlying) SetMode(mc, kFlying);
@@ -236,7 +236,7 @@ void TickFly(bool wantFly, bool wantNoclip) {
     ue::FRotator view = ControlRotation();
     ue::FVector vel;
     float speed;
-    if (wantNoclip) {
+    if (wantNoclip && !wantFly) {
         speed = 450.0f * slider * (fast ? 2.5f : 1.0f);
         vel = Mul(Wish(view, false, 0.0f), speed);
         vel.z = FloorFollow(st.pawn);

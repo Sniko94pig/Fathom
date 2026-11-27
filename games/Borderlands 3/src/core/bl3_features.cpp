@@ -167,8 +167,8 @@ void BuildFeatures(Model& m) {
 
     Slider(m, Movement, "Speed", "player_speed", "Player speed", "How fast you walk and sprint", 1.0f, 5.0f, 1.0f, 0.1f);
     Slider(m, Movement, "Speed", "jump_height", "Jump height", "How high you jump", 1.0f, 10.0f, 1.0f, 0.5f);
-    Toggle(m, Movement, "Flying", "fly", "Fly", "Fly where you look with WASD, walls still stop you. Space goes up, Ctrl goes down, hold Left Shift to go faster");
-    Toggle(m, Movement, "Flying", "noclip", "Noclip", "Walk through walls and objects while you stay on the ground. Hold Left Shift to go faster");
+    Toggle(m, Movement, "Flying", "fly", "Fly", "Fly where you look with WASD, walls still stop you. Space goes up, Ctrl goes down, hold Left Shift to go faster. Turn on Noclip too to fly through walls");
+    Toggle(m, Movement, "Flying", "noclip", "Noclip", "Walk through walls and objects while you stay on the ground. Hold Left Shift to go faster. Turn on Fly too to fly through walls");
     Slider(m, Movement, "Flying", "fly_speed", "Fly speed", "Speed for fly, noclip, freecam and vehicle fly", 1.0f, 10.0f, 2.0f, 0.5f, false);
     Toggle(m, Movement, "Camera", "freecam", "Freecam", "Look around with the mouse and move the camera with WASD, Space and Ctrl while your character stays put. Hold Left Shift to go faster. Works best on foot");
     Slider(m, Movement, "Time", "game_speed", "Game speed", "Alone only: speeds up or slows down the whole game", 0.1f, 5.0f,

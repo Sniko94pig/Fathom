@@ -10,6 +10,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <random>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -47,6 +48,7 @@ struct Job {
     size_t item = 0;
     int asked = 1, want = 1, next = 0, dropped = 0, packed = 0, unsure = 0;
     bool started = false, over = false, quiet = false, car = false, waiting = false, ghost = false, deepUsed = false, others = false;
+    bool picked = false;
     std::vector<ue::FVector> points;
     std::vector<void*> before;
     std::string shown, why;
@@ -66,6 +68,7 @@ struct Ctx {
     void* bal = nullptr;
     void* data = nullptr;
     std::vector<uint8_t> init;
+    std::vector<void*> parts;
 };
 
 enum class Check { Wait, Good, Broken, NoPickup, Nothing, Gone };
@@ -485,6 +488,234 @@ int PlayerLevel() {
     return std::clamp(l, 1, 80);
 }
 
+struct PartLayout {
+    bool ok = false;
+    int partSet = -1, runtime = -1, baseSel = -1, allParts = -1;
+    int weighted = 0, wPart = -1, wWeight = -1;
+    int lists = -1, listSize = 0, lType = -1, lRange = -1, lParts = -1;
+    ue::Prop lMulti, lUseWeight, lEnabled;
+    int pType = -1, pDeps = -1, pExcl = -1, pMin = -1, pMax = -1;
+    int aConst = -1, aTable = -1, aAttr = -1, aInit = -1, aScale = -1, aSize = 0;
+};
+
+int OffsetOf(void* type, const char* name) {
+    ue::Prop p = type ? ue::FindProp(type, name) : ue::Prop{};
+    return p ? p.offset : -1;
+}
+
+const PartLayout& Parts() {
+    static PartLayout l;
+    static bool tried = false;
+    if (tried) return l;
+    tried = true;
+    void* sel = Cls("ActorPartSelectionData");
+    void* rt = Cls("RuntimeActorPartListData");
+    void* wd = Cls("WeightedActorPartData");
+    void* set = Cls("ActorPartSetData");
+    void* ld = Cls("ActorPartListData");
+    void* pd = Cls("ActorPartData");
+    void* initType = Cls("AttributeInitializationData");
+    l.partSet = OffsetOf(sel, "PartSetData");
+    l.runtime = OffsetOf(sel, "RuntimePartList");
+    l.baseSel = OffsetOf(sel, "BaseSelectionData");
+    l.allParts = OffsetOf(rt, "AllParts");
+    l.weighted = ue::StructSize(wd);
+    l.wPart = OffsetOf(wd, "PartData");
+    l.wWeight = OffsetOf(wd, "Weight");
+    l.lists = OffsetOf(set, "ActorPartLists");
+    l.listSize = ue::StructSize(ld);
+    l.lType = OffsetOf(ld, "PartType");
+    l.lRange = OffsetOf(ld, "MultiplePartSelectionRange");
+    l.lParts = OffsetOf(ld, "Parts");
+    if (ld) {
+        l.lMulti = ue::FindProp(ld, "bCanSelectMultipleParts");
+        l.lUseWeight = ue::FindProp(ld, "bUseWeightWithMultiplePartSelection");
+        l.lEnabled = ue::FindProp(ld, "bEnabled");
+    }
+    l.pType = OffsetOf(pd, "PartType");
+    l.pDeps = OffsetOf(pd, "Dependencies");
+    l.pExcl = OffsetOf(pd, "Excluders");
+    l.pMin = OffsetOf(pd, "MinGameStage");
+    l.pMax = OffsetOf(pd, "MaxGameStage");
+    l.aConst = OffsetOf(initType, "BaseValueConstant");
+    l.aTable = OffsetOf(initType, "DataTableValue");
+    l.aAttr = OffsetOf(initType, "BaseValueAttribute");
+    l.aInit = OffsetOf(initType, "AttributeInitializer");
+    l.aScale = OffsetOf(initType, "BaseValueScale");
+    l.aSize = ue::StructSize(initType);
+    l.ok = l.runtime >= 0 && l.allParts >= 0 && l.weighted >= 0x10 && l.weighted <= 0x100 && l.wPart >= 0 && l.wWeight >= 0 && l.pType >= 0 &&
+           l.pDeps >= 0 && l.pExcl >= 0 && l.aConst >= 0 && l.aScale >= 0 && l.aSize >= 0x10 && l.aSize <= 0x100;
+    LOG("giver: part layout %s (part list entry 0x%x, part set lists %s)", l.ok ? "found" : "missing", l.weighted,
+        l.lists >= 0 && l.listSize > 0 && l.lType >= 0 && l.lParts >= 0 ? "found" : "missing");
+    return l;
+}
+
+float EvalInit(const uint8_t* data) {
+    const PartLayout& l = Parts();
+    float constant = ue::At<float>(data, l.aConst), scale = ue::At<float>(data, l.aScale);
+    void* table = l.aTable >= 0 ? ue::At<void*>(data, l.aTable) : nullptr;
+    void* attr = l.aAttr >= 0 ? ue::At<void*>(data, l.aAttr) : nullptr;
+    void* init = l.aInit >= 0 ? ue::At<void*>(data, l.aInit) : nullptr;
+    float plain = constant * scale;
+    if (!table && !attr && !init) return std::isfinite(plain) ? plain : 0.0f;
+    ue::Call c(Lib("GbxAttributeFunctionLibrary"), "EvaluateAttributeInitializationData");
+    if (!c.Ok()) return std::isfinite(plain) ? plain : 0.0f;
+    uint8_t copy[0x100] = {};
+    if (!ue::SafeCopy(copy, data, (size_t)l.aSize)) return 0.0f;
+    c.SetRaw("InitializationData", copy, l.aSize).Set<void*>("ContextSource", st.pawn);
+    if (c.Run()) {
+        float v = c.Get<float>("ReturnValue");
+        if (std::isfinite(v)) return v;
+    }
+    return std::isfinite(plain) ? plain : 0.0f;
+}
+
+struct Candidate {
+    void* part = nullptr;
+    const uint8_t* weight = nullptr;
+};
+
+std::vector<void*> PtrList(void* obj, int offset) {
+    std::vector<void*> out;
+    if (!obj || offset < 0) return out;
+    auto a = ue::At<ue::TArray<void*>>(obj, offset);
+    for (int i = 0; a.data && i < a.num && i < 256; ++i) {
+        void* p = ue::At<void*>(a.data + i, 0);
+        if (p) out.push_back(p);
+    }
+    return out;
+}
+
+bool PickParts(void* bal, std::vector<void*>& out) {
+    out.clear();
+    const PartLayout& l = Parts();
+    if (!l.ok || !bal) return false;
+    std::unordered_map<int, std::vector<Candidate>> byType;
+    std::vector<int> order;
+    auto all = ue::At<ue::TArray<uint8_t>>(bal, l.runtime + l.allParts);
+    int total = 0;
+    for (int i = 0; all.data && i < all.num && i < 4096; ++i) {
+        const uint8_t* e = all.data + (size_t)i * l.weighted;
+        void* part = ue::At<void*>(e, l.wPart);
+        if (!ue::Valid(part)) continue;
+        int type = ue::At<uint8_t>(part, l.pType);
+        if (!byType.count(type)) order.push_back(type);
+        byType[type].push_back({part, e + l.wWeight});
+        ++total;
+    }
+    void* set = l.partSet >= 0 ? ue::At<void*>(bal, l.partSet) : nullptr;
+    if (!ue::Valid(set) && l.baseSel >= 0) {
+        void* base = ue::At<void*>(bal, l.baseSel);
+        if (ue::Valid(base)) set = ue::At<void*>(base, l.partSet);
+    }
+    std::vector<const uint8_t*> lists;
+    if (ue::Valid(set) && l.lists >= 0 && l.listSize > 0 && l.lType >= 0 && l.lParts >= 0) {
+        auto a = ue::At<ue::TArray<uint8_t>>(set, l.lists);
+        for (int i = 0; a.data && i < a.num && i < 128; ++i) lists.push_back(a.data + (size_t)i * l.listSize);
+    }
+    int level = PlayerLevel();
+    std::mt19937 rng(std::random_device{}());
+    auto chosenHas = [&](void* p) { return std::find(out.begin(), out.end(), p) != out.end(); };
+    auto linked = [&](void* part) {
+        if (chosenHas(part)) return false;
+        std::vector<void*> deps = PtrList(part, l.pDeps);
+        if (!deps.empty() && std::none_of(deps.begin(), deps.end(), chosenHas)) return false;
+        for (void* x : PtrList(part, l.pExcl))
+            if (chosenHas(x)) return false;
+        for (void* c : out)
+            for (void* x : PtrList(c, l.pExcl))
+                if (x == part) return false;
+        return true;
+    };
+    auto staged = [&](void* part) {
+        if (l.pMin >= 0 && EvalInit((const uint8_t*)part + l.pMin) > (float)level + 0.5f) return false;
+        if (l.pMax >= 0) {
+            float mx = EvalInit((const uint8_t*)part + l.pMax);
+            if (mx > 0.5f && mx < (float)level - 0.5f) return false;
+        }
+        return true;
+    };
+    int relaxed = 0;
+    auto choose = [&](std::vector<Candidate>& cands, bool multi, int lo, int hi, bool useWeight) {
+        std::vector<std::pair<void*, float>> pool;
+        for (const Candidate& c : cands) {
+            if (!linked(c.part) || !staged(c.part)) continue;
+            float w = EvalInit(c.weight);
+            if (w > 0.0f) pool.push_back({c.part, w});
+        }
+        bool even = multi && !useWeight;
+        if (pool.empty() && (!multi || lo > 0)) {
+            for (const Candidate& c : cands)
+                if (linked(c.part)) pool.push_back({c.part, 1.0f});
+            if (!pool.empty()) {
+                ++relaxed;
+                even = true;
+            }
+        }
+        int want = 1;
+        if (multi) {
+            lo = std::clamp(lo, 0, (int)pool.size());
+            hi = std::clamp(hi, lo, (int)pool.size());
+            want = lo + (hi > lo ? (int)(rng() % (unsigned)(hi - lo + 1)) : 0);
+        }
+        for (int k = 0; k < want && !pool.empty(); ++k) {
+            float sum = 0.0f;
+            for (auto& q : pool) sum += even ? 1.0f : q.second;
+            if (!(sum > 0.0f)) break;
+            float roll = std::uniform_real_distribution<float>(0.0f, sum)(rng);
+            size_t pick = pool.size() - 1;
+            for (size_t i = 0; i < pool.size(); ++i) {
+                roll -= even ? 1.0f : pool[i].second;
+                if (roll <= 0.0f) {
+                    pick = i;
+                    break;
+                }
+            }
+            out.push_back(pool[pick].first);
+            pool.erase(pool.begin() + (std::ptrdiff_t)pick);
+            pool.erase(std::remove_if(pool.begin(), pool.end(), [&](const std::pair<void*, float>& q) { return !linked(q.first); }), pool.end());
+        }
+    };
+    if (!lists.empty()) {
+        for (const uint8_t* e : lists) {
+            if (l.lEnabled && !ue::ReadBool(e, l.lEnabled)) continue;
+            int type = ue::At<uint8_t>(e, l.lType);
+            std::vector<Candidate> cands;
+            auto it = byType.find(type);
+            if (it != byType.end()) {
+                cands = it->second;
+            } else if (total == 0) {
+                auto ps = ue::At<ue::TArray<uint8_t>>(e, l.lParts);
+                for (int i = 0; ps.data && i < ps.num && i < 512; ++i) {
+                    const uint8_t* w = ps.data + (size_t)i * l.weighted;
+                    void* part = ue::At<void*>(w, l.wPart);
+                    if (ue::Valid(part)) cands.push_back({part, w + l.wWeight});
+                }
+            }
+            if (cands.empty()) continue;
+            bool multi = l.lMulti && ue::ReadBool(e, l.lMulti);
+            bool useWeight = l.lUseWeight && ue::ReadBool(e, l.lUseWeight);
+            int lo = l.lRange >= 0 ? ue::At<int32_t>(e, l.lRange) : 1, hi = l.lRange >= 0 ? ue::At<int32_t>(e, l.lRange + 4) : 1;
+            choose(cands, multi, lo, hi, useWeight);
+        }
+    } else {
+        for (int type : order) choose(byType[type], false, 1, 1, true);
+    }
+    std::string names;
+    for (void* part : out) {
+        if (names.size() > 900) {
+            names += "...";
+            break;
+        }
+        if (!names.empty()) names += ", ";
+        names += ue::Name(part);
+    }
+    LOG("giver: picked %zu parts from %d possible parts in %zu part types, %zu rules%s: %s", out.size(), total, order.size(), lists.size(),
+        relaxed ? ", level limits or weights relaxed for some types" : "", names.c_str());
+    return !out.empty();
+}
+
+
 ue::FVector Flat(float yawDeg) {
     float y = yawDeg * 3.14159265f / 180.0f;
     return {std::cos(y), std::sin(y), 0.0f};
@@ -855,6 +1086,13 @@ bool MakeInit(const GiverItem& it, Ctx& c, std::string& why) {
     ue::Put<void*>(c.init.data(), data.offset, c.data);
     ue::Put<void*>(c.init.data(), bal.offset, c.bal);
     if (manufacturer && man && man.offset + 8 <= size) ue::Put<void*>(c.init.data(), man.offset, manufacturer);
+    ue::Prop plist = ue::FindProp(initStruct, "PartList");
+    if (plist && plist.offset + (int)sizeof(ue::TArray<void*>) <= size && PickParts(c.bal, c.parts)) {
+        ue::TArray<void*> arr{c.parts.data(), (int32_t)c.parts.size(), (int32_t)c.parts.size()};
+        ue::Put(c.init.data(), plist.offset, arr);
+    } else {
+        c.parts.clear();
+    }
     return true;
 }
 
@@ -873,8 +1111,8 @@ Fire Launch(Job& j, int m, const Ctx& c) {
             it.assetName.c_str());
         return Fire::Empty;
     }
-    LOG("giver: %s%s made a %s for %s", FuncOf(m), WantsPickup(m) ? "" : " without a pickup", ue::Name(ue::ClassOf(ret)).c_str(),
-        it.assetName.c_str());
+    LOG("giver: %s%s made a %s for %s with %zu chosen parts", FuncOf(m), WantsPickup(m) ? "" : " without a pickup", ue::Name(ue::ClassOf(ret)).c_str(),
+        it.assetName.c_str(), c.parts.size());
     j.ret = ue::MakeWeak(ret);
     j.waiting = true;
     j.ghost = false;
@@ -1027,6 +1265,8 @@ bool StartJob(Job& j) {
         return false;
     }
     if (!it.tierTried) LearnTier(it, c.bal);
+    j.picked = !c.parts.empty();
+    if (j.picked) j.dead |= (1u << 0) | (1u << 2);
     j.others = !st.alone;
     j.points = DropPoints(j.want, j.car);
     j.started = true;
@@ -1062,6 +1302,10 @@ void Step(Job& j) {
         if (!MakeInit(it, c, j.why)) {
             j.over = true;
             return;
+        }
+        if (!c.parts.empty() && m % 2 == 0) {
+            j.dead |= 1u << m;
+            continue;
         }
         j.bal = ue::MakeWeak(c.bal);
         j.category = ue::MakeWeak(ue::Ptr(c.data, "InventoryCategory"));
