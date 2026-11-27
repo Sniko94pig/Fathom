@@ -115,7 +115,10 @@ void BuildFeatures(Model& m) {
            "Give", true);
     Input(m, Player, "Currency", "money", "Money", "Type the amount and press Set, your saves are backed up first", "Amount");
     Input(m, Player, "Currency", "eridium", "Eridium", "Type the amount and press Set, your saves are backed up first", "Amount");
-    Input(m, Player, "Currency", "golden_keys", "Golden keys", "Type the amount and press Set, your saves are backed up first", "Amount");
+    Input(m, Player, "Currency", "golden_keys", "Golden keys", "Type the amount and press Set, also works when you have none. Your saves are backed up first", "Amount");
+    Input(m, Player, "Currency", "diamond_keys", "Diamond keys",
+          "For the Diamond Armory (Designer's Cut DLC). Type the amount and press Set, your saves are backed up first. Gearbox can see your Diamond key count",
+          "Amount");
 
     Toggle(m, Weapons, "Ammo", "unlimited_ammo", "Unlimited ammo", "Your guns never run out of ammo and never need a reload");
     Toggle(m, Weapons, "Ammo", "no_reload", "No reload", "The magazine stays full while your spare ammo still goes down");
@@ -178,6 +181,8 @@ void BuildFeatures(Model& m) {
     Action(m, LootMap, "Giver", "refill_ammo", "Refill all ammo", "Fills every ammo type and your grenades", "Refill");
     Page(m, LootMap, "Map", "map", "Map", "Map of where you are with every location, click to teleport. Also lists every map in the game",
          "map");
+    Action(m, LootMap, "Map", "teleport_mission", "Teleport to mission",
+           "Takes you to the waypoint of the mission you are tracking. If it is on another map, takes you to the way out towards it", "Go");
     Toggle(m, LootMap, "Drops", "legendary_drops", "Legendary drops", "Alone only: every gun and gear that drops is Legendary");
     Toggle(m, LootMap, "Drops", "drop_filter", "Rarity drop filter", "Alone only: only the rarities you tick below drop");
     Option(m, LootMap, "Drops", "drop_common", "Drop white (common)", false);
@@ -197,7 +202,7 @@ void BuildFeatures(Model& m) {
     Action(m, Vehicle, "Teleport", "bring_vehicle", "Bring my car", "Moves the last car you drove next to you. The map teleport also takes your car with you",
            "Bring");
 
-    m.mapWords.chips = {"Vehicles", "Fast travel", "Places", "Challenges"};
+    m.mapWords.chips = {"Vehicles", "Fast travel", "Missions", "Places"};
     m.mapWords.empty = "Press Scan this area for a picture of the map";
     m.mapWords.photos = "Press Scan this area for a picture of the map";
     m.mapWords.photosMore = "";

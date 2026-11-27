@@ -87,7 +87,15 @@ void DestroyActor(void* actor);
 void SetViewTarget(void* target);
 void* ViewTarget();
 void IgnoreInput(bool look, bool move);
+struct TraceHitInfo {
+    ue::FVector at;
+    void* actor = nullptr;
+    bool inside = false;
+};
+
 bool TraceDown(const ue::FVector& from, float depth, ue::FVector& hit);
+bool TraceLine(const ue::FVector& from, const ue::FVector& to, ue::FVector& hit);
+bool TraceHit(const ue::FVector& from, const ue::FVector& to, TraceHitInfo& info);
 void TakeMouse(float& dx, float& dy);
 
 struct AttrFloat {

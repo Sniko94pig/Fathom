@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <map>
 #include <mutex>
 #include <set>
 
@@ -33,6 +34,18 @@ double placesAt = -100, markersAt = 0;
 ue::FWeak lastWorld;
 std::vector<core::Marker> fixedMarkers;
 const float kTravelBase = -9000000.0f;
+const float kMissionZ = -1000000.0f;
+
+struct MissionSpot {
+    ue::FVector at;
+    std::string label;
+    void* owner = nullptr;
+};
+
+std::vector<MissionSpot> missionSpots;
+std::string missionWhy;
+double missionAt = -100;
+std::map<std::pair<void*, void*>, std::string> missionLabels;
 
 const char* kPaidDlc[] = {"dandelion", "hibiscus", "geranium", "alisma", "ixora", "ixora2"};
 
@@ -169,8 +182,181 @@ ue::FVector ComponentLocation(void* comp) {
     return c.Run() ? c.Get<ue::FVector>("ReturnValue") : ue::FVector{};
 }
 
+bool Usable(const ue::FVector& v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) && std::fabs(v.x) + std::fabs(v.y) + std::fabs(v.z) > 1.0f &&
+           std::fabs(v.x) < 2.0e7f && std::fabs(v.y) < 2.0e7f && std::fabs(v.z) < 2.0e7f;
+}
+
+float BelowCeiling(const ue::FVector& p, float up) {
+    TraceHitInfo h;
+    if (!TraceHit({p.x, p.y, p.z + 10.0f}, {p.x, p.y, p.z + up}, h)) return p.z + up;
+    if (h.inside) return p.z;
+    return std::max(p.z + 10.0f, h.at.z - 20.0f);
+}
+
+bool FloorNear(float x, float y, float refZ, ue::FVector& ground) {
+    float tops[2] = {BelowCeiling({x, y, refZ + 40.0f}, 260.0f), refZ + 10.0f};
+    for (float top : tops) {
+        TraceHitInfo h;
+        if (!TraceHit({x, y, top}, {x, y, top - 6000.0f}, h) || h.inside || h.at.z > refZ + 100.0f) continue;
+        ground = h.at;
+        return true;
+    }
+    return false;
+}
+
+std::string PlainText(const std::string& s) {
+    std::string out;
+    int depth = 0;
+    for (char c : s) {
+        if (c == '[' || c == '<') {
+            ++depth;
+            continue;
+        }
+        if ((c == ']' || c == '>') && depth > 0) {
+            --depth;
+            continue;
+        }
+        if (depth == 0 && c != '\r' && c != '\n') out.push_back(c);
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    size_t start = out.find_first_not_of(' ');
+    if (start == std::string::npos || out.find('{') != std::string::npos) return {};
+    return out.substr(start);
+}
+
+std::string FormattedText(void* obj, const char* prop) {
+    void* fmt = Cls("GbxUIFormattedText");
+    ue::Prop p = obj ? ue::FindProp(ue::ClassOf(obj), prop) : ue::Prop{};
+    ue::Prop t = fmt ? ue::FindProp(fmt, "FormatText") : ue::Prop{};
+    if (!p || !t) return {};
+    return PlainText(ue::TextToString((uint8_t*)obj + p.offset + t.offset));
+}
+
+void* MissionTracker() {
+    void* comp = st.pc ? ue::Ptr(st.pc, "PlayerMissionComponent") : nullptr;
+    void* t = ue::Alive(comp) ? ue::Ptr(comp, "CachedMissionTracker") : nullptr;
+    if (!ue::Alive(t) && st.gameState) t = ue::Ptr(st.gameState, "MissionTracker");
+    return ue::Alive(t) ? t : nullptr;
+}
+
+void* TrackedMission(void* tracker) {
+    void* cls = ue::Ptr(tracker, "TrackedMission");
+    if (ue::Alive(cls)) return cls;
+    ue::Call c(Lib("MissionFunctionLibrary"), "GetCurrentlyTrackedMission");
+    c.Set<void*>("WorldContextObject", st.pc);
+    cls = c.Run() ? c.Get<void*>("ReturnValue") : nullptr;
+    return ue::Alive(cls) ? cls : nullptr;
+}
+
+std::string MissionLabel(void* mission, void* objective) {
+    auto key = std::make_pair(mission, objective);
+    auto it = missionLabels.find(key);
+    if (it != missionLabels.end()) return it->second;
+    std::string s = objective ? FormattedText(objective, "FormattedProgressMessage") : std::string();
+    bool settled = true;
+    if (s.empty()) {
+        ue::Call c(Lib("MissionFunctionLibrary"), "GetMission");
+        c.Set<void*>("MissionClass", mission).Set<void*>("WorldContextObject", st.pc);
+        void* m = c.Run() ? c.Get<void*>("ReturnValue") : nullptr;
+        if (ue::Alive(m)) s = FormattedText(m, "FormattedMissionName");
+        else settled = false;
+    }
+    if (s.empty()) s = "mission waypoint";
+    if (!settled) return s;
+    if (missionLabels.size() > 256) missionLabels.clear();
+    missionLabels[key] = s;
+    return s;
+}
+
+std::vector<MissionSpot> FindMissionSpots(std::string& why) {
+    std::vector<MissionSpot> out;
+    void* tracker = MissionTracker();
+    if (!tracker) {
+        why = "Your missions are not loaded yet";
+        return out;
+    }
+    void* tracked = TrackedMission(tracker);
+    if (!tracked) {
+        why = "You are not tracking a mission, pick one in the mission log first";
+        return out;
+    }
+    void* iconStruct = Cls("ActiveMissionIconData");
+    ue::Prop ip = ue::FindProp(ue::ClassOf(tracker), "ActiveIcons");
+    int size = iconStruct ? ue::StructSize(iconStruct) : 0;
+    ue::Prop compP = iconStruct ? ue::FindProp(iconStruct, "IconLocationComponent") : ue::Prop{};
+    ue::Prop locP = iconStruct ? ue::FindProp(iconStruct, "IconLocation") : ue::Prop{};
+    ue::Prop misP = iconStruct ? ue::FindProp(iconStruct, "MissionClass") : ue::Prop{};
+    ue::Prop objP = iconStruct ? ue::FindProp(iconStruct, "MissionObjectives") : ue::Prop{};
+    if (ip && locP && misP && size >= 0x30 && size <= 0x200) {
+        auto list = ue::Read<ue::TArray<uint8_t>>(tracker, ip);
+        for (int i = 0; list.data && i < list.num && i < 128; ++i) {
+            const uint8_t* e = list.data + (size_t)i * size;
+            if (ue::At<void*>(e, misP.offset) != tracked) continue;
+            ue::FVector at = ue::At<ue::FVector>(e, locP.offset);
+            void* owner = nullptr;
+            if (compP) {
+                ue::FWeak w{ue::At<int32_t>(e, compP.offset), ue::At<int32_t>(e, compP.offset + 4), nullptr};
+                void* comp = w.serial ? ue::WeakGet(w) : nullptr;
+                if (comp) {
+                    ue::FVector c = ComponentLocation(comp);
+                    if (Usable(c)) at = c;
+                    ue::Call o(comp, "GetOwner");
+                    if (o.Run()) owner = o.Get<void*>("ReturnValue");
+                }
+            }
+            if (!Usable(at)) continue;
+            void* objective = nullptr;
+            if (objP) {
+                auto objs = ue::At<ue::TArray<void*>>(e, objP.offset);
+                if (objs.data && objs.num > 0 && objs.num < 64) objective = ue::At<void*>(objs.data, 0);
+            }
+            out.push_back({at, MissionLabel(tracked, ue::Alive(objective) ? objective : nullptr), owner});
+        }
+    }
+    if (out.empty()) {
+        auto ways = Arr(tracker, "CurrentOutOfMapWaypoints");
+        for (int i = 0; ways.data && i < ways.num && i < 32; ++i) {
+            void* comp = ue::At<void*>(ways.data + i, 0);
+            if (!ue::Alive(comp)) continue;
+            void* mc = ue::Ptr(comp, "MissionClass");
+            if (mc && mc != tracked) continue;
+            ue::FVector at = ComponentLocation(comp);
+            if (!Usable(at)) continue;
+            ue::Call o(comp, "GetOwner");
+            void* owner = o.Run() ? o.Get<void*>("ReturnValue") : nullptr;
+            out.push_back({at, "way to " + MissionLabel(tracked, nullptr), owner});
+        }
+    }
+    if (out.empty()) why = "Your mission has no waypoint here right now";
+    return out;
+}
+
+const std::vector<MissionSpot>& MissionSpots() {
+    if (st.time - missionAt > 0.5 || st.time < missionAt) {
+        missionAt = st.time;
+        missionSpots = FindMissionSpots(missionWhy);
+    }
+    return missionSpots;
+}
+
+std::vector<core::Location> MissionRows() {
+    const std::vector<MissionSpot>& spots = MissionSpots();
+    if (spots.empty()) return {};
+    void* me = st.vehicle ? st.vehicle : st.pawn;
+    ue::FVector w = me ? Location(me) : ue::FVector{};
+    const MissionSpot* best = &spots[0];
+    for (const MissionSpot& s : spots)
+        if (std::hypot(s.at.x - w.x, s.at.y - w.y) < std::hypot(best->at.x - w.x, best->at.y - w.y)) best = &s;
+    float mx, my;
+    ToMap(best->at, mx, my);
+    return {{"Mission: " + best->label, mx, my, kMissionZ}};
+}
+
+bool IsMissionRow(const core::Location& l) { return l.z < kMissionZ * 0.5f; }
+
 void BuildPlaces() {
-    std::vector<core::Location> places;
+    std::vector<core::Location> places = MissionRows();
     fixedMarkers.clear();
     void* tracker = st.gameState ? ue::Ptr(st.gameState, "TravelStationTracker") : nullptr;
     auto stations = Arr(tracker, "FastTravelStations");
@@ -205,7 +391,7 @@ void BuildPlaces() {
             float mx, my;
             ToMap(w, mx, my);
             places.push_back({n, mx, my, w.z / 100.0f + 1.5f});
-            fixedMarkers.push_back({core::MarkerType::Wreck, n, mx, my, w.z / 100.0f, 0});
+            fixedMarkers.push_back({core::MarkerType::Place, n, mx, my, w.z / 100.0f, 0});
         }
     }
     if (zone && chalStruct) {
@@ -236,6 +422,11 @@ void BuildPlaces() {
 
 void PublishMarkers() {
     std::vector<core::Marker> markers = fixedMarkers;
+    for (const MissionSpot& s : MissionSpots()) {
+        float sx, sy;
+        ToMap(s.at, sx, sy);
+        markers.push_back({core::MarkerType::Beacon, "Mission: " + s.label, sx, sy, kMissionZ, 0});
+    }
     void* me = st.vehicle ? st.vehicle : st.pawn;
     ue::FVector w = Location(me);
     ue::FRotator r = st.pc ? ControlRotation() : Rotation(me);
@@ -252,9 +443,13 @@ void PublishMarkers() {
         markers.push_back({core::MarkerType::Vehicle, "Vehicle", vx, vy, vw.z / 100.0f, 0});
     }
     bool undo = haveUndo;
+    std::vector<core::Location> rows = MissionRows();
     WithModel([&](core::Model& m) {
         m.markers = std::move(markers);
         m.canUndoTeleport = undo;
+        if (!m.mapDrawn) return;
+        m.places.erase(std::remove_if(m.places.begin(), m.places.end(), IsMissionRow), m.places.end());
+        m.places.insert(m.places.begin(), rows.begin(), rows.end());
     });
 }
 
@@ -263,6 +458,8 @@ struct Landing {
     ue::FWeak pawn;
     double until = 0;
     float x = 0, y = 0;
+    bool fromTop = false;
+    float top = 0;
 } landing;
 
 void SetMode(uint8_t mode) {
@@ -281,7 +478,9 @@ void StepLanding() {
         return;
     }
     ue::FVector cur = Location(st.pawn), ground;
-    if (TraceDown({landing.x, landing.y, cur.z + 50000.0f}, 200000.0f, ground)) {
+    bool found = landing.fromTop ? FloorNear(landing.x, landing.y, landing.top, ground)
+                                 : TraceDown({landing.x, landing.y, cur.z + 50000.0f}, 200000.0f, ground);
+    if (found) {
         Teleport(st.pawn, {landing.x, landing.y, ground.z + 120.0f}, Rotation(st.pawn));
         SetMode(3);
         landing.active = false;
@@ -296,6 +495,109 @@ void StepLanding() {
     SetMode(5);
 }
 
+bool FaceFor(const ue::FVector& from, const ue::FVector* lookAt, ue::FRotator& out) {
+    if (!lookAt || std::hypot(from.x - lookAt->x, from.y - lookAt->y) < 10.0f) return false;
+    out = LookAt(from, *lookAt);
+    out.pitch = 0.0f;
+    out.roll = 0.0f;
+    return true;
+}
+
+bool MoveMe(const std::vector<ue::FVector>& targets, const ue::FVector* lookAt, bool grounded, bool fromTop, float top) {
+    if (targets.empty()) return false;
+    if (st.vehicle) {
+        if (VehicleHasOtherPlayers(st.vehicle)) {
+            Note("Someone else is in your car, teleport skipped");
+            return false;
+        }
+        if (!grounded) {
+            Note("That spot is not loaded yet, get closer or get out of the car first");
+            return false;
+        }
+        ue::FVector before = Location(st.vehicle);
+        for (const ue::FVector& t : targets) {
+            ue::FRotator rot;
+            if (!FaceFor(t, lookAt, rot)) rot = Rotation(st.vehicle);
+            if (!MoveVehicle(st.vehicle, {t.x, t.y, t.z + 150.0f}, rot)) continue;
+            undoPos = before;
+            haveUndo = true;
+            landing.active = false;
+            return true;
+        }
+        Note("Could not move your car there");
+        return false;
+    }
+    if (!st.pawn) return false;
+    ue::FVector before = Location(st.pawn);
+    for (const ue::FVector& t : targets) {
+        ue::FRotator rot;
+        bool turn = FaceFor(t, lookAt, rot);
+        if (!turn) rot = Rotation(st.pawn);
+        if (!Teleport(st.pawn, t, rot)) continue;
+        undoPos = before;
+        haveUndo = true;
+        if (turn) SetControlRotation(rot);
+        bool wasLanding = landing.active;
+        landing.active = false;
+        if (!grounded) {
+            landing = {true, ue::MakeWeak(st.pawn), st.time + 8.0, t.x, t.y, fromTop, top};
+            SetMode(5);
+        } else if (wasLanding) {
+            SetMode(3);
+        }
+        return true;
+    }
+    Note("Could not teleport there");
+    return false;
+}
+
+void MissionTeleport(const ue::FVector& near, bool announce) {
+    missionAt = -100;
+    const std::vector<MissionSpot>& spots = MissionSpots();
+    if (spots.empty()) {
+        Note(missionWhy);
+        return;
+    }
+    const MissionSpot* best = &spots[0];
+    float bestD = 1e30f;
+    for (const MissionSpot& s : spots) {
+        float d = std::hypot(s.at.x - near.x, s.at.y - near.y);
+        if (d < bestD) {
+            bestD = d;
+            best = &s;
+        }
+    }
+    MissionSpot spot = *best;
+    void* me = st.vehicle ? st.vehicle : st.pawn;
+    if (!me) return;
+    ue::FVector cur = Location(me), icon = spot.at, floor;
+    std::vector<ue::FVector> targets;
+    void* pawnCls = Cls("Pawn");
+    if (FloorNear(icon.x, icon.y, icon.z, floor)) {
+        float step = st.vehicle ? 600.0f : 250.0f;
+        float base = std::hypot(cur.x - icon.x, cur.y - icon.y) > 1.0f ? std::atan2(cur.y - icon.y, cur.x - icon.x) : 0.0f;
+        ue::FVector eye{icon.x, icon.y, floor.z + 100.0f};
+        for (int k = 0; k < 8 && targets.size() < 2; ++k) {
+            float a = base + (k % 2 ? 1.0f : -1.0f) * (float)((k + 1) / 2) * 0.7853982f;
+            ue::FVector side{icon.x + std::cos(a) * step, icon.y + std::sin(a) * step, floor.z + 100.0f}, g;
+            TraceHitInfo h;
+            if (TraceHit(side, eye, h)) {
+                bool target = !h.inside && h.actor && (h.actor == spot.owner || (pawnCls && ue::IsA(h.actor, pawnCls))) &&
+                              std::hypot(h.at.x - icon.x, h.at.y - icon.y) < 200.0f;
+                if (!target) continue;
+            }
+            if (!FloorNear(side.x, side.y, floor.z + 60.0f, g) || std::fabs(g.z - floor.z) > 150.0f) continue;
+            targets.push_back({side.x, side.y, g.z + 120.0f});
+        }
+        targets.push_back({icon.x, icon.y, floor.z + 120.0f});
+    }
+    bool grounded = !targets.empty();
+    if (!grounded) targets.push_back({icon.x, icon.y, icon.z + 200.0f});
+    LOG("mission teleport: %s at %.0f %.0f %.0f, %s, %zu spots to try, %zu waypoints", spot.label.c_str(), icon.x, icon.y, icon.z,
+        grounded ? "on the ground" : "ground not loaded", targets.size(), spots.size());
+    if (MoveMe(targets, &icon, grounded, true, icon.z) && announce) Note("Teleported to " + spot.label);
+}
+
 void DoTeleport(const Request& rq) {
     if (rq.undo) {
         if (!haveUndo) return;
@@ -308,8 +610,16 @@ void DoTeleport(const Request& rq) {
         } else {
             Teleport(st.pawn, undoPos, Rotation(st.pawn));
         }
+        if (landing.active) {
+            landing.active = false;
+            SetMode(3);
+        }
         haveUndo = false;
         Note("Teleport undone");
+        return;
+    }
+    if (rq.useZ && rq.z < kMissionZ * 0.5f) {
+        MissionTeleport(FromMap(rq.x, rq.y, 0.0f), false);
         return;
     }
     if (rq.x <= kTravelBase + 1.0f) {
@@ -343,29 +653,7 @@ void DoTeleport(const Request& rq) {
             grounded = false;
         }
     }
-    if (st.vehicle) {
-        if (VehicleHasOtherPlayers(st.vehicle)) {
-            Note("Someone else is in your car, teleport skipped");
-            return;
-        }
-        if (!grounded) {
-            Note("That spot is not loaded yet, get closer or get out of the car first");
-            return;
-        }
-        undoPos = Location(st.vehicle);
-        if (MoveVehicle(st.vehicle, {target.x, target.y, target.z + 150.0f}, Rotation(st.vehicle))) haveUndo = true;
-        return;
-    }
-    undoPos = Location(st.pawn);
-    if (!Teleport(st.pawn, target, Rotation(st.pawn))) {
-        Note("Could not teleport there");
-        return;
-    }
-    haveUndo = true;
-    if (!grounded) {
-        landing = {true, ue::MakeWeak(st.pawn), st.time + 8.0, target.x, target.y};
-        SetMode(5);
-    }
+    MoveMe({target}, nullptr, grounded, false, 0.0f);
 }
 
 }
@@ -390,6 +678,9 @@ bool DlcOwnedPath(const std::string& path) {
 void WorldInit(core::Model& m) {
     bool tp = HasFunc("Actor", "K2_TeleportTo");
     Ready("map", tp);
+    Ready("teleport_mission", tp && Has("OakPlayerController", "PlayerMissionComponent") && Has("PlayerMissionComponent", "CachedMissionTracker") &&
+                                  Has("MissionTrackerBase", "TrackedMission") && Has("MissionTracker", "ActiveIcons") &&
+                                  Has("ActiveMissionIconData", "IconLocation") && Has("ActiveMissionIconData", "MissionClass"));
     WithModel([](core::Model& mm) {
         mm.teleport = [](float x, float y, float z, bool useZ) {
             std::lock_guard<std::mutex> g(reqLock);
@@ -410,6 +701,9 @@ void ResetWorldState() {
     haveUndo = false;
     fixedMarkers.clear();
     landing.active = false;
+    missionSpots.clear();
+    missionLabels.clear();
+    missionAt = -100;
     WithModel([](core::Model& m) {
         m.places.clear();
         m.markers.clear();
@@ -433,6 +727,10 @@ void WorldTick() {
     if (show && st.time - markersAt > 0.2) {
         markersAt = st.time;
         PublishMarkers();
+    }
+    if (Pressed("teleport_mission")) {
+        void* me = st.vehicle ? st.vehicle : st.pawn;
+        if (me) MissionTeleport(Location(me), true);
     }
     std::vector<Request> todo;
     {

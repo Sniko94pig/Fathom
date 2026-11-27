@@ -683,7 +683,16 @@ void IgnoreInput(bool look, bool move) {
     m.Run();
 }
 
-bool TraceDown(const ue::FVector& from, float depth, ue::FVector& hit) {
+bool TraceDown(const ue::FVector& from, float depth, ue::FVector& hit) { return TraceLine(from, {from.x, from.y, from.z - depth}, hit); }
+
+bool TraceLine(const ue::FVector& from, const ue::FVector& to, ue::FVector& hit) {
+    TraceHitInfo info;
+    if (!TraceHit(from, to, info)) return false;
+    hit = info.at;
+    return true;
+}
+
+bool TraceHit(const ue::FVector& from, const ue::FVector& to, TraceHitInfo& info) {
     static void* hitStruct = nullptr;
     if (!hitStruct) hitStruct = ue::FindClass("HitResult");
     ue::Prop impact = hitStruct ? ue::FindProp(hitStruct, "ImpactPoint") : ue::Prop{};
@@ -691,13 +700,19 @@ bool TraceDown(const ue::FVector& from, float depth, ue::FVector& hit) {
     void* ignore[1] = {st.pawn};
     ue::TArray<void*> ignoreList{ignore, st.pawn ? 1 : 0, 1};
     ue::Call c(Lib("KismetSystemLibrary"), "LineTraceSingle");
-    ue::FVector to{from.x, from.y, from.z - depth};
     c.Set<void*>("WorldContextObject", st.world).Set("Start", from).Set("End", to).Set<uint8_t>("TraceChannel", 0).SetBool("bTraceComplex", false);
     c.Set("ActorsToIgnore", ignoreList).Set<uint8_t>("DrawDebugType", 0).SetBool("bIgnoreSelf", true);
     if (!c.Run() || !c.GetBool("ReturnValue")) return false;
     const uint8_t* out = c.Raw("OutHit");
     if (!out) return false;
-    std::memcpy(&hit, out + impact.offset, sizeof(hit));
+    std::memcpy(&info.at, out + impact.offset, sizeof(info.at));
+    ue::Prop actor = ue::FindProp(hitStruct, "Actor");
+    if (actor) {
+        ue::FWeak w{ue::At<int32_t>(out, actor.offset), ue::At<int32_t>(out, actor.offset + 4), nullptr};
+        info.actor = w.serial ? ue::WeakGet(w) : nullptr;
+    }
+    ue::Prop inside = ue::FindProp(hitStruct, "bStartPenetrating");
+    info.inside = inside && ue::ReadBool(out, inside);
     return true;
 }
 

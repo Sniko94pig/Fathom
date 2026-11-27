@@ -95,6 +95,8 @@ void* PropClass(const Prop& p);
 void* FindFunction(const void* cls, const char* name);
 uint32_t FunctionFlags(const void* fn);
 int StructSize(const void* type);
+void* FindCodeUnique(const int16_t* pattern, int count);
+bool VtableHas(const void* obj, const void* fn, int slots);
 
 template <class T>
 T Read(const void* obj, const Prop& p) {

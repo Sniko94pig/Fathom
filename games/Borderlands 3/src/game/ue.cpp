@@ -355,6 +355,44 @@ bool SafeCopy(void* dst, const void* src, size_t n) {
     }
 }
 
+namespace {
+
+size_t ScanRange(const uint8_t* start, size_t size, const int16_t* pat, int count, const uint8_t** hits, size_t maxHits, size_t found) {
+    __try {
+        for (size_t i = 0; i + (size_t)count <= size; ++i) {
+            if (start[i] != (uint8_t)pat[0]) continue;
+            int k = 1;
+            while (k < count && (pat[k] < 0 || start[i + k] == (uint8_t)pat[k])) ++k;
+            if (k < count) continue;
+            if (found < maxHits) hits[found] = start + i;
+            ++found;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    return found;
+}
+
+}
+
+void* FindCodeUnique(const int16_t* pattern, int count) {
+    if (!pattern || count < 8 || pattern[0] < 0) return nullptr;
+    const uint8_t* hits[2] = {};
+    size_t found = 0;
+    for (const Range& r : Sections(false)) found = ScanRange(r.start, r.size, pattern, count, hits, 2, found);
+    return found == 1 ? (void*)hits[0] : nullptr;
+}
+
+bool VtableHas(const void* obj, const void* fn, int slots) {
+    void** vt = (void**)PtrAt(obj, 0);
+    if (!vt || !fn) return false;
+    for (int i = 0; i < slots; ++i) {
+        void* f = nullptr;
+        if (!SafeRead(vt + i, f) || !f) return false;
+        if (f == fn) return true;
+    }
+    return false;
+}
+
 bool Init(std::string& error) {
     if (!names && !FindNames()) {
         error = "name table not found";
