@@ -120,16 +120,23 @@ void FlyTick() {
     float yaw = 0;
     V3 dir = MoveDir(in, yaw);
     float speed = (vehicle ? 20.0f : 12.0f) * std::clamp(Value("fly_speed"), 1.0f, 10.0f) * (in.fast ? 2.5f : 1.0f);
+    bool airborne = n::IS_ENTITY_IN_AIR(e) != 0;
     if (vehicle) {
+        if (!fly.flying) {
+            if (!(in.up > 0)) return;
+            fly.flying = true;
+        } else if (!airborne && !in.any()) {
+            fly.flying = false;
+            n::SET_VEHICLE_GRAVITY(e, 1);
+            return;
+        }
         BlockControls(true);
         n::SET_VEHICLE_GRAVITY(e, 0);
         V3 v = Mul(dir, speed);
         n::SET_ENTITY_VELOCITY(e, v.x, v.y, v.z);
         if (in.any()) n::SET_ENTITY_HEADING(e, yaw);
-        fly.flying = true;
         return;
     }
-    bool airborne = n::IS_ENTITY_IN_AIR(e) != 0;
     if (!fly.flying) {
         if (!(in.up > 0 || (airborne && in.any()))) return;
         fly.flying = true;
