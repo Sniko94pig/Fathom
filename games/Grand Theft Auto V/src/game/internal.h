@@ -99,5 +99,7 @@ void MapshotTick();
 void MapshotOff();
 bool MapshotBusy();
 bool MapshotWriting();
+bool MapshotBaseInvincible(bool& value);
+bool GodBaseInvincible(bool& value);
 
 }

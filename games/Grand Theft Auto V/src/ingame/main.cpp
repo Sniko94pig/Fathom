@@ -125,7 +125,7 @@ bool Unload() {
         core::SaveSettings(model);
     }
     bool overlaySafe = overlay::Stop();
-    game::Detach(self);
+    if (safe) game::Detach(self);
     if (!safe) {
         {
             std::lock_guard<std::mutex> g(modelLock);

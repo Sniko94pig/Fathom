@@ -42,7 +42,7 @@ std::atomic<bool> leave{false};
 std::mutex leaveLock;
 std::string leaveWhy;
 bool attached = false;
-uint64_t lastTickAt = 0;
+std::vector<ULONGLONG> faults;
 
 void RequestLeave(const std::string& why) {
     {
@@ -135,7 +135,6 @@ void Tick() {
     st.dt = st.time > 0 ? (float)std::clamp(now - st.time, 0.0, 0.1) : 0.0f;
     st.time = now;
     ++st.tick;
-    lastTickAt = GetTickCount64();
     if (const char* why = OnlineReason()) {
         OffAll();
         RequestLeave(std::string("Fathom switched everything off and unloads: ") + why);
@@ -176,19 +175,39 @@ void Tick() {
     pressedNow.clear();
 }
 
+void Fault() {
+    ULONGLONG now = GetTickCount64();
+    faults.push_back(now);
+    faults.erase(std::remove_if(faults.begin(), faults.end(), [now](ULONGLONG t) { return now - t > 10000; }), faults.end());
+    if (faults.size() < 3) return;
+    LOG("repeated errors in the game update, switching everything off");
+    try {
+        OffAll();
+    } catch (...) {
+        LOG("error while switching off");
+    }
+    RequestLeave("Fathom switched everything off and unloads after repeated errors");
+    stopped = true;
+}
+
 void ScriptMain() {
     LOG("connected to the game's script thread");
     ticking = true;
     for (;;) {
         if (!stopped) {
-            try {
-                Tick();
-            } catch (const std::exception& e) {
-                static int reported = 0;
-                if (reported++ < 5) LOG("error in game update: %s", e.what());
-            } catch (...) {
-                static int reported = 0;
-                if (reported++ < 5) LOG("unknown error in game update");
+            if (stopping && !initDone) {
+                stopped = true;
+            } else {
+                try {
+                    Tick();
+                } catch (const std::exception& e) {
+                    static int reported = 0;
+                    if (reported++ < 5) LOG("error in game update: %s", e.what());
+                } catch (...) {
+                    static int reported = 0;
+                    if (reported++ < 5) LOG("unknown error in game update");
+                    Fault();
+                }
             }
         }
         shv::Wait(0);
@@ -342,11 +361,13 @@ bool Attach(void* module) {
 
 bool Shutdown() {
     stopping = true;
-    if (!attached || !ticking) return true;
+    if (!attached) return true;
     ULONGLONG start = GetTickCount64();
     while (!stopped) {
         Sleep(20);
-        if (GetTickCount64() - start > 60000) {
+        ULONGLONG waited = GetTickCount64() - start;
+        if (!ticking && waited > 3000) return true;
+        if (waited > 60000) {
             LOG("the game did not run a script update in 60 seconds");
             return false;
         }
@@ -356,7 +377,7 @@ bool Shutdown() {
 
 void Detach(void* module) {
     ULONGLONG start = GetTickCount64();
-    while (MapshotWriting() && GetTickCount64() - start < 20000) Sleep(50);
+    while (MapshotWriting() && GetTickCount64() - start < 3000) Sleep(50);
     if (!attached) return;
     shv::Unregister(module);
     attached = false;

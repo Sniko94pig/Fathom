@@ -5,14 +5,15 @@
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include <windows.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <mutex>
-#include <thread>
 
 namespace gtav {
 
@@ -41,6 +42,7 @@ struct Scan {
     size_t next = 0;
     int phase = 0;
     int retries = 0;
+    int misses = 0;
     int done = 0;
     double until = 0;
     Saved saved;
@@ -80,26 +82,84 @@ void Progress(bool on, float progress, const std::string& text) {
     });
 }
 
-void SaveAsync(std::vector<uint8_t> rgba, int w, int h) {
-    std::wstring path = PngPath();
+struct Job {
+    std::vector<uint8_t> rgba;
+    int w = 0, h = 0;
+    std::wstring path;
+    bool save = false;
+    HMODULE pin = nullptr;
+};
+
+HMODULE Pin() {
+    HMODULE m = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)&Pin, &m);
+    return m;
+}
+
+void SaveWork(Job& j) {
+    std::vector<uint8_t> png;
+    auto sink = [](void* ctx, void* data, int size) {
+        auto* out = (std::vector<uint8_t>*)ctx;
+        out->insert(out->end(), (uint8_t*)data, (uint8_t*)data + size);
+    };
+    if (!stbi_write_png_to_func(sink, &png, j.w, j.h, 4, j.rgba.data(), j.w * 4) || png.empty()) {
+        LOG("map picture could not be encoded");
+        return;
+    }
+    std::ofstream f(std::filesystem::path(j.path), std::ios::binary | std::ios::trunc);
+    f.write((const char*)png.data(), (std::streamsize)png.size());
+    LOG("map picture saved (%zu KB)", png.size() / 1024);
+}
+
+void LoadWork(Job& j) {
+    std::vector<uint8_t> px;
+    int w = 0, h = 0;
+    if (!ui::LoadImageFile(j.path, px, w, h) || w != kCols * kPx || h != kRows * kPx) {
+        LOG("saved map picture could not be used");
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> g(imageLock);
+        if (image.empty()) image = px;
+    }
+    Publish(std::move(px), w, h);
+    loaded = true;
+    LOG("saved map picture loaded");
+}
+
+DWORD WINAPI JobThread(void* p) {
+    HMODULE pin = ((Job*)p)->pin;
+    {
+        std::unique_ptr<Job> job((Job*)p);
+        if (job->save) SaveWork(*job);
+        else LoadWork(*job);
+    }
+    --workers;
+    if (pin) FreeLibraryAndExitThread(pin, 0);
+    return 0;
+}
+
+void RunJob(Job* job) {
+    job->pin = Pin();
     ++workers;
-    std::thread([rgba = std::move(rgba), w, h, path] {
-        struct Done {
-            ~Done() { --workers; }
-        } done;
-        std::vector<uint8_t> png;
-        auto sink = [](void* ctx, void* data, int size) {
-            auto* out = (std::vector<uint8_t>*)ctx;
-            out->insert(out->end(), (uint8_t*)data, (uint8_t*)data + size);
-        };
-        if (!stbi_write_png_to_func(sink, &png, w, h, 4, rgba.data(), w * 4) || png.empty()) {
-            LOG("map picture could not be encoded");
-            return;
-        }
-        std::ofstream f(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
-        f.write((const char*)png.data(), (std::streamsize)png.size());
-        LOG("map picture saved (%zu KB)", png.size() / 1024);
-    }).detach();
+    HANDLE t = CreateThread(nullptr, 0, JobThread, job, 0, nullptr);
+    if (t) {
+        CloseHandle(t);
+        return;
+    }
+    --workers;
+    if (job->pin) FreeLibrary(job->pin);
+    delete job;
+}
+
+void SaveAsync(std::vector<uint8_t> rgba, int w, int h) {
+    auto* job = new Job;
+    job->rgba = std::move(rgba);
+    job->w = w;
+    job->h = h;
+    job->path = PngPath();
+    job->save = true;
+    RunJob(job);
 }
 
 void Stitch(const std::vector<uint8_t>& shot, int w, int h, int col, int row) {
@@ -194,7 +254,8 @@ void Begin() {
     s.hour = n::GET_CLOCK_HOURS();
     s.minute = n::GET_CLOCK_MINUTES();
     s.second = n::GET_CLOCK_SECONDS();
-    s.invincible = n::GET_PLAYER_INVINCIBLE(st.player) != 0;
+    bool base = false;
+    s.invincible = GodBaseInvincible(base) ? base : n::GET_PLAYER_INVINCIBLE(st.player) != 0;
     s.frozen = st.vehicle ? st.vehicle : st.ped;
     float fov = 2.0f * std::atan((kTile * 0.5f) / kHeight) * 180.0f / 3.14159265f;
     int cam = n::CREATE_CAM_WITH_PARAMS("DEFAULT_SCRIPTED_CAMERA", kMinX, -kMinY, kHeight, -89.9f, 0.0f, 0.0f, fov, 1, 2);
@@ -232,6 +293,14 @@ void Step() {
     n::HIDE_HUD_AND_RADAR_THIS_FRAME();
     n::THEFEED_HIDE_THIS_FRAME();
     n::DISABLE_ALL_CONTROL_ACTIONS(0);
+    if (n::IS_PAUSE_MENU_ACTIVE() || !overlay::WindowActive()) {
+        if (scan.phase == 2) {
+            overlay::CancelShot();
+            scan.phase = 1;
+        }
+        scan.until = st.time + 1.0;
+        return;
+    }
     if (scan.next >= scan.order.size()) {
         Finish(true);
         return;
@@ -262,6 +331,7 @@ void Step() {
     if (overlay::TakeShot(shot, w, h) && w > 0 && h > 0 && shot.size() >= (size_t)w * h * 4) {
         Stitch(shot, w, h, col, row);
         ++scan.done;
+        scan.misses = 0;
     } else if (st.time < scan.until) {
         return;
     } else if (scan.retries < 1) {
@@ -271,6 +341,12 @@ void Step() {
         return;
     } else {
         LOG("map scan: no picture for tile %d", tile);
+        if (++scan.misses >= 3) {
+            LOG("map scan: the game's pictures could not be read, giving up");
+            Note("The map scan stopped: Fathom could not read the game's pictures");
+            Finish(false);
+            return;
+        }
     }
     scan.retries = 0;
     scan.phase = 0;
@@ -292,25 +368,9 @@ void LoadSaved() {
     std::wstring path = PngPath();
     std::error_code ec;
     if (!std::filesystem::exists(std::filesystem::path(path), ec)) return;
-    ++workers;
-    std::thread([path] {
-        struct Done {
-            ~Done() { --workers; }
-        } done;
-        std::vector<uint8_t> px;
-        int w = 0, h = 0;
-        if (!ui::LoadImageFile(path, px, w, h) || w != kCols * kPx || h != kRows * kPx) {
-            LOG("saved map picture could not be used");
-            return;
-        }
-        {
-            std::lock_guard<std::mutex> g(imageLock);
-            if (image.empty()) image = px;
-        }
-        Publish(std::move(px), w, h);
-        loaded = true;
-        LOG("saved map picture loaded");
-    }).detach();
+    auto* job = new Job;
+    job->path = path;
+    RunJob(job);
 }
 
 }
@@ -336,5 +396,17 @@ void MapshotOff() {
 bool MapshotBusy() { return scan.active || landing.active; }
 
 bool MapshotWriting() { return workers.load() > 0; }
+
+bool MapshotBaseInvincible(bool& value) {
+    if (scan.active) {
+        value = scan.saved.invincible;
+        return true;
+    }
+    if (landing.active) {
+        value = landing.invincible;
+        return true;
+    }
+    return false;
+}
 
 }

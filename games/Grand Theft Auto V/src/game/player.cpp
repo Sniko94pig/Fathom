@@ -68,7 +68,8 @@ void GodTick() {
         god.active = true;
         god.ped = st.ped;
         god.player = st.player;
-        god.wasInvincible = n::GET_PLAYER_INVINCIBLE(st.player) != 0;
+        bool base = false;
+        god.wasInvincible = MapshotBaseInvincible(base) ? base : n::GET_PLAYER_INVINCIBLE(st.player) != 0;
         god.haveProofs = ReadProofs(st.ped, god.proofs);
         LOG("god mode on for ped %d (was invincible %d)", st.ped, god.wasInvincible ? 1 : 0);
     }
@@ -220,6 +221,12 @@ void MoneyTick() {
     money.floor = cash;
 }
 
+}
+
+bool GodBaseInvincible(bool& value) {
+    if (!god.active) return false;
+    value = god.wasInvincible;
+    return true;
 }
 
 void PlayerInit() {

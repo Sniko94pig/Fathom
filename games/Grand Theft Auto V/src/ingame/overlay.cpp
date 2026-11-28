@@ -130,6 +130,8 @@ std::vector<uint8_t> mapPending;
 int mapW = 0, mapH = 0;
 
 std::atomic<bool> shotWanted{false};
+std::atomic<uint32_t> shotGen{0};
+uint32_t copyGen = 0;
 bool shotPending = false;
 UINT64 shotFence = 0;
 ID3D12Resource* shotBuf = nullptr;
@@ -435,6 +437,15 @@ uint8_t LinearTo8(float v) {
     return (uint8_t)std::clamp((int)(s * 255.0f + 0.5f), 0, 255);
 }
 
+const uint8_t* HalfTable() {
+    static std::vector<uint8_t> table;
+    if (table.empty()) {
+        table.resize(65536);
+        for (uint32_t h = 0; h < 65536; ++h) table[h] = LinearTo8(HalfToFloat((uint16_t)h));
+    }
+    return table.data();
+}
+
 bool ConvertShot(const uint8_t* src, UINT pitch, UINT w, UINT h, DXGI_FORMAT f, std::vector<uint8_t>& out) {
     out.assign((size_t)w * h * 4, 255);
     for (UINT y = 0; y < h; ++y) {
@@ -468,11 +479,12 @@ bool ConvertShot(const uint8_t* src, UINT pitch, UINT w, UINT h, DXGI_FORMAT f, 
             }
             case DXGI_FORMAT_R16G16B16A16_FLOAT:
             case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
+                static const uint8_t* lut = HalfTable();
                 uint16_t c[3];
                 std::memcpy(c, row + x * 8, 6);
-                o[0] = LinearTo8(HalfToFloat(c[0]));
-                o[1] = LinearTo8(HalfToFloat(c[1]));
-                o[2] = LinearTo8(HalfToFloat(c[2]));
+                o[0] = lut[c[0]];
+                o[1] = lut[c[1]];
+                o[2] = lut[c[2]];
                 break;
             }
             default:
@@ -520,6 +532,7 @@ bool EnsureShotBuffer(ID3D12Resource* bb) {
 void CollectShot() {
     if (!shotPending || !fence || fence->GetCompletedValue() < shotFence) return;
     shotPending = false;
+    if (copyGen != shotGen.load()) return;
     void* p = nullptr;
     D3D12_RANGE r{0, (SIZE_T)shotBufSize};
     if (!shotBuf || FAILED(shotBuf->Map(0, &r, &p)) || !p) return;
@@ -1119,6 +1132,7 @@ void Draw12(IDXGISwapChain* raw, IDXGISwapChain3* sc) {
         shotFence = fenceValue;
         shotPending = true;
         shotWanted = false;
+        copyGen = shotGen.load();
     }
     bb->Release();
 }
@@ -1381,8 +1395,11 @@ void RequestShot() {
         shotReady = false;
         shotRgba.clear();
     }
+    ++shotGen;
     shotWanted = true;
 }
+
+bool WindowActive() { return hwnd && GetForegroundWindow() == hwnd; }
 
 bool TakeShot(std::vector<uint8_t>& rgba, int& w, int& h) {
     std::lock_guard<std::mutex> g(shotLock);
@@ -1397,6 +1414,7 @@ bool TakeShot(std::vector<uint8_t>& rgba, int& w, int& h) {
 
 void CancelShot() {
     shotWanted = false;
+    ++shotGen;
     std::lock_guard<std::mutex> g(shotLock);
     shotReady = false;
     shotRgba.clear();

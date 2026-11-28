@@ -31,5 +31,6 @@ bool GameActive();
 void RequestShot();
 bool TakeShot(std::vector<uint8_t>& rgba, int& w, int& h);
 void CancelShot();
+bool WindowActive();
 
 }

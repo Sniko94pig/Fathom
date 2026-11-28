@@ -1,5 +1,6 @@
 #include "ingame/guard.h"
 #include <windows.h>
+#include <shellapi.h>
 #include <tlhelp32.h>
 #include <cstdint>
 #include <cstdio>
@@ -51,8 +52,13 @@ Report Check() {
             r.detail += "loaded in the game: " + Narrow(dll) + "; ";
         }
     }
-    std::wstring cmd = Lower(GetCommandLineW());
-    r.flag = cmd.find(L"-nobattleye") != std::wstring::npos;
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argv) {
+        for (int i = 1; i < argc; ++i)
+            if (Lower(argv[i]) == L"-nobattleye") r.flag = true;
+        LocalFree(argv);
+    }
     if (!r.flag) r.detail += "the game was not started with BattlEye off (no -nobattleye); ";
     return r;
 }

@@ -48,7 +48,7 @@ bool Readable(const void* p, size_t n) {
     return p && Committed(p, n, PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE);
 }
 
-bool Writable(void* p, size_t n) { return p && Committed(p, n, PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE); }
+bool Writable(void* p, size_t n) { return p && Committed(p, n, PAGE_READWRITE | PAGE_WRITECOPY); }
 
 uintptr_t GameBase() {
     Init();

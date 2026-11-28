@@ -402,6 +402,10 @@ inline int IS_MODEL_IN_CDIMAGE(uint32_t model) {
     return shv::Invoke<int>(0x35B9E0803292B641ull, model);
 }
 
+inline int IS_PAUSE_MENU_ACTIVE() {
+    return shv::Invoke<int>(0xB0034A223497FFCBull);
+}
+
 inline int IS_PED_A_PLAYER(int ped) {
     return shv::Invoke<int>(0x12534C348C6CB68Bull, ped);
 }
