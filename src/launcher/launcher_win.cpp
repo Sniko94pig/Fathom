@@ -325,6 +325,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     loader.version = FATHOM_VERSION;
     loader.gameFound = home.paths.found;
     const std::wstring prefsPath = (std::filesystem::path(ExeDir()) / L"launcher.json").wstring();
+    home.mapFoundPath = (std::filesystem::path(ExeDir()) / L"map-found.txt").wstring();
     launcher::LoadPrefs(loader.s, prefsPath);
     loader.s.startWithWindows = launcher::StartupEnabled();
     ui::LoaderSettings applied = loader.s;
@@ -844,7 +845,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                     D3D12_CPU_DESCRIPTOR_HANDLE cpu;
                     D3D12_GPU_DESCRIPTOR_HANDLE gpu;
                     g_pd3dSrvDescHeapAlloc.Alloc(&cpu, &gpu);
-                    ID3D12Resource* tex = dx12::CreateTexture(g_pd3dDevice, g_pd3dCommandQueue, mi.rgba.data(), mi.width, mi.height, cpu);
+                    ID3D12Resource* tex = dx12::CreateTexture(g_pd3dDevice, g_pd3dCommandQueue, mi.rgba.data(), mi.width, mi.height, cpu, true);
                     if (tex)
                     {
                         if (sheets > 0)

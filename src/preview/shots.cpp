@@ -424,6 +424,41 @@ int main(int argc, char** argv) {
              u.homeIndex = 2;
              u.onHome = true;
          }, ImVec2(700, 300), nullptr},
+        {"55-launcher-map-card", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.mapGame = launcher::maps::Subnautica;
+             home.mapPick[launcher::maps::Subnautica] = 5;
+             LoadShotMaps(home);
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.maps = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}};
+             u.homeIndex = 2;
+             u.onHome = true;
+         }, ImVec2(5, 5), nullptr},
+        {"56-launcher-map-card-solo", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.mapGame = launcher::maps::SonsOfTheForest;
+             home.mapPick[launcher::maps::SonsOfTheForest] = 3;
+             home.mapSolo[launcher::maps::SonsOfTheForest] = true;
+             LoadShotMaps(home);
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.maps = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}};
+             u.homeIndex = 2;
+             u.onHome = true;
+         }, ImVec2(5, 5), nullptr},
         {"54-launcher-bl3-pick", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              home.game = -1;

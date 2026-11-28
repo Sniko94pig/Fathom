@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <vector>
 
 namespace launcher {
@@ -335,8 +336,27 @@ void Home::DrawMapList() {
     ImGui::Dummy(ImVec2(w, top + rows * (ch + gap) - o.y));
 }
 
+void Home::ReadFound() {
+    if (mapFoundRead) return;
+    mapFoundRead = true;
+    if (mapFoundPath.empty()) return;
+    std::ifstream f{std::filesystem::path(mapFoundPath)};
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty()) mapFound.insert(line);
+    }
+}
+
+void Home::SaveFound() {
+    if (mapFoundPath.empty()) return;
+    std::ofstream f{std::filesystem::path(mapFoundPath), std::ios::trunc};
+    for (const std::string& k : mapFound) f << k << '\n';
+}
+
 void Home::DrawMapView() {
     const int gi = mapGame;
+    ReadFound();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 o = ImGui::GetCursorScreenPos();
@@ -357,6 +377,14 @@ void Home::DrawMapView() {
     bool world = flat || mapdata::World(gi, wx0, wz0, wx1, wz1);
     auto toUv = [&](float x, float z) { return flat ? ImVec2(x, z) : ImVec2((x - wx0) / (wx1 - wx0), (wz1 - z) / (wz1 - wz0)); };
     auto kindCol = [&](int k, float alpha) { return IM_COL32(kinds[k].r, kinds[k].g, kinds[k].b, (int)(alpha * 255)); };
+    auto foundKey = [&](int i) {
+        const mapdata::Place& p = places[i];
+        std::string k = std::to_string(gi) + "|" + (sc > 0 ? sheets[si].file : "") + "|" + std::to_string((int)std::lround(p.x * 1000)) + "|" +
+                        std::to_string((int)std::lround(p.z * 1000)) + "|" + p.name;
+        return k;
+    };
+    auto isFound = [&](int i) { return mapFound.count(foundKey(i)) > 0; };
+    if (mapPick[gi] >= pc) mapPick[gi] = -1;
 
     if (Button("mapback", "All maps", o, ImVec2(S(124), S(34)), Btn::Ghost, ICON_ARROW_LEFT)) {
         mapGame = -1;
@@ -465,7 +493,10 @@ void Home::DrawMapView() {
         std::vector<int> list;
         for (int i = 0; i < pc; ++i)
             if (visible(i)) list.push_back(i);
+        int done = 0;
+        for (int i : list) done += isFound(i) ? 1 : 0;
         std::string head = "Places (" + std::to_string(list.size()) + ")";
+        if (done > 0) head += "  ·  " + std::to_string(done) + " found";
         Upper(dl, T().semibold, 10.5f, ImVec2(sa.x + S(14), y), White(0.5f), head.c_str());
         y += S(22);
         float lh = sb.y - S(8) - y;
@@ -491,9 +522,12 @@ void Home::DrawMapView() {
                 ImVec2 c(ra.x + S(20), ra.y + rh * 0.5f);
                 cl->AddCircleFilled(c, S(9), kindCol(p.kind, 1.0f), 18);
                 Icon(cl, c, S(10.5f), Black(0.8f), kinds[p.kind].icon);
-                TextFit(cl, T().medium, 12.5f, ImVec2(ra.x + S(38), ra.y + S(6)), rw - S(44), White(0.92f), p.name);
+                bool got = isFound(i);
+                float tw = rw - S(44) - (got ? S(22) : 0.0f);
+                TextFit(cl, T().medium, 12.5f, ImVec2(ra.x + S(38), ra.y + S(6)), tw, White(got ? 0.6f : 0.92f), p.name);
                 const char* sub = p.note && *p.note ? p.note : kinds[p.kind].name;
-                TextFit(cl, T().regular, 11, ImVec2(ra.x + S(38), ra.y + S(24)), rw - S(44), White(0.45f), sub);
+                TextFit(cl, T().regular, 11, ImVec2(ra.x + S(38), ra.y + S(24)), tw, White(0.45f), sub);
+                if (got) Icon(cl, ImVec2(rb.x - S(16), ra.y + rh * 0.5f), S(14), Good(), ICON_CIRCLE_CHECK);
                 if (hit) {
                     mapPick[gi] = i;
                     fly = true;
@@ -565,6 +599,27 @@ void Home::DrawMapView() {
     ImVec2 a(o.x + side + sgap, top), b(o.x + w, top + h), c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
     float cw = b.x - a.x;
     dl->AddRectFilled(a, b, sc > 0 && pic.bg ? pic.bg : ImGui::GetColorU32(ImVec4(0.027f, 0.063f, 0.122f, 1.0f)));
+    auto wrapH = [&](ImFont* f, float size, const char* text, float width) {
+        ImGui::PushFont(f, S(size));
+        float hh = ImGui::CalcTextSize(text, nullptr, false, width).y;
+        ImGui::PopFont();
+        return hh;
+    };
+    const int card = pic.tex && world ? mapPick[gi] : -1;
+    float cardW = std::min(S(300), cw - S(80)), pad = S(16), inner = cardW - pad * 2;
+    float bandH = S(84), nameH = 0, noteH = 0, cardH = 0;
+    const char* cardNote = "";
+    ImVec2 ka, kb;
+    if (card >= 0) {
+        const mapdata::Place& p = places[card];
+        cardNote = p.note && *p.note ? p.note : "No extra notes for this place yet.";
+        nameH = wrapH(T().semibold, 17, p.name, inner);
+        noteH = wrapH(T().regular, 12.5f, cardNote, inner - S(24));
+        cardH = bandH + S(32) + S(20) + nameH + S(14) + S(14) + S(34) + noteH + S(12) + S(22) + S(12) + S(14) + S(40) + S(12) + S(22) + S(14);
+        ka = ImVec2(b.x - S(54) - cardW, a.y + S(10));
+        kb = ImVec2(ka.x + cardW, std::min(ka.y + cardH, b.y - S(10)));
+    }
+    auto inCard = [&](ImVec2 m) { return card >= 0 && m.x >= ka.x && m.x <= kb.x && m.y >= ka.y && m.y <= kb.y; };
     if (pic.tex && pic.w > 0 && pic.h > 0) {
         float fit = std::min(cw / pic.w, h / pic.h);
         float& zoom = mapZoom[gi];
@@ -582,7 +637,7 @@ void Home::DrawMapView() {
         ImGui::SetCursorScreenPos(a);
         ImGui::SetNextItemAllowOverlap();
         ImGui::InvisibleButton("mapview", ImVec2(cw, h));
-        bool hov = ImGui::IsItemHovered();
+        bool hov = ImGui::IsItemHovered() && !inCard(io.MousePos);
         bool dragging = ImGui::IsItemActive() && ImGui::IsMouseDragging(0, S(3));
         if (dragging) {
             cu -= io.MouseDelta.x / (zoom * pic.w);
@@ -622,7 +677,7 @@ void Home::DrawMapView() {
             return true;
         };
         auto inView = [&](ImVec2 p) { return p.x > a.x - S(80) && p.x < b.x + S(80) && p.y > a.y - S(20) && p.y < b.y + S(20); };
-        float pad = S(6);
+        float lpad = S(6);
         if (world && mapAreaNames[gi]) {
             std::vector<std::pair<const char*, ImVec2>> named;
             for (int i = 0; i < ac; ++i) {
@@ -638,10 +693,10 @@ void Home::DrawMapView() {
                 float reach = ar.reach / (wx1 - wx0) * pic.w * zoom;
                 static const ImVec2 moves[] = {{0, 0}, {0, -1}, {0, 1}, {-0.5f, 0}, {0.5f, 0}, {-0.5f, -1}, {0.5f, -1}, {-0.5f, 1}, {0.5f, 1}};
                 for (const ImVec2& m : moves) {
-                    ImVec2 shift(m.x * (ts.x * 0.5f + pad), m.y * (ts.y + pad));
+                    ImVec2 shift(m.x * (ts.x * 0.5f + lpad), m.y * (ts.y + lpad));
                     if (std::hypot(shift.x, shift.y) > reach && (m.x != 0 || m.y != 0)) continue;
                     ImVec2 tp(std::floor(p.x + shift.x - ts.x * 0.5f), std::floor(p.y + shift.y - ts.y * 0.5f));
-                    if (!room(ImVec2(tp.x - pad, tp.y - pad * 0.5f), ImVec2(tp.x + ts.x + pad, tp.y + ts.y + pad * 0.5f))) continue;
+                    if (!room(ImVec2(tp.x - lpad, tp.y - lpad * 0.5f), ImVec2(tp.x + ts.x + lpad, tp.y + ts.y + lpad * 0.5f))) continue;
                     Upper(dl, T().semibold, 11, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), ar.name);
                     Upper(dl, T().semibold, 11, tp, White(0.9f), ar.name);
                     named.push_back({ar.name, p});
@@ -653,9 +708,11 @@ void Home::DrawMapView() {
         float hotDist = 1e9f;
         bool big = zoom >= fit * 1.8f, names = zoom >= fit * 3.2f;
         float rad = big ? S(10) : S(5.5f);
+        bool solo = mapSolo[gi] && mapPick[gi] >= 0;
+        auto shown = [&](int i) { return solo ? i == mapPick[gi] : visible(i); };
         if (world) {
             for (int i = 0; i < pc; ++i) {
-                if (!visible(i)) continue;
+                if (!shown(i)) continue;
                 ImVec2 uv = toUv(places[i].x, places[i].z);
                 ImVec2 p = toScreen(uv.x, uv.y);
                 if (!inView(p)) continue;
@@ -669,7 +726,7 @@ void Home::DrawMapView() {
             for (int pass = 0; pass < 2; ++pass)
                 for (int i = 0; i < pc; ++i) {
                     bool front = i == pick || i == hot;
-                    if (front != (pass == 1) || !visible(i)) continue;
+                    if (front != (pass == 1) || !shown(i)) continue;
                     const mapdata::Place& pl = places[i];
                     ImVec2 uv = toUv(pl.x, pl.z);
                     ImVec2 p = toScreen(uv.x, uv.y);
@@ -681,13 +738,14 @@ void Home::DrawMapView() {
                         dl->AddCircle(p, r + S(3), White(0.95f), 32, S(2));
                     }
                     dl->AddCircleFilled(ImVec2(p.x, p.y + S(1.5f)), r + S(1.5f), Black(0.55f), 24);
-                    dl->AddCircleFilled(p, r, kindCol(pl.kind, 1.0f), 24);
+                    bool got = isFound(i);
+                    dl->AddCircleFilled(p, r, got && !front ? Mix(ImVec4(kinds[pl.kind].r / 255.0f, kinds[pl.kind].g / 255.0f, kinds[pl.kind].b / 255.0f, 1), ImVec4(0.2f, 0.2f, 0.22f, 1), 0.6f) : kindCol(pl.kind, 1.0f), 24);
                     dl->AddCircle(p, r, Black(0.45f), 24, S(1.2f));
-                    if (r >= S(9)) Icon(dl, p, r * 1.1f, Black(0.82f), kinds[pl.kind].icon);
-                    if (names || front) {
+                    if (r >= S(9)) Icon(dl, p, r * 1.1f, Black(0.82f), got ? ICON_CHECK : kinds[pl.kind].icon);
+                    if ((names || front) && i != card) {
                         ImVec2 ts = Measure(T().medium, 12, pl.name);
                         ImVec2 tp(std::floor(p.x + r + S(6)), std::floor(p.y - ts.y * 0.5f));
-                        if (front || room(ImVec2(tp.x - S(2), tp.y), ImVec2(tp.x + ts.x + pad, tp.y + ts.y))) {
+                        if (front || room(ImVec2(tp.x - S(2), tp.y), ImVec2(tp.x + ts.x + lpad, tp.y + ts.y))) {
                             if (front) dl->AddRectFilled(ImVec2(tp.x - S(5), tp.y - S(3)), ImVec2(tp.x + ts.x + S(5), tp.y + ts.y + S(3)), Black(0.72f));
                             Text(dl, T().medium, 12, ImVec2(tp.x + 1, tp.y + 1), Black(0.85f), pl.name);
                             Text(dl, T().medium, 12, tp, White(0.96f), pl.name);
@@ -707,8 +765,8 @@ void Home::DrawMapView() {
             }
         }
         dl->PopClipRect();
-        if (hov && !dragging && ImGui::IsMouseReleased(0) && io.MouseDragMaxDistanceSqr[0] < S(4) * S(4)) mapPick[gi] = hot;
-        if (hot >= 0 && !dragging) {
+        if (hov && !dragging && ImGui::IsMouseReleased(0) && io.MouseDragMaxDistanceSqr[0] < S(4) * S(4) && (hot >= 0 || !mapSolo[gi])) mapPick[gi] = hot;
+        if (hot >= 0 && !dragging && hot != card) {
             const mapdata::Place& pl = places[hot];
             char tip[512];
             if (flat) std::snprintf(tip, sizeof(tip), "%s\n%s", pl.name, pl.note && *pl.note ? pl.note : kinds[pl.kind].name);
@@ -734,6 +792,84 @@ void Home::DrawMapView() {
             mapFly[gi] = 1.0f;
             mapFlyU[gi] = mapFlyV[gi] = 0.5f;
             mapFlyZoom[gi] = fit;
+        }
+        if (card >= 0) {
+            const mapdata::Place& p = places[card];
+            const mapdata::Kind& k = kinds[p.kind];
+            dl->PushClipRect(ka, kb, true);
+            dl->AddRectFilled(ImVec2(ka.x + S(3), ka.y + S(4)), ImVec2(kb.x + S(3), kb.y + S(4)), Black(0.35f));
+            dl->AddRectFilled(ka, kb, ImGui::GetColorU32(ImVec4(0.075f, 0.08f, 0.095f, 0.97f)));
+            ImVec2 ba(ka.x, ka.y), bb(kb.x, ka.y + bandH);
+            dl->AddRectFilledMultiColor(ba, bb, kindCol(p.kind, 0.62f), kindCol(p.kind, 0.38f), kindCol(p.kind, 0.10f), kindCol(p.kind, 0.18f));
+            Icon(dl, ImVec2(ka.x + cardW * 0.62f, ka.y + bandH * 0.5f), S(64), White(0.16f), k.icon);
+            ImVec2 ic(ka.x + pad + S(22), ka.y + bandH);
+            dl->AddCircleFilled(ImVec2(ic.x, ic.y + S(2)), S(25), Black(0.5f), 32);
+            dl->AddCircleFilled(ic, S(24), kindCol(p.kind, 1.0f), 32);
+            dl->AddCircle(ic, S(24), ImGui::GetColorU32(ImVec4(0.075f, 0.08f, 0.095f, 1)), 32, S(3));
+            Icon(dl, ic, S(24), Black(0.82f), k.icon);
+            float cy = ka.y + bandH + S(32);
+            Upper(dl, T().semibold, 10.5f, ImVec2(ka.x + pad, cy), kindCol(p.kind, 1.0f), k.name);
+            cy += S(20);
+            Text(dl, T().semibold, 17, ImVec2(ka.x + pad, cy), White(0.98f), p.name, inner);
+            cy += nameH + S(14);
+            dl->AddLine(ImVec2(ka.x + pad, cy), ImVec2(kb.x - pad, cy), White(0.09f));
+            cy += S(14);
+            float dh = S(34) + noteH + S(12) + S(22) + S(12);
+            ImVec2 da(ka.x + pad, cy), db(kb.x - pad, cy + dh);
+            dl->AddRectFilled(da, db, White(0.045f));
+            dl->AddRect(da, db, White(0.07f));
+            Upper(dl, T().semibold, 10.5f, ImVec2(da.x + S(12), da.y + S(12)), White(0.55f), "Details");
+            Text(dl, T().regular, 12.5f, ImVec2(da.x + S(12), da.y + S(34)), White(p.note && *p.note ? 0.85f : 0.5f), cardNote, inner - S(24));
+            float ry = da.y + S(34) + noteH + S(12);
+            dl->AddLine(ImVec2(da.x + S(12), ry - S(4)), ImVec2(db.x - S(12), ry - S(4)), White(0.06f));
+            char where[128];
+            if (flat) std::snprintf(where, sizeof(where), "%s", sheets[si].name);
+            else std::snprintf(where, sizeof(where), "X %d   %s %d", (int)std::lround(p.x), mapdata::Axis(gi), (int)std::lround(p.z));
+            Text(dl, T().regular, 12, ImVec2(da.x + S(12), ry + S(3)), White(0.45f), flat ? "Map" : "Position");
+            float lw = S(74);
+            TextFit(dl, T().medium, 12, ImVec2(da.x + S(12) + lw, ry + S(3)), db.x - S(12) - da.x - S(12) - lw, White(0.85f), where);
+            cy += dh + S(14);
+            dl->PopClipRect();
+            bool got = isFound(card);
+            float bw = inner - S(40) - S(8);
+            if (cy + S(40) <= kb.y) {
+                if (Button("mapfound", got ? "Found" : "Mark as found", ImVec2(ka.x + pad, cy), ImVec2(bw, S(40)), got ? Btn::Primary : Btn::Ghost,
+                           got ? ICON_CIRCLE_CHECK : ICON_CHECK)) {
+                    if (got) mapFound.erase(foundKey(card));
+                    else mapFound.insert(foundKey(card));
+                    SaveFound();
+                }
+                if (ImGui::IsItemHovered()) Tip(got ? "Click to mark it as not found" : "Remember that you found this place");
+                if (IconButton("mapgoto", ICON_CROSSHAIR, ImVec2(kb.x - pad - S(40), cy), S(40))) {
+                    ImVec2 uv = toUv(p.x, p.z);
+                    mapFly[gi] = 1.0f;
+                    mapFlyU[gi] = uv.x;
+                    mapFlyV[gi] = uv.y;
+                    mapFlyZoom[gi] = std::clamp(std::max(zoom, fit * 4.0f), zmin, zmax);
+                }
+                if (ImGui::IsItemHovered()) Tip("Zoom to it");
+            }
+            cy += S(40) + S(12);
+            if (cy + S(22) <= kb.y) {
+                ImVec2 ra(ka.x + pad, cy), rb(kb.x - pad, cy + S(22));
+                ImGui::SetCursorScreenPos(ra);
+                if (ImGui::InvisibleButton("mapsolo", ImVec2(rb.x - ra.x, rb.y - ra.y))) mapSolo[gi] = !mapSolo[gi];
+                bool sh = ImGui::IsItemHovered();
+                bool on = mapSolo[gi];
+                ImVec2 bx(ra.x, ra.y + S(3)), by(ra.x + S(16), ra.y + S(19));
+                if (on) {
+                    dl->AddRectFilled(bx, by, Accent());
+                    Icon(dl, ImVec2((bx.x + by.x) * 0.5f, (bx.y + by.y) * 0.5f), S(11), White(), ICON_CHECK);
+                } else {
+                    dl->AddRect(bx, by, White(sh ? 0.5f : 0.3f), 0.0f, S(1.5f));
+                }
+                Upper(dl, T().semibold, 10.5f, ImVec2(ra.x + S(26), ra.y + S(5)), White(sh || on ? 0.9f : 0.65f), "Hide other places on the map");
+            }
+            dl->AddRect(ka, kb, White(0.1f));
+            if (IconButton("mapclose", ICON_X, ImVec2(kb.x - S(38), ka.y + S(8)), S(30))) {
+                mapPick[gi] = -1;
+                mapSolo[gi] = false;
+            }
         }
     } else {
         std::string msg = !status.empty() ? status + "\xe2\x80\xa6" : pic.loaded ? pic.note : "Loading the map\xe2\x80\xa6";

@@ -1,11 +1,40 @@
 #include "common/dx12_texture.h"
 #include <windows.h>
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace dx12 {
 
+namespace {
+
+std::vector<uint8_t> Half(const std::vector<uint8_t>& src, int w, int h, int& nw, int& nh) {
+    nw = w > 1 ? w / 2 : 1;
+    nh = h > 1 ? h / 2 : 1;
+    std::vector<uint8_t> out((size_t)nw * nh * 4);
+    for (int y = 0; y < nh; ++y) {
+        int y0 = std::min(y * 2, h - 1), y1 = std::min(y * 2 + 1, h - 1);
+        for (int x = 0; x < nw; ++x) {
+            int x0 = std::min(x * 2, w - 1), x1 = std::min(x * 2 + 1, w - 1);
+            const uint8_t* a = &src[((size_t)y0 * w + x0) * 4];
+            const uint8_t* b = &src[((size_t)y0 * w + x1) * 4];
+            const uint8_t* c = &src[((size_t)y1 * w + x0) * 4];
+            const uint8_t* d = &src[((size_t)y1 * w + x1) * 4];
+            uint8_t* o = &out[((size_t)y * nw + x) * 4];
+            for (int k = 0; k < 4; ++k) o[k] = (uint8_t)((a[k] + b[k] + c[k] + d[k] + 2) / 4);
+        }
+    }
+    return out;
+}
+
+}
+
 ID3D12Resource* CreateTexture(ID3D12Device* device, ID3D12CommandQueue* queue, const uint8_t* rgba, int width, int height,
-                              D3D12_CPU_DESCRIPTOR_HANDLE srv) {
+                              D3D12_CPU_DESCRIPTOR_HANDLE srv, bool mips) {
+    UINT levels = 1;
+    if (mips)
+        for (int w = width, h = height; (w > 1 || h > 1) && levels < 14; w = w > 1 ? w / 2 : 1, h = h > 1 ? h / 2 : 1) ++levels;
+
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC desc{};
@@ -13,7 +42,7 @@ ID3D12Resource* CreateTexture(ID3D12Device* device, ID3D12CommandQueue* queue, c
     desc.Width = (UINT64)width;
     desc.Height = (UINT)height;
     desc.DepthOrArraySize = 1;
-    desc.MipLevels = 1;
+    desc.MipLevels = (UINT16)levels;
     desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -22,8 +51,12 @@ ID3D12Resource* CreateTexture(ID3D12Device* device, ID3D12CommandQueue* queue, c
                                                IID_PPV_ARGS(&tex))))
         return nullptr;
 
-    UINT pitch = ((UINT)width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-    UINT64 size = (UINT64)pitch * height;
+    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> foot(levels);
+    std::vector<UINT> rows(levels);
+    std::vector<UINT64> rowBytes(levels);
+    UINT64 size = 0;
+    device->GetCopyableFootprints(&desc, 0, levels, 0, foot.data(), rows.data(), rowBytes.data(), &size);
+
     D3D12_HEAP_PROPERTIES up{};
     up.Type = D3D12_HEAP_TYPE_UPLOAD;
     D3D12_RESOURCE_DESC bd{};
@@ -47,19 +80,31 @@ ID3D12Resource* CreateTexture(ID3D12Device* device, ID3D12CommandQueue* queue, c
         SUCCEEDED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&alloc))) &&
         SUCCEEDED(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc, nullptr, IID_PPV_ARGS(&list))) &&
         SUCCEEDED(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)))) {
-        for (int y = 0; y < height; ++y) std::memcpy((uint8_t*)mapped + (size_t)y * pitch, rgba + (size_t)y * width * 4, (size_t)width * 4);
+        std::vector<uint8_t> level;
+        int lw = width, lh = height;
+        for (UINT m = 0; m < levels; ++m) {
+            const uint8_t* px = rgba;
+            if (m > 0) {
+                int nw = 0, nh = 0;
+                level = m == 1 ? Half(std::vector<uint8_t>(rgba, rgba + (size_t)lw * lh * 4), lw, lh, nw, nh) : Half(level, lw, lh, nw, nh);
+                lw = nw;
+                lh = nh;
+                px = level.data();
+            }
+            uint8_t* dst = (uint8_t*)mapped + foot[m].Offset;
+            for (int y = 0; y < lh; ++y) std::memcpy(dst + (size_t)y * foot[m].Footprint.RowPitch, px + (size_t)y * lw * 4, (size_t)lw * 4);
+        }
         buffer->Unmap(0, nullptr);
-        D3D12_TEXTURE_COPY_LOCATION src{}, dst{};
-        src.pResource = buffer;
-        src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        src.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        src.PlacedFootprint.Footprint.Width = (UINT)width;
-        src.PlacedFootprint.Footprint.Height = (UINT)height;
-        src.PlacedFootprint.Footprint.Depth = 1;
-        src.PlacedFootprint.Footprint.RowPitch = pitch;
-        dst.pResource = tex;
-        dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+        for (UINT m = 0; m < levels; ++m) {
+            D3D12_TEXTURE_COPY_LOCATION src{}, dst{};
+            src.pResource = buffer;
+            src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            src.PlacedFootprint = foot[m];
+            dst.pResource = tex;
+            dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            dst.SubresourceIndex = m;
+            list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+        }
         D3D12_RESOURCE_BARRIER b{};
         b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b.Transition.pResource = tex;
@@ -87,7 +132,7 @@ ID3D12Resource* CreateTexture(ID3D12Device* device, ID3D12CommandQueue* queue, c
     D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
     sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    sd.Texture2D.MipLevels = 1;
+    sd.Texture2D.MipLevels = levels;
     sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     device->CreateShaderResourceView(tex, &sd, srv);
     return tex;

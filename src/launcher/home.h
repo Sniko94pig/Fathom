@@ -2,6 +2,7 @@
 #include "imgui.h"
 #include "launcher/inject.h"
 #include "launcher/maps.h"
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -87,6 +88,10 @@ struct Home {
     float mapFlyU[maps::Count] = {};
     float mapFlyV[maps::Count] = {};
     float mapFlyZoom[maps::Count] = {};
+    bool mapSolo[maps::Count] = {};
+    std::set<std::string> mapFound;
+    std::wstring mapFoundPath;
+    bool mapFoundRead = false;
     std::string mapSearch;
     std::unordered_map<long long, Art> art;
     void Draw();
@@ -100,6 +105,8 @@ private:
     void DrawHelp();
     void DrawMapList();
     void DrawMapView();
+    void ReadFound();
+    void SaveFound();
     const Art* Find(int appId, int kind) const;
 };
 
