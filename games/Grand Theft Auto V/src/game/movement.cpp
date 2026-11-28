@@ -181,7 +181,7 @@ void ClipTick() {
     bool vehicle = false;
     int e = On("noclip") ? Target(vehicle) : 0;
     if (!e) {
-        ClipRelease(!On("fly"));
+        ClipRelease(!(On("fly") && !clip.vehicle));
         return;
     }
     if (clip.active && clip.entity != e) ClipRelease(true);

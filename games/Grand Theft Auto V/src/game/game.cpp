@@ -96,17 +96,26 @@ void Snapshot() {
     postQueue.clear();
 }
 
+template <typename F>
+void SafeOff(const char* name, F fn) {
+    try {
+        fn();
+    } catch (...) {
+        LOG("error while switching off %s", name);
+    }
+}
+
 void OffAll() {
-    MapshotOff();
-    CameraOff();
-    MovementOff();
-    AimOff();
-    WeaponsOff();
-    TrollOff();
-    VehiclesOff();
-    WorldOff();
-    GiverOff();
-    PlayerOff();
+    SafeOff("map scan", MapshotOff);
+    SafeOff("camera", CameraOff);
+    SafeOff("movement", MovementOff);
+    SafeOff("aim", AimOff);
+    SafeOff("weapons", WeaponsOff);
+    SafeOff("troll", TrollOff);
+    SafeOff("vehicles", VehiclesOff);
+    SafeOff("world", WorldOff);
+    SafeOff("items", GiverOff);
+    SafeOff("player", PlayerOff);
 }
 
 void InitModules() {

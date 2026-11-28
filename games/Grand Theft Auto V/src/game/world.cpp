@@ -1,6 +1,7 @@
 #include "game/internal.h"
 #include "game/mem.h"
 #include "ingame/log.h"
+#include "ingame/overlay.h"
 #include <algorithm>
 #include <cmath>
 
@@ -60,8 +61,11 @@ struct Speed {
     bool broken = false;
     bool verified = false;
     float written = 1.0f;
-    double checkStart = 0;
+    float window = 0;
+    int frames = 0;
+    int odd = 0;
     double gameTime = 0;
+    double realTime = 0;
 } speed;
 
 bool clockPaused = false;
@@ -131,7 +135,7 @@ void TeleportTick() {
     float gz = 0;
     if ((loaded || age > 2.0) && n::GET_GROUND_Z_FOR_3D_COORD(tp.x, tp.y, 1000.0f, &gz, 0, 0) && gz != 0.0f) {
         float wh = 0;
-        if (n::GET_WATER_HEIGHT(tp.x, tp.y, 1000.0f, &wh) && wh > gz) gz = wh;
+        if (n::GET_WATER_HEIGHT(tp.x, tp.y, gz + 50.0f, &wh) && wh > gz) gz = wh;
         n::FREEZE_ENTITY_POSITION(tp.entity, 0);
         PutAt(tp.entity, tp.vehicle, tp.x, tp.y, gz + (tp.vehicle ? 1.5f : 1.0f));
         Finish(true);
@@ -213,12 +217,20 @@ void ProbeSpeed() {
     }
 }
 
+void ResetWindow(float v) {
+    speed.window = v;
+    speed.frames = 0;
+    speed.gameTime = 0;
+    speed.realTime = 0;
+}
+
 void FastOff() {
     if (speed.fast)
         for (uintptr_t p : speed.addrs) mem::Write(p, 1.0f);
     speed.fast = false;
     speed.written = 1.0f;
-    speed.checkStart = 0;
+    speed.odd = 0;
+    ResetWindow(0);
 }
 
 void CapSpeed() {
@@ -263,29 +275,36 @@ void SpeedTick() {
         CapSpeed();
         return;
     }
-    for (uintptr_t p : speed.addrs) {
-        float cur = 0;
-        if (!mem::Read(p, cur) || (cur != 1.0f && cur != speed.written)) {
-            LOG("game speed value changed by the game (%.3f), stopping", cur);
-            CapSpeed();
-            return;
-        }
-    }
     n::SET_TIME_SCALE(1.0f);
     speed.scaled = true;
+    bool follows = true;
+    for (uintptr_t p : speed.addrs) {
+        float cur = 0;
+        if (!mem::Read(p, cur) || cur != 1.0f) follows = false;
+    }
+    if (!follows) {
+        if (++speed.odd >= 30) {
+            LOG("game speed value no longer follows the game, stopping");
+            CapSpeed();
+        }
+        return;
+    }
+    speed.odd = 0;
     for (uintptr_t p : speed.addrs) mem::Write(p, v);
     speed.written = v;
     speed.fast = true;
     if (speed.verified) return;
-    if (speed.checkStart == 0) {
-        speed.checkStart = st.time;
-        speed.gameTime = 0;
+    float frame = n::GET_FRAME_TIME();
+    bool counted = !st.loading && !n::IS_PAUSE_MENU_ACTIVE() && overlay::WindowActive() && frame > 0.0f && st.dt > 0.0f;
+    if (std::fabs(v - speed.window) > 0.01f || !counted) {
+        ResetWindow(v);
         return;
     }
-    speed.gameTime += n::GET_FRAME_TIME();
-    double real = st.time - speed.checkStart;
-    if (real < 1.5) return;
-    double ratio = speed.gameTime / real;
+    speed.gameTime += frame;
+    speed.realTime += st.dt;
+    ++speed.frames;
+    if (speed.frames < 30 || speed.realTime < 1.5) return;
+    double ratio = speed.gameTime / speed.realTime;
     if (ratio >= 1.0 + 0.5 * (v - 1.0)) {
         speed.verified = true;
         LOG("game speed above 1x works (measured %.2fx)", ratio);
