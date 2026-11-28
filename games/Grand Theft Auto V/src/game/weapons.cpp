@@ -24,6 +24,7 @@ struct Layout {
     bool shaped = false;
     double nextTry = 0;
     int attempts = 0;
+    bool rateBroken = false;
 } lay;
 
 struct Original {
@@ -45,7 +46,7 @@ struct Seen {
     int total = -1;
 } seen;
 
-bool noRecoilShake = false;
+double lastShot = -10.0;
 
 uint32_t Selected() { return st.ped ? (uint32_t)n::GET_SELECTED_PED_WEAPON(st.ped) : 0; }
 
@@ -172,12 +173,25 @@ void TuneTick(uint32_t w) {
     if (!info) return;
     Original& o = touched[info];
     o.weapon = w;
-    if (fast) {
+    if (fast && !lay.rateBroken) {
         if (!o.tbsSet) {
-            mem::Read(info + lay.tbsOff, o.tbs);
-            o.tbsSet = true;
+            float orig = 0;
+            if (mem::Read(info + lay.tbsOff, orig) && orig > 0.0f) {
+                o.tbs = orig;
+                o.tbsSet = true;
+            }
         }
-        mem::Write(info + lay.tbsOff, o.tbs / rate);
+        if (o.tbsSet) {
+            float want = o.tbs / rate;
+            mem::Write(info + lay.tbsOff, want);
+            if (std::fabs(n::GET_WEAPON_TIME_BETWEEN_SHOTS(w) - want) > 1e-5f) {
+                mem::Write(info + lay.tbsOff, o.tbs);
+                o.tbsSet = false;
+                lay.rateBroken = true;
+                LOG("fire rate: the game did not use the changed value, fire rate is off");
+                Note("Fire rate could not change this game's weapons");
+            }
+        }
     } else if (o.tbsSet) {
         mem::Write(info + lay.tbsOff, o.tbs);
         o.tbsSet = false;
@@ -218,14 +232,10 @@ void TuneTick(uint32_t w) {
     }
 }
 
-void RecoilTick(uint32_t w) {
-    if (!On("no_recoil") || !st.alive || !IsGun(w)) {
-        noRecoilShake = false;
-        return;
-    }
-    bool busy = n::IS_PED_SHOOTING(st.ped) || n::IS_PLAYER_FREE_AIMING(st.player) || (seen.weapon == w && noRecoilShake);
-    if (!busy) return;
-    noRecoilShake = n::IS_PED_SHOOTING(st.ped) != 0;
+void RecoilTick(uint32_t w, int shots) {
+    if (!On("no_recoil") || !st.alive || !IsGun(w)) return;
+    if (shots > 0 || n::IS_PED_SHOOTING(st.ped)) lastShot = st.time;
+    if (st.time - lastShot > 0.4) return;
     if (n::IS_GAMEPLAY_CAM_SHAKING()) {
         n::SET_GAMEPLAY_CAM_SHAKE_AMPLITUDE(0.0f);
         n::STOP_GAMEPLAY_CAM_SHAKING(1);
@@ -243,8 +253,9 @@ int CountShots(uint32_t w, int clip, int total) {
 }
 
 void AmmoTick(uint32_t w, int& clip, int& total) {
+    static const uint32_t unarmed = Joaat("WEAPON_UNARMED");
     bool unlimited = On("unlimited_ammo") && st.alive;
-    if (!st.alive || !IsGun(w)) return;
+    if (!st.alive || !w || w == unarmed) return;
     if (unlimited) {
         int max = 0;
         if (n::GET_MAX_AMMO(st.ped, w, &max) && max > 0 && total < max) {
@@ -252,7 +263,7 @@ void AmmoTick(uint32_t w, int& clip, int& total) {
             total = n::GET_AMMO_IN_PED_WEAPON(st.ped, w);
         }
     }
-    if (On("no_reload") && !n::IS_PED_RELOADING(st.ped)) {
+    if (On("no_reload") && IsGun(w) && !n::IS_PED_RELOADING(st.ped)) {
         int maxClip = n::GET_MAX_AMMO_IN_CLIP(st.ped, w, 1);
         if (maxClip > 0 && clip >= 0 && clip < maxClip && total > clip) {
             int want = std::min(maxClip, total);
@@ -304,17 +315,18 @@ void WeaponsInit() {
 }
 
 void WeaponsTick() {
+    static const uint32_t unarmed = Joaat("WEAPON_UNARMED");
     uint32_t w = st.alive ? Selected() : 0;
-    int clip = -1, total = -1;
+    int clip = -1, total = -1, shots = 0;
+    if (w && w != unarmed) total = n::GET_AMMO_IN_PED_WEAPON(st.ped, w);
     if (w && IsGun(w)) {
         if (!n::GET_AMMO_IN_CLIP(st.ped, w, &clip)) clip = -1;
-        total = n::GET_AMMO_IN_PED_WEAPON(st.ped, w);
-        int shots = CountShots(w, clip, total);
+        shots = CountShots(w, clip, total);
         if (shots > 0) SilentShots(w, shots);
     }
     AmmoTick(w, clip, total);
     TuneTick(w);
-    RecoilTick(w);
+    RecoilTick(w, shots);
     seen.weapon = w;
     seen.clip = clip;
     seen.total = total;

@@ -318,8 +318,16 @@ inline int GET_VEHICLE_MODEL_NUMBER_OF_SEATS(uint32_t modelHash) {
     return shv::Invoke<int>(0x2AD93716F184EDA4ull, modelHash);
 }
 
+inline int GET_VEHICLE_PED_IS_ENTERING(int ped) {
+    return shv::Invoke<int>(0xF92691AED837A5FCull, ped);
+}
+
 inline int GET_VEHICLE_PED_IS_IN(int ped, int includeEntering) {
     return shv::Invoke<int>(0x9A9112A0FE9A4713ull, ped, includeEntering);
+}
+
+inline int GET_VEHICLE_PED_IS_TRYING_TO_ENTER(int ped) {
+    return shv::Invoke<int>(0x814FA8BE5449445Dull, ped);
 }
 
 inline int GET_VEHICLE_TYRES_CAN_BURST(int vehicle) {
@@ -446,10 +454,6 @@ inline int IS_PLAYER_DEAD(int player) {
     return shv::Invoke<int>(0x424D4687FA1E5652ull, player);
 }
 
-inline int IS_PLAYER_FREE_AIMING(int player) {
-    return shv::Invoke<int>(0x2E397FD2ECD37C87ull, player);
-}
-
 inline int IS_PLAYER_SWITCH_IN_PROGRESS() {
     return shv::Invoke<int>(0xD9D2CFFF49FAB35Full);
 }
@@ -572,6 +576,10 @@ inline void SET_CURRENT_PED_WEAPON(int ped, uint32_t weaponHash, int bForceInHan
 
 inline void SET_CURR_WEATHER_STATE(uint32_t weatherType1, uint32_t weatherType2, float percentWeather2) {
     shv::Invoke<void>(0x578C752848ECFA0Cull, weatherType1, weatherType2, percentWeather2);
+}
+
+inline void SET_DISABLE_HIGH_FALL_DEATH(int ped, int toggle) {
+    shv::Invoke<void>(0x711794453CFD692Bull, ped, toggle);
 }
 
 inline void SET_DISABLE_VEHICLE_PETROL_TANK_DAMAGE(int vehicle, int toggle) {

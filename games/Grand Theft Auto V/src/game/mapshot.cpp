@@ -192,7 +192,7 @@ void Stitch(const std::vector<uint8_t>& shot, int w, int h, int col, int row) {
 
 void LandNow() {
     if (!landing.active) return;
-    if (landing.entity && n::DOES_ENTITY_EXIST(landing.entity) && !On("noclip")) n::FREEZE_ENTITY_POSITION(landing.entity, 0);
+    if (landing.entity && n::DOES_ENTITY_EXIST(landing.entity)) n::FREEZE_ENTITY_POSITION(landing.entity, 0);
     if (st.player >= 0 && !On("god_mode")) n::SET_PLAYER_INVINCIBLE(st.player, landing.invincible ? 1 : 0);
     landing = Landing{};
 }

@@ -196,8 +196,12 @@ void ArmorRelease() {
         else
             n::SET_ENTITY_PROOFS(v, 0, 0, 0, 0, 0, 0, 0, 0);
         n::SET_ENTITY_CAN_BE_DAMAGED(v, armor.canDamage ? 1 : 0);
-        n::SET_VEHICLE_CAN_BE_VISIBLY_DAMAGED(v, 1);
         n::SET_VEHICLE_TYRES_CAN_BURST(v, armor.tyresBurst ? 1 : 0);
+        if (!armor.canDamage) {
+            armor = Armor{};
+            return;
+        }
+        n::SET_VEHICLE_CAN_BE_VISIBLY_DAMAGED(v, 1);
         n::SET_VEHICLE_WHEELS_CAN_BREAK(v, 1);
         n::SET_VEHICLE_ENGINE_CAN_DEGRADE(v, 1);
         n::SET_VEHICLE_CAN_BREAK(v, 1);

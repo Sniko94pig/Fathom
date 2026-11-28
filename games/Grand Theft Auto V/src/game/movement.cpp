@@ -74,6 +74,8 @@ void SettleOnGround(int e) {
     V3 p = n::GET_ENTITY_COORDS(e, false);
     float gz = 0;
     bool below = n::GET_GROUND_Z_FOR_3D_COORD(p.x, p.y, p.z + 1.0f, &gz, 0, 0) != 0;
+    float wh = 0;
+    if (below && n::GET_WATER_HEIGHT(p.x, p.y, p.z + 1.0f, &wh) && wh > gz) gz = wh;
     if (below && p.z - gz <= 3.0f) return;
     float top = 0;
     if (!below) {
@@ -105,7 +107,7 @@ void FlyTick() {
     bool vehicle = false;
     int e = On("fly") && !On("noclip") ? Target(vehicle) : 0;
     if (!e) {
-        FlyRelease(true);
+        FlyRelease(!On("noclip"));
         return;
     }
     if (fly.active && fly.entity != e) FlyRelease(true);
@@ -138,7 +140,7 @@ void FlyTick() {
         return;
     }
     if (!fly.flying) {
-        if (!(in.up > 0 || (airborne && in.any()))) return;
+        if (!(in.up > 0 || airborne)) return;
         fly.flying = true;
         n::SET_PED_CAN_RAGDOLL(e, 0);
         if (!airborne) {
@@ -163,14 +165,14 @@ void FlyTick() {
     if (!n::IS_PED_IN_PARACHUTE_FREE_FALL(e) && n::GET_PED_PARACHUTE_STATE(e) <= 0) n::TASK_SKY_DIVE(e, 1);
 }
 
-void ClipRelease() {
+void ClipRelease(bool settle) {
     if (!clip.active) return;
     int e = clip.entity;
     if (e && n::DOES_ENTITY_EXIST(e)) {
         n::FREEZE_ENTITY_POSITION(e, 0);
         if (!clip.collisionWasOff) n::SET_ENTITY_COLLISION(e, 1, 1);
         n::SET_ENTITY_VELOCITY(e, 0, 0, 0);
-        SettleOnGround(e);
+        if (settle) SettleOnGround(e);
     }
     clip = Clip{};
 }
@@ -179,10 +181,10 @@ void ClipTick() {
     bool vehicle = false;
     int e = On("noclip") ? Target(vehicle) : 0;
     if (!e) {
-        ClipRelease();
+        ClipRelease(!On("fly"));
         return;
     }
-    if (clip.active && clip.entity != e) ClipRelease();
+    if (clip.active && clip.entity != e) ClipRelease(true);
     if (!clip.active) {
         clip.active = true;
         clip.entity = e;
@@ -219,7 +221,7 @@ void MovementTick() {
 }
 
 void MovementOff() {
-    ClipRelease();
+    ClipRelease(true);
     FlyRelease(true);
 }
 

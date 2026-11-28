@@ -38,6 +38,7 @@ std::unordered_map<int, Frozen> frozen;
 
 struct Hidden {
     int vehicle = 0;
+    bool pedWasVisible = true;
 } hidden;
 
 const char* kMobWeapons[] = {"WEAPON_PISTOL", "WEAPON_MICROSMG", "WEAPON_PUMPSHOTGUN", "WEAPON_BAT", "WEAPON_KNIFE", "WEAPON_CROWBAR",
@@ -176,8 +177,7 @@ void KnockOut(int v) {
         int occ = n::GET_PED_IN_VEHICLE_SEAT(v, s, false);
         if (!occ || occ == st.ped || !n::DOES_ENTITY_EXIST(occ)) continue;
         n::CLEAR_PED_TASKS_IMMEDIATELY(occ);
-        n::SET_PED_CAN_RAGDOLL(occ, 1);
-        n::SET_PED_TO_RAGDOLL(occ, 5000, 5000, 0, 0, 0, 0);
+        if (n::CAN_PED_RAGDOLL(occ)) n::SET_PED_TO_RAGDOLL(occ, 5000, 5000, 0, 0, 0, 0);
     }
     V3 vel = n::GET_ENTITY_VELOCITY(v);
     n::SET_ENTITY_VELOCITY(v, vel.x + Rand(-6.0f, 6.0f), vel.y + Rand(-6.0f, 6.0f), vel.z + Rand(4.0f, 7.0f));
@@ -192,16 +192,21 @@ void TouchTick() {
         knocked.clear();
     }
     if (!rag && !freeze) return;
+    int entering = n::GET_VEHICLE_PED_IS_TRYING_TO_ENTER(st.ped);
+    int entering2 = n::GET_VEHICLE_PED_IS_ENTERING(st.ped);
+    auto boarding = [&](int veh) { return veh && (veh == entering || veh == entering2); };
     for (int ped : AllPeds()) {
         if (!Usable(ped) || InMyVehicle(ped)) continue;
         V3 p = n::GET_ENTITY_COORDS(ped, false);
         if (Dist(p, st.pos) > 9.0f) continue;
+        if (n::IS_PED_IN_ANY_VEHICLE(ped, 0) && boarding(n::GET_VEHICLE_PED_IS_IN(ped, 0))) continue;
         if (!Touching(ped)) continue;
         if (freeze) {
             if (frozen.count(ped) || n::IS_PED_IN_ANY_VEHICLE(ped, 0)) continue;
+            if (n::IS_ENTITY_A_MISSION_ENTITY(ped)) continue;
             Frozen f;
-            f.wasMission = n::IS_ENTITY_A_MISSION_ENTITY(ped) != 0;
-            if (!f.wasMission) n::SET_ENTITY_AS_MISSION_ENTITY(ped, 1, 1);
+            f.wasMission = false;
+            n::SET_ENTITY_AS_MISSION_ENTITY(ped, 1, 1);
             n::SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(ped, 1);
             n::TASK_STAND_STILL(ped, -1);
             n::FREEZE_ENTITY_POSITION(ped, 1);
@@ -210,14 +215,13 @@ void TouchTick() {
         }
         auto r = ragdolled.find(ped);
         if (r != ragdolled.end() && st.time - r->second < 1.5) continue;
-        if (n::IS_PED_RAGDOLL(ped)) continue;
-        n::SET_PED_CAN_RAGDOLL(ped, 1);
+        if (n::IS_PED_RAGDOLL(ped) || !n::CAN_PED_RAGDOLL(ped)) continue;
         n::SET_PED_TO_RAGDOLL(ped, 4000, 4000, 0, 0, 0, 0);
         ragdolled[ped] = st.time;
     }
     if (!rag) return;
     for (int v : AllVehicles()) {
-        if (!v || v == st.vehicle || !n::DOES_ENTITY_EXIST(v)) continue;
+        if (!v || v == st.vehicle || boarding(v) || !n::DOES_ENTITY_EXIST(v)) continue;
         if (Dist(n::GET_ENTITY_COORDS(v, false), st.pos) > 15.0f) continue;
         bool touch = n::IS_ENTITY_TOUCHING_ENTITY(v, st.ped) || (st.vehicle && n::IS_ENTITY_TOUCHING_ENTITY(v, st.vehicle));
         if (!touch) continue;
@@ -266,9 +270,12 @@ void HiddenTick() {
         return;
     }
     if (hidden.vehicle && hidden.vehicle != v) HiddenRelease();
-    hidden.vehicle = v;
+    if (hidden.vehicle != v) {
+        hidden.vehicle = v;
+        hidden.pedWasVisible = st.ped && n::IS_ENTITY_VISIBLE(st.ped);
+    }
     n::SET_ENTITY_VISIBLE(v, 0, 0);
-    if (st.ped && !n::IS_ENTITY_VISIBLE(st.ped)) n::SET_ENTITY_VISIBLE(st.ped, 1, 0);
+    if (hidden.pedWasVisible && !st.cutscene && st.ped && !n::IS_ENTITY_VISIBLE(st.ped)) n::SET_ENTITY_VISIBLE(st.ped, 1, 0);
 }
 
 }

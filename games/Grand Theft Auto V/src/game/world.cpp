@@ -44,8 +44,7 @@ struct Teleport {
     bool active = false;
     int entity = 0;
     bool vehicle = false;
-    float x = 0, y = 0;
-    int step = 0;
+    float x = 0, y = 0, hover = 0;
     double started = 0;
 } tp;
 
@@ -55,9 +54,14 @@ double nextMarkers = 0;
 
 struct Speed {
     bool scaled = false;
-    uintptr_t addr = 0;
+    std::vector<uintptr_t> addrs;
     bool probed = false;
     bool fast = false;
+    bool broken = false;
+    bool verified = false;
+    float written = 1.0f;
+    double checkStart = 0;
+    double gameTime = 0;
 } speed;
 
 bool clockPaused = false;
@@ -99,15 +103,17 @@ void StartTeleport(float x, float y, float z, bool useZ) {
         PutAt(e, vehicle, x, y, z);
         return;
     }
+    float approx = n::GET_APPROX_HEIGHT_FOR_POINT(x, y);
     tp.active = true;
     tp.entity = e;
     tp.vehicle = vehicle;
     tp.x = x;
     tp.y = y;
-    tp.step = 0;
+    tp.hover = (approx > -100.0f && approx < 1500.0f ? approx : 150.0f) + 5.0f;
     tp.started = st.time;
     n::FREEZE_ENTITY_POSITION(e, 1);
-    n::SET_FOCUS_POS_AND_VEL(x, y, 100.0f, 0, 0, 0);
+    n::SET_ENTITY_COORDS_NO_OFFSET(e, x, y, tp.hover, 0, 0, 0);
+    n::SET_FOCUS_POS_AND_VEL(x, y, tp.hover, 0, 0, 0);
 }
 
 void TeleportTick() {
@@ -116,21 +122,22 @@ void TeleportTick() {
         Finish(true);
         return;
     }
-    static const float kLadder[] = {950, 800, 650, 500, 400, 300, 200, 150, 100, 75, 50, 25, 10, 0};
-    float probe = kLadder[std::min(tp.step, 13)];
-    n::REQUEST_COLLISION_AT_COORD(tp.x, tp.y, probe);
-    n::SET_ENTITY_COORDS_NO_OFFSET(tp.entity, tp.x, tp.y, probe + 2.0f, 0, 0, 0);
+    n::FREEZE_ENTITY_POSITION(tp.entity, 1);
+    n::SET_ENTITY_COORDS_NO_OFFSET(tp.entity, tp.x, tp.y, tp.hover, 0, 0, 0);
+    n::REQUEST_COLLISION_AT_COORD(tp.x, tp.y, tp.hover);
+    n::SET_FOCUS_POS_AND_VEL(tp.x, tp.y, tp.hover, 0, 0, 0);
+    double age = st.time - tp.started;
+    bool loaded = n::HAS_COLLISION_LOADED_AROUND_ENTITY(tp.entity) != 0;
     float gz = 0;
-    if (n::GET_GROUND_Z_FOR_3D_COORD(tp.x, tp.y, probe + 50.0f, &gz, 0, 0) && gz != 0.0f) {
+    if ((loaded || age > 2.0) && n::GET_GROUND_Z_FOR_3D_COORD(tp.x, tp.y, 1000.0f, &gz, 0, 0) && gz != 0.0f) {
         float wh = 0;
-        if (n::GET_WATER_HEIGHT(tp.x, tp.y, gz + 50.0f, &wh) && wh > gz) gz = wh;
+        if (n::GET_WATER_HEIGHT(tp.x, tp.y, 1000.0f, &wh) && wh > gz) gz = wh;
         n::FREEZE_ENTITY_POSITION(tp.entity, 0);
         PutAt(tp.entity, tp.vehicle, tp.x, tp.y, gz + (tp.vehicle ? 1.5f : 1.0f));
         Finish(true);
         return;
     }
-    if (st.time - tp.started > 0.12 * (tp.step + 1)) ++tp.step;
-    if (tp.step < 14 && st.time - tp.started < 6.0) return;
+    if (age < 8.0) return;
     float wh = 0;
     float z = n::GET_APPROX_HEIGHT_FOR_POINT(tp.x, tp.y);
     if (n::GET_WATER_HEIGHT(tp.x, tp.y, 100.0f, &wh) && wh > z) z = wh;
@@ -193,44 +200,99 @@ void ProbeSpeed() {
         if (mem::Read(p, v) && v == 0.4375f) keep.push_back(p);
     }
     n::SET_TIME_SCALE(1.0f);
-    if (keep.size() == 1) {
-        speed.addr = keep[0];
-        LOG("game speed value found at game+0x%llX", (unsigned long long)(keep[0] - mem::GameBase()));
-    } else {
-        LOG("game speed value not found for speeds above 1x (%zu matches)", keep.size());
+    std::vector<uintptr_t> ones;
+    for (uintptr_t p : keep) {
+        float v = 0;
+        if (mem::Read(p, v) && v == 1.0f) ones.push_back(p);
     }
+    if (!ones.empty() && ones.size() <= 3) {
+        speed.addrs = ones;
+        for (uintptr_t p : ones) LOG("game speed value candidate at game+0x%llX", (unsigned long long)(p - mem::GameBase()));
+    } else {
+        LOG("game speed value not found for speeds above 1x (%zu matches)", ones.size());
+    }
+}
+
+void FastOff() {
+    if (speed.fast)
+        for (uintptr_t p : speed.addrs) mem::Write(p, 1.0f);
+    speed.fast = false;
+    speed.written = 1.0f;
+    speed.checkStart = 0;
+}
+
+void CapSpeed() {
+    FastOff();
+    n::SET_TIME_SCALE(1.0f);
+    speed.scaled = true;
+    speed.broken = true;
+    static bool told = false;
+    if (told) return;
+    told = true;
+    WithModel([](core::Model& m) {
+        if (core::Feature* f = m.find("game_speed")) {
+            f->max = 1.0f;
+            if (f->value > 1.0f) f->value = 1.0f;
+        }
+    });
+    Note("This game can't go faster than 1x, so Game speed now stops at 1x");
+    LOG("game speed above 1x is not possible, the slider now stops at 1x");
 }
 
 void SpeedTick() {
     float v = std::clamp(Value("game_speed"), 0.1f, 2.0f);
     bool off = std::fabs(v - 1.0f) < 0.001f;
     if (off) {
-        if (speed.fast && speed.addr) mem::Write(speed.addr, 1.0f);
-        if (speed.scaled || speed.fast) n::SET_TIME_SCALE(1.0f);
-        speed.scaled = speed.fast = false;
+        FastOff();
+        if (speed.scaled) n::SET_TIME_SCALE(1.0f);
+        speed.scaled = false;
         return;
     }
     if (v < 1.0f) {
-        if (speed.fast && speed.addr) mem::Write(speed.addr, 1.0f);
-        speed.fast = false;
+        FastOff();
         n::SET_TIME_SCALE(v);
         speed.scaled = true;
         return;
     }
-    if (!speed.probed) ProbeSpeed();
-    if (!speed.addr) {
-        n::SET_TIME_SCALE(1.0f);
-        speed.scaled = true;
-        static bool told = false;
-        if (!told) {
-            told = true;
-            Note("This game can't go faster than 1x");
-        }
+    if (speed.broken) {
+        CapSpeed();
         return;
     }
+    if (!speed.probed) ProbeSpeed();
+    if (speed.addrs.empty()) {
+        CapSpeed();
+        return;
+    }
+    for (uintptr_t p : speed.addrs) {
+        float cur = 0;
+        if (!mem::Read(p, cur) || (cur != 1.0f && cur != speed.written)) {
+            LOG("game speed value changed by the game (%.3f), stopping", cur);
+            CapSpeed();
+            return;
+        }
+    }
     n::SET_TIME_SCALE(1.0f);
-    mem::Write(speed.addr, v);
+    speed.scaled = true;
+    for (uintptr_t p : speed.addrs) mem::Write(p, v);
+    speed.written = v;
     speed.fast = true;
+    if (speed.verified) return;
+    if (speed.checkStart == 0) {
+        speed.checkStart = st.time;
+        speed.gameTime = 0;
+        return;
+    }
+    speed.gameTime += n::GET_FRAME_TIME();
+    double real = st.time - speed.checkStart;
+    if (real < 1.5) return;
+    double ratio = speed.gameTime / real;
+    if (ratio >= 1.0 + 0.5 * (v - 1.0)) {
+        speed.verified = true;
+        LOG("game speed above 1x works (measured %.2fx)", ratio);
+    } else {
+        LOG("game speed above 1x had no effect (measured %.2fx)", ratio);
+        CapSpeed();
+    }
 }
 
 void ClockTick() {
@@ -282,9 +344,9 @@ void WorldTick() {
 
 void WorldOff() {
     if (tp.active) Finish(true);
-    if (speed.fast && speed.addr) mem::Write(speed.addr, 1.0f);
-    if (speed.scaled || speed.fast) n::SET_TIME_SCALE(1.0f);
-    speed.scaled = speed.fast = false;
+    FastOff();
+    if (speed.scaled) n::SET_TIME_SCALE(1.0f);
+    speed.scaled = false;
     if (clockPaused) n::PAUSE_CLOCK(0);
     clockPaused = false;
 }

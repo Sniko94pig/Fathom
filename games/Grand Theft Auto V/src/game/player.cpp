@@ -50,10 +50,11 @@ void WriteProofs(int ped, const Proofs& p) {
 
 void GodRelease() {
     if (!god.active) return;
-    if (god.player >= 0) n::SET_PLAYER_INVINCIBLE(god.player, god.wasInvincible ? 1 : 0);
+    if (god.player >= 0 && !MapshotBusy()) n::SET_PLAYER_INVINCIBLE(god.player, god.wasInvincible ? 1 : 0);
     if (god.ped && n::DOES_ENTITY_EXIST(god.ped)) {
         if (god.haveProofs) WriteProofs(god.ped, god.proofs);
         else WriteProofs(god.ped, Proofs{});
+        n::SET_DISABLE_HIGH_FALL_DEATH(god.ped, 0);
     }
     god = God{};
 }
@@ -75,6 +76,7 @@ void GodTick() {
     }
     n::SET_PLAYER_INVINCIBLE(st.player, 1);
     n::SET_ENTITY_PROOFS(st.ped, 1, 1, 1, 1, 1, 1, 1, 1);
+    n::SET_DISABLE_HIGH_FALL_DEATH(st.ped, 1);
     if (st.alive) {
         int hp = n::GET_ENTITY_HEALTH(st.ped), max = n::GET_ENTITY_MAX_HEALTH(st.ped);
         if (max > 0 && hp < max) n::SET_ENTITY_HEALTH(st.ped, max, 0, 0);

@@ -92,7 +92,7 @@ void Snapshot() {
     std::lock_guard<std::mutex> g(reqLock);
     pressedNow.swap(pressedQueue);
     pressedQueue.clear();
-    postNow.swap(postQueue);
+    for (auto& fn : postQueue) postNow.push_back(std::move(fn));
     postQueue.clear();
 }
 
