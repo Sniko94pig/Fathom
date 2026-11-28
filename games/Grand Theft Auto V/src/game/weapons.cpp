@@ -256,7 +256,21 @@ void AmmoTick(uint32_t w, int& clip, int& total) {
         int maxClip = n::GET_MAX_AMMO_IN_CLIP(st.ped, w, 1);
         if (maxClip > 0 && clip >= 0 && clip < maxClip && total > clip) {
             int want = std::min(maxClip, total);
-            if (n::SET_AMMO_IN_CLIP(st.ped, w, want)) clip = want;
+            int before = total;
+            if (n::SET_AMMO_IN_CLIP(st.ped, w, want)) {
+                clip = want;
+                int after = n::GET_AMMO_IN_PED_WEAPON(st.ped, w);
+                if (after > before && !unlimited) {
+                    n::SET_PED_AMMO(st.ped, w, before, 0);
+                    after = n::GET_AMMO_IN_PED_WEAPON(st.ped, w);
+                    static bool told = false;
+                    if (!told) {
+                        told = true;
+                        LOG("no reload: refilling the magazine added rounds, the total is put back each time");
+                    }
+                }
+                total = after;
+            }
         }
     }
 }
