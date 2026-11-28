@@ -20,6 +20,7 @@ struct State {
     bool cutscene = false;
     bool switching = false;
     bool faded = false;
+    bool loading = false;
     int character = -1;
     uint32_t model = 0;
     V3 pos;

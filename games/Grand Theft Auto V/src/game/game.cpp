@@ -67,10 +67,11 @@ void Refresh() {
     bool exists = st.ped && n::DOES_ENTITY_EXIST(st.ped);
     st.alive = exists && !n::IS_ENTITY_DEAD(st.ped, false) && !n::IS_PLAYER_DEAD(st.player);
     st.vehicle = exists && n::IS_PED_IN_ANY_VEHICLE(st.ped, false) ? n::GET_VEHICLE_PED_IS_IN(st.ped, false) : 0;
-    st.driver = st.vehicle && n::GET_PED_IN_VEHICLE_SEAT(st.vehicle, -1, false) == st.ped;
+    st.driver = st.vehicle && !n::IS_VEHICLE_SEAT_FREE(st.vehicle, -1, 0) && n::GET_PED_IN_VEHICLE_SEAT(st.vehicle, -1, false) == st.ped;
     st.cutscene = n::IS_CUTSCENE_PLAYING() != 0;
     st.switching = n::IS_PLAYER_SWITCH_IN_PROGRESS() != 0;
     st.faded = n::IS_SCREEN_FADED_OUT() != 0;
+    st.loading = n::GET_IS_LOADING_SCREEN_ACTIVE() != 0;
     st.model = exists ? (uint32_t)n::GET_ENTITY_MODEL(st.ped) : 0;
     static const uint32_t michael = Joaat("player_zero"), franklin = Joaat("player_one"), trevor = Joaat("player_two");
     st.character = st.model == michael ? 0 : st.model == franklin ? 1 : st.model == trevor ? 2 : -1;
@@ -154,6 +155,10 @@ void Tick() {
         return;
     }
     if (st.menuOpen && st.menuFocused) n::DISABLE_ALL_CONTROL_ACTIONS(0);
+    if (st.loading) {
+        pressedNow.clear();
+        return;
+    }
     for (auto& fn : postNow) {
         if (fn) fn();
     }

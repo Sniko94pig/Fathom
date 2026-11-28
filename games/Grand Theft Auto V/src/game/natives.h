@@ -143,8 +143,8 @@ inline uint32_t GET_DLC_VEHICLE_MODEL(int dlcVehicleIndex) {
     return shv::Invoke<uint32_t>(0xECC01B7C5763333Cull, dlcVehicleIndex);
 }
 
-inline int GET_DLC_WEAPON_DATA(int dlcWeaponIndex, void* outData) {
-    return shv::Invoke<int>(0x79923CD21BECE14Eull, dlcWeaponIndex, outData);
+inline int GET_DLC_WEAPON_DATA_SP(int dlcWeaponIndex, void* outData) {
+    return shv::Invoke<int>(0x310836EE7129BA33ull, dlcWeaponIndex, outData);
 }
 
 inline int GET_ENTITY_CAN_BE_DAMAGED(int entity) {
@@ -228,6 +228,10 @@ inline int GET_GROUND_Z_FOR_3D_COORD(float x, float y, float z, float* groundZ, 
     return shv::Invoke<int>(0xC906A7DAB05C8D2Bull, x, y, z, groundZ, ignoreWater, p5);
 }
 
+inline int GET_IS_LOADING_SCREEN_ACTIVE() {
+    return shv::Invoke<int>(0x10D0A8F259E93EC9ull);
+}
+
 inline int GET_MAX_AMMO(int ped, uint32_t weaponHash, int* ammo) {
     return shv::Invoke<int>(0xDC16122C7A20C933ull, ped, weaponHash, ammo);
 }
@@ -248,8 +252,8 @@ inline int GET_NUM_DLC_VEHICLES() {
     return shv::Invoke<int>(0xA7A866D21CD2329Bull);
 }
 
-inline int GET_NUM_DLC_WEAPONS() {
-    return shv::Invoke<int>(0xEE47635F352DA367ull);
+inline int GET_NUM_DLC_WEAPONS_SP() {
+    return shv::Invoke<int>(0x4160B65AE085B5A9ull);
 }
 
 inline V3 GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(int entity, float offsetX, float offsetY, float offsetZ) {
@@ -344,6 +348,10 @@ inline float GET_WEAPON_TIME_BETWEEN_SHOTS(uint32_t weaponHash) {
 
 inline void GIVE_WEAPON_TO_PED(int ped, uint32_t weaponHash, int ammoCount, int isHidden, int bForceInHand) {
     shv::Invoke<void>(0xBF0FD6E56C964FCBull, ped, weaponHash, ammoCount, isHidden, bForceInHand);
+}
+
+inline int HAS_COLLISION_LOADED_AROUND_ENTITY(int entity) {
+    return shv::Invoke<int>(0xE9676F61BC0B3321ull, entity);
 }
 
 inline int HAS_MODEL_LOADED(uint32_t model) {
@@ -460,6 +468,10 @@ inline int IS_THIS_MODEL_A_TRAIN(uint32_t model) {
 
 inline int IS_VEHICLE_DRIVEABLE(int vehicle, int isOnFireCheck) {
     return shv::Invoke<int>(0x4C241E39B23DF959ull, vehicle, isOnFireCheck);
+}
+
+inline int IS_VEHICLE_SEAT_FREE(int vehicle, int seatIndex, int isTaskRunning) {
+    return shv::Invoke<int>(0x22AC59A870E6A669ull, vehicle, seatIndex, isTaskRunning);
 }
 
 inline int IS_WAYPOINT_ACTIVE() {
@@ -640,6 +652,10 @@ inline void SET_PED_AS_NO_LONGER_NEEDED(int* ped) {
 
 inline void SET_PED_CAN_RAGDOLL(int ped, int toggle) {
     shv::Invoke<void>(0xB128377056A54E2Aull, ped, toggle);
+}
+
+inline void SET_PED_COMBAT_ABILITY(int ped, int abilityLevel) {
+    shv::Invoke<void>(0xC7622C0D36B2FDA8ull, ped, abilityLevel);
 }
 
 inline void SET_PED_COMBAT_ATTRIBUTES(int ped, int attributeId, int enabled) {

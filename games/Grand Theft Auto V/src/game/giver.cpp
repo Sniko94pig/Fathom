@@ -53,11 +53,11 @@ void BuildList() {
         weaponNames[h] = w.name;
         items.push_back({"w:" + std::to_string(h), w.name, w.category});
     }
-    int dlc = n::GET_NUM_DLC_WEAPONS();
+    int dlc = n::GET_NUM_DLC_WEAPONS_SP();
     int added = 0;
     for (int i = 0; i < dlc && i < 1024; ++i) {
         alignas(8) uint8_t data[512] = {};
-        if (!n::GET_DLC_WEAPON_DATA(i, data)) continue;
+        if (!n::GET_DLC_WEAPON_DATA_SP(i, data)) continue;
         uint32_t h = 0;
         std::memcpy(&h, data + 8, 4);
         if (!h || !n::IS_WEAPON_VALID(h) || !seen.insert(h).second) continue;

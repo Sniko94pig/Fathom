@@ -270,7 +270,7 @@ void Steal() {
         Note("No car nearby to steal");
         return;
     }
-    int driver = n::GET_PED_IN_VEHICLE_SEAT(best, -1, false);
+    int driver = n::IS_VEHICLE_SEAT_FREE(best, -1, 0) ? 0 : n::GET_PED_IN_VEHICLE_SEAT(best, -1, false);
     if (driver && driver != st.ped && n::DOES_ENTITY_EXIST(driver)) {
         n::CLEAR_PED_TASKS_IMMEDIATELY(driver);
         n::SET_PED_TO_RAGDOLL(driver, 3000, 3000, 0, 0, 0, 0);

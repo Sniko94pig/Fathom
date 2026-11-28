@@ -72,7 +72,6 @@ void FlingTick() {
     for (auto it = flung.begin(); it != flung.end();) it = st.time - it->second > 30.0 ? flung.erase(it) : std::next(it);
     for (int v : AllVehicles()) {
         if (!v || v == st.vehicle || !n::DOES_ENTITY_EXIST(v)) continue;
-        if (n::GET_PED_IN_VEHICLE_SEAT(v, -1, false) == st.ped) continue;
         V3 p = n::GET_ENTITY_COORDS(v, false);
         if (Dist(p, st.pos) > 35.0f) continue;
         auto f = flung.find(v);
@@ -90,8 +89,9 @@ void MobCalm(int ped, const MobMember& m) {
     if (!n::DOES_ENTITY_EXIST(ped) || n::IS_PED_DEAD_OR_DYING(ped, 1)) return;
     n::SET_PED_RELATIONSHIP_GROUP_HASH(ped, m.group);
     if (m.gave) n::REMOVE_WEAPON_FROM_PED(ped, m.gave);
-    n::SET_PED_COMBAT_ATTRIBUTES(ped, 46, 0);
     n::SET_PED_COMBAT_ATTRIBUTES(ped, 5, 0);
+    n::SET_PED_COMBAT_ATTRIBUTES(ped, 46, 0);
+    n::SET_PED_COMBAT_ATTRIBUTES(ped, 58, 0);
     n::SET_PED_KEEP_TASK(ped, 0);
     n::CLEAR_PED_TASKS(ped);
     n::TASK_WANDER_STANDARD(ped, 10.0f, 10);
@@ -155,8 +155,11 @@ void MobTick() {
             n::SET_CURRENT_PED_WEAPON(ped, w, 1);
         }
         n::SET_PED_RELATIONSHIP_GROUP_HASH(ped, mob.group);
-        n::SET_PED_COMBAT_ATTRIBUTES(ped, 46, 1);
         n::SET_PED_COMBAT_ATTRIBUTES(ped, 5, 1);
+        n::SET_PED_COMBAT_ATTRIBUTES(ped, 46, 1);
+        n::SET_PED_COMBAT_ATTRIBUTES(ped, 58, 1);
+        n::SET_PED_COMBAT_ATTRIBUTES(ped, 17, 0);
+        n::SET_PED_COMBAT_ABILITY(ped, 2);
         n::SET_PED_FLEE_ATTRIBUTES(ped, 0, 0);
         n::SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(ped, 0);
         n::TASK_COMBAT_HATED_TARGETS_AROUND_PED(ped, 60.0f, 0);
@@ -169,13 +172,16 @@ void MobTick() {
 void KnockOut(int v) {
     int seats = n::GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS(v);
     for (int s = -1; s < seats && s < 16; ++s) {
+        if (n::IS_VEHICLE_SEAT_FREE(v, s, 0)) continue;
         int occ = n::GET_PED_IN_VEHICLE_SEAT(v, s, false);
         if (!occ || occ == st.ped || !n::DOES_ENTITY_EXIST(occ)) continue;
         n::CLEAR_PED_TASKS_IMMEDIATELY(occ);
         n::SET_PED_CAN_RAGDOLL(occ, 1);
         n::SET_PED_TO_RAGDOLL(occ, 5000, 5000, 0, 0, 0, 0);
     }
-    n::APPLY_FORCE_TO_ENTITY(v, 1, Rand(-3, 3), Rand(-3, 3), Rand(5.0f, 8.0f), Rand(-1, 1), Rand(-1, 1), 0.0f, 0, 0, 1, 1, 0, 1);
+    V3 vel = n::GET_ENTITY_VELOCITY(v);
+    n::SET_ENTITY_VELOCITY(v, vel.x + Rand(-6.0f, 6.0f), vel.y + Rand(-6.0f, 6.0f), vel.z + Rand(4.0f, 7.0f));
+    n::APPLY_FORCE_TO_ENTITY(v, 1, 0.0f, 0.0f, Rand(1.0f, 2.0f), Rand(-1.5f, 1.5f), Rand(-1.5f, 1.5f), 0.0f, 0, 0, 1, 1, 0, 1);
 }
 
 void TouchTick() {

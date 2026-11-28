@@ -46,6 +46,13 @@ struct Scan {
     Saved saved;
 } scan;
 
+struct Landing {
+    bool active = false;
+    int entity = 0;
+    bool invincible = false;
+    double until = 0;
+} landing;
+
 std::vector<uint8_t> image;
 std::mutex imageLock;
 std::atomic<int> ask{0};
@@ -123,6 +130,24 @@ void Stitch(const std::vector<uint8_t>& shot, int w, int h, int col, int row) {
     }
 }
 
+void LandNow() {
+    if (!landing.active) return;
+    if (landing.entity && n::DOES_ENTITY_EXIST(landing.entity) && !On("noclip")) n::FREEZE_ENTITY_POSITION(landing.entity, 0);
+    if (st.player >= 0 && !On("god_mode")) n::SET_PLAYER_INVINCIBLE(st.player, landing.invincible ? 1 : 0);
+    landing = Landing{};
+}
+
+void LandTick() {
+    if (!landing.active) return;
+    if (!landing.entity || !n::DOES_ENTITY_EXIST(landing.entity)) {
+        LandNow();
+        return;
+    }
+    V3 p = n::GET_ENTITY_COORDS(landing.entity, false);
+    n::REQUEST_COLLISION_AT_COORD(p.x, p.y, p.z);
+    if (n::HAS_COLLISION_LOADED_AROUND_ENTITY(landing.entity) || st.time > landing.until) LandNow();
+}
+
 void Finish(bool complete) {
     if (!scan.active) return;
     overlay::CancelShot();
@@ -136,8 +161,10 @@ void Finish(bool complete) {
     if (scan.saved.weather1) n::SET_CURR_WEATHER_STATE(scan.saved.weather1, scan.saved.weather2, scan.saved.weatherMix);
     n::SET_CLOCK_TIME(scan.saved.hour, scan.saved.minute, scan.saved.second);
     if (!On("stop_time")) n::PAUSE_CLOCK(0);
-    if (scan.saved.frozen && n::DOES_ENTITY_EXIST(scan.saved.frozen) && !On("noclip")) n::FREEZE_ENTITY_POSITION(scan.saved.frozen, 0);
-    if (st.player >= 0 && !On("god_mode")) n::SET_PLAYER_INVINCIBLE(st.player, scan.saved.invincible ? 1 : 0);
+    landing.active = true;
+    landing.entity = scan.saved.frozen;
+    landing.invincible = scan.saved.invincible;
+    landing.until = st.time + 6.0;
     int w = kCols * kPx, h = kRows * kPx;
     if (scan.done > 0) {
         std::vector<uint8_t> copy;
@@ -156,6 +183,7 @@ void Finish(bool complete) {
 
 void Begin() {
     if (scan.active) return;
+    LandNow();
     if (!st.ped || !st.alive || st.cutscene || st.switching) {
         Note("The map scan needs your character to be in control");
         return;
@@ -297,11 +325,15 @@ void MapshotTick() {
     if (a == 1) Begin();
     if (a == 2 && scan.active) Finish(false);
     Step();
+    LandTick();
 }
 
-void MapshotOff() { Finish(false); }
+void MapshotOff() {
+    Finish(false);
+    LandNow();
+}
 
-bool MapshotBusy() { return scan.active; }
+bool MapshotBusy() { return scan.active || landing.active; }
 
 bool MapshotWriting() { return workers.load() > 0; }
 
