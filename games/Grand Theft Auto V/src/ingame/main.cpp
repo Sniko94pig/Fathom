@@ -245,10 +245,22 @@ DWORD WINAPI MainThread(void*) {
         lastText = core::SettingsText(model);
     }
     auto knownTime = FileTime(settingsFile);
-    ULONGLONG lastSync = 0, lastGuard = GetTickCount64();
+    ULONGLONG lastSync = 0, lastGuard = GetTickCount64(), attachedAt = GetTickCount64();
+    bool silentWarned = false;
     while (!unloadRequested) {
         Sleep(50);
         ULONGLONG now = GetTickCount64();
+        if (!silentWarned && !game::Ticking() && now - attachedAt > 20000) {
+            silentWarned = true;
+            LOG("Script Hook V has not started the menu's game loop after 20 seconds");
+            std::lock_guard<std::mutex> g(modelLock);
+            for (core::Feature& f : model.features) {
+                if (!f.counts) continue;
+                f.available = false;
+                f.missing = "Script Hook V did not start the menu";
+            }
+            if (menu) menu->Notify("Script Hook V did not start the menu. See the Fathom log", ICON_TRIANGLE_ALERT);
+        }
         std::string leave;
         if (game::WantsUnload(leave)) {
             LOG("%s", leave.c_str());

@@ -358,6 +358,8 @@ void Detach(void* module) {
     Sleep(500);
 }
 
+bool Ticking() { return ticking.load(); }
+
 bool WantsUnload(std::string& why) {
     if (!leave) return false;
     std::lock_guard<std::mutex> g(leaveLock);

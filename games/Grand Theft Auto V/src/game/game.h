@@ -14,6 +14,7 @@ bool Attach(void* module);
 bool Shutdown();
 void Detach(void* module);
 bool WantsUnload(std::string& why);
+bool Ticking();
 std::vector<std::string> TakeNotes();
 void SetMenuState(bool open, bool focused, bool mapVisible);
 
