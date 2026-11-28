@@ -13,6 +13,7 @@
 #include "core/ultrakill_features.h"
 #include "core/gd_features.h"
 #include "core/bl3_features.h"
+#include "core/gtav_features.h"
 #include "launcher/prefs.h"
 #include "launcher/backups.h"
 #include "ui/icons.h"
@@ -320,6 +321,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     core::LoadSettings(bl3Model);
     std::string bl3LastText = core::SettingsText(bl3Model);
     auto bl3KnownTime = FileTime(bl3SettingsPath);
+    core::Model gtavModel;
+    gtav::BuildFeatures(gtavModel);
+    gtavModel.settingsPath = Narrow((std::filesystem::path(ExeDir()) / L"gtav-settings.json").wstring());
+    gtavModel.openUrl = model.openUrl;
+    core::LoadSettings(gtavModel);
+    std::string gtavLastText = core::SettingsText(gtavModel);
 
     ui::Loader loader;
     loader.version = FATHOM_VERSION;
@@ -395,7 +402,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ui::Menu ukMenu(ukModel);
     ui::Menu gdMenu(gdModel);
     ui::Menu bl3Menu(bl3Model);
-    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu, &ukMenu, &gdMenu, &bl3Menu })
+    ui::Menu gtavMenu(gtavModel);
+    for (ui::Menu* mm : { &mainMenu, &sn1Menu, &sotfMenu, &mcMenu, &ukMenu, &gdMenu, &bl3Menu, &gtavMenu })
     {
         mm->embedded = true;
         mm->homePage = [&home, mm] {
@@ -408,7 +416,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         mm->homeIcon = ICON_LAYERS;
         mm->onHome = true;
         mm->showGameTabs = false;
-        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; gdMenu.onHome = true; bl3Menu.onHome = true; };
+        mm->onBack = [&] { home.game = -1; mainMenu.onHome = true; sn1Menu.onHome = true; sotfMenu.onHome = true; mcMenu.onHome = true; ukMenu.onHome = true; gdMenu.onHome = true; bl3Menu.onHome = true; gtavMenu.onHome = true; };
         mm->loader = &loader;
         mm->uiScale = loader.s.scale * g_dpi;
     }
@@ -554,6 +562,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
     ukModel.logoTexture = model.logoTexture;
     gdModel.logoTexture = model.logoTexture;
     bl3Model.logoTexture = model.logoTexture;
+    gtavModel.logoTexture = model.logoTexture;
 
     std::thread worker;
     std::atomic<bool> workerDone{ false };
@@ -598,7 +607,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         bool ukOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "ultrakill") == 0;
         bool gdOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "geometrydash") == 0;
         bool bl3Open = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "borderlands3") == 0;
-        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : ukOpen ? ukMenu : gdOpen ? gdMenu : bl3Open ? bl3Menu : mainMenu;
+        bool gtavOpen = home.game >= 0 && home.game < (int)games.size() && strcmp(games[home.game].id, "gtav") == 0;
+        ui::Menu& menu = sn1Open ? sn1Menu : sotfOpen ? sotfMenu : mcOpen ? mcMenu : ukOpen ? ukMenu : gdOpen ? gdMenu : bl3Open ? bl3Menu : gtavOpen ? gtavMenu : mainMenu;
         ULONGLONG now = GetTickCount64();
         if (now - lastPoll >= 1000)
         {
@@ -691,7 +701,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         {
             bool inGame = home.game >= 0 && home.game < (int)games.size();
             bool sn2 = inGame && strcmp(games[home.game].id, "subnautica2") == 0;
-            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen || ukOpen || gdOpen || bl3Open;
+            menu.showGameTabs = sn2 || sn1Open || sotfOpen || mcOpen || ukOpen || gdOpen || bl3Open || gtavOpen;
             menu.homeName = inGame ? games[home.game].name : "Games";
             menu.homeIcon = inGame ? ICON_PLAY : ICON_LAYERS;
             menu.backName = inGame ? (mainMenu.homeIndex == 1 ? "My games" : "All games") : nullptr;
@@ -703,7 +713,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
                 mainMenu.homeTabs.push_back({ "Maps", ICON_MAP });
                 mainMenu.homeTabs.push_back({ "Help", ICON_CIRCLE_HELP });
             }
-            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : gdOpen ? gdModel : bl3Open ? bl3Model : model;
+            const core::Model& keyModel = sn1Open ? sn1Model : sotfOpen ? sotfModel : mcOpen ? mcModel : ukOpen ? ukModel : gdOpen ? gdModel : bl3Open ? bl3Model : gtavOpen ? gtavModel : model;
             home.openKey = core::KeyName(keyModel.keyOpen);
             home.showSoon = loader.s.showSoon;
             home.installedFirst = loader.s.installedFirst;
@@ -770,6 +780,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
             {
                 menu.status = home.bl3State == inject::GameState::Injected ? "Menu active in game" : home.bl3State == inject::GameState::Running ? "Game running" : "Game not running";
                 menu.statusGood = home.bl3State != inject::GameState::NotRunning;
+            }
+            else if (gtavOpen)
+            {
+                menu.status = "Being built";
+                menu.statusGood = false;
             }
             else
             {
@@ -1117,6 +1132,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         ukModel.requestUnload = false;
         gdModel.requestUnload = false;
         bl3Model.requestUnload = false;
+        gtavModel.requestUnload = false;
         ImGui::Render();
 
         FrameContext* frameCtx = WaitForNextFrameContext();
@@ -1170,6 +1186,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmd, int)
         core::SaveSettings(gdModel);
     if (core::SettingsText(bl3Model) != bl3LastText)
         core::SaveSettings(bl3Model);
+    if (core::SettingsText(gtavModel) != gtavLastText)
+        core::SaveSettings(gtavModel);
 
     launcher::art::Stop();
     launcher::maps::Stop();

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(fathom LANGUAGES C CXX)
-set(FATHOM_VERSION 1.16.1)
+set(FATHOM_VERSION 1.16.2)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +37,7 @@ set(MC "${CMAKE_SOURCE_DIR}/games/Minecraft Java/src")
 set(UK "${CMAKE_SOURCE_DIR}/games/ULTRAKILL/src")
 set(GD "${CMAKE_SOURCE_DIR}/games/Geometry Dash/src")
 set(BL3 "${CMAKE_SOURCE_DIR}/games/Borderlands 3/src")
+set(GTAV "${CMAKE_SOURCE_DIR}/games/Grand Theft Auto V/src")
 set(GEN ${CMAKE_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${GEN})
 function(fathom_embed out name file)
@@ -72,8 +73,8 @@ target_include_directories(fathom_ui PUBLIC
   ${json_SOURCE_DIR}/single_include ${stb_SOURCE_DIR} src ${SN2})
 target_compile_definitions(fathom_ui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS)
 
-add_executable(fathom_shots src/preview/shots.cpp src/launcher/map_places.cpp src/launcher/map_info.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp ${GD}/core/gd_features.cpp ${BL3}/core/bl3_features.cpp)
-target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF} ${MC} ${UK} ${GD} ${BL3})
+add_executable(fathom_shots src/preview/shots.cpp src/launcher/map_places.cpp src/launcher/map_info.cpp ${SN2}/preview/sample.cpp ${SN1}/core/sn1_features.cpp ${SOTF}/core/sotf_features.cpp ${MC}/core/mc_features.cpp ${MC}/core/mc_live.cpp ${UK}/core/ultrakill_features.cpp ${GD}/core/gd_features.cpp ${BL3}/core/bl3_features.cpp ${GTAV}/core/gtav_features.cpp)
+target_include_directories(fathom_shots PRIVATE ${stb_SOURCE_DIR} ${SN1} ${SOTF} ${MC} ${UK} ${GD} ${BL3} ${GTAV})
 target_link_libraries(fathom_shots PRIVATE fathom_ui)
 if(WIN32)
   target_sources(fathom_shots PRIVATE src/launcher/logview.cpp src/launcher/home.cpp ${SN2}/launcher/inject.cpp src/launcher/games.cpp src/launcher/art.cpp)
@@ -111,13 +112,14 @@ if(WIN32)
     ${UK}/core/ultrakill_features.cpp
     ${GD}/core/gd_features.cpp
     ${BL3}/core/bl3_features.cpp
+    ${GTAV}/core/gtav_features.cpp
     src/launcher/backups.cpp
     src/launcher/app.rc
     src/common/dx12_texture.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
   set_target_properties(fathom_launcher PROPERTIES OUTPUT_NAME Fathom)
-  target_include_directories(fathom_launcher PRIVATE ${SN1} ${SOTF} ${MC} ${UK} ${GD} ${BL3})
+  target_include_directories(fathom_launcher PRIVATE ${SN1} ${SOTF} ${MC} ${UK} ${GD} ${BL3} ${GTAV})
   target_compile_definitions(fathom_launcher PRIVATE NOMINMAX _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING FATHOM_VERSION="${FATHOM_VERSION}")
   target_link_libraries(fathom_launcher PRIVATE fathom_ui d3d12 dxgi d3dcompiler dwmapi urlmon ole32 wininet advapi32 bcrypt)
 
@@ -177,6 +179,9 @@ if(WIN32)
   endif()
   if(EXISTS "${BL3}/CMakeLists.txt")
     add_subdirectory("${BL3}")
+  endif()
+  if(EXISTS "${GTAV}/CMakeLists.txt")
+    add_subdirectory("${GTAV}")
   endif()
 
   find_package(Java 17 COMPONENTS Development Runtime)

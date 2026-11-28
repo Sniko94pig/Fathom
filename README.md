@@ -24,6 +24,7 @@ Every game has its own folder in [games](games).
 | [Dying Light](<games/Dying Light>) | Coming soon |
 | [Escape the Backrooms](<games/Escape the Backrooms>), [Hello Neighbor](<games/Hello Neighbor>), [Poppy Playtime](<games/Poppy Playtime>) | Coming soon |
 | [Schedule I](<games/Schedule I>) | Coming soon |
+| [Grand Theft Auto V](<games/Grand Theft Auto V>) | Being built, Story Mode only |
 
 The Subnautica 2 menu has survival cheats, no-clip and fly, a free camera, creature and item ESP, an item spawner, a photo map of the seabed with teleport, base tools, and a Legit Run mode that unlocks things the normal way, step by step.
 

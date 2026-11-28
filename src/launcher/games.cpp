@@ -26,6 +26,7 @@ const std::vector<GameDef>& Games() {
         {"fallout4", "Fallout 4", 377160, "FO4", false},
         {"falloutnv", "Fallout: New Vegas", 22380, "FNV", false},
         {"geometrydash", "Geometry Dash", 322170, "GD", true},
+        {"gtav", "Grand Theft Auto V", 3240220, "GTA", false, true},
         {"helloneighbor", "Hello Neighbor", 521890, "HN", false},
         {"icarus", "Icarus", 1149460, "ICA", false},
         {"minecraft", "Minecraft: Java Edition", -1, "MC", true, false, "https://www.minecraft.net/"},
@@ -122,6 +123,18 @@ std::vector<std::string> XboxFolders() {
 
 const char* kMinecraftApp = "shell:AppsFolder\\Microsoft.4297127D64EC6_8wekyb3d8bbwe!Minecraft";
 
+std::wstring RockstarFolder(const char* id) {
+    if (std::strcmp(id, "gtav") != 0) return {};
+    wchar_t buf[MAX_PATH] = {};
+    DWORD size = sizeof(buf);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Rockstar Games\\GTAV Enhanced", L"InstallFolder", RRF_RT_REG_SZ, nullptr, buf, &size) != ERROR_SUCCESS)
+        return {};
+    std::error_code ec;
+    fs::path dir(buf);
+    if (!fs::exists(dir / L"GTA5_Enhanced.exe", ec)) return {};
+    return dir.wstring();
+}
+
 }
 
 std::wstring LocalArt(int appId) {
@@ -135,6 +148,15 @@ std::wstring LocalArt(int appId) {
 }
 
 void StartGame(const GameDef& g) {
+    std::wstring rockstar = RockstarFolder(g.id);
+    if (!rockstar.empty() && !(g.appId > 0 && SteamInstalled(g.appId))) {
+        std::error_code ec;
+        fs::path play = fs::path(rockstar) / L"PlayGTAV.exe";
+        if (fs::exists(play, ec)) {
+            ShellExecuteW(nullptr, L"open", play.c_str(), nullptr, rockstar.c_str(), SW_SHOWNORMAL);
+            return;
+        }
+    }
     std::wstring url;
     if (g.appId > 0) url = L"steam://rungameid/" + std::to_wstring(g.appId);
     else if (std::strcmp(g.id, "minecraft") == 0) url = std::wstring(kMinecraftApp, kMinecraftApp + std::strlen(kMinecraftApp));
@@ -144,6 +166,7 @@ void StartGame(const GameDef& g) {
 
 const char* InstalledWith(const GameDef& g) {
     if (g.appId > 0 && SteamInstalled(g.appId)) return "Installed with Steam";
+    if (!RockstarFolder(g.id).empty()) return "Installed with the Rockstar Games Launcher";
     if (std::strcmp(g.id, "minecraft") == 0) {
         wchar_t buf[MAX_PATH];
         DWORD n = GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);

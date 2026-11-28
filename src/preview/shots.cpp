@@ -18,6 +18,7 @@
 #include "core/ultrakill_features.h"
 #include "core/gd_features.h"
 #include "core/bl3_features.h"
+#include "core/gtav_features.h"
 #include "ui/ui.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -713,6 +714,20 @@ int main(int argc, char** argv) {
              u.homeIcon = ICON_PLAY;
              u.onHome = true;
          }, ImVec2(0, 0), nullptr},
+        {"57-launcher-gtav", [&](core::Model& m, ui::Menu& u) {
+             static launcher::Home home;
+             LoadShotArt(home, outDir);
+             m = core::Model();
+             gtav::BuildFeatures(m);
+             home.game = launcher::FindGame("gtav");
+             u.embedded = true;
+             u.backName = "All games";
+             u.onBack = [] {};
+             u.homeName = "Grand Theft Auto V";
+             u.homePage = [] { home.Draw(); };
+             u.homeIcon = ICON_PLAY;
+             u.onHome = true;
+         }, ImVec2(0, 0), nullptr},
         {"30-launcher-minecraft", [&](core::Model& m, ui::Menu& u) {
              static launcher::Home home;
              LoadShotArt(home, outDir);
@@ -846,6 +861,31 @@ int main(int argc, char** argv) {
              m = core::Model();
              gd::BuildFeatures(m);
              u.tab = core::Tab::World;
+         }, ImVec2(0, 0), nullptr},
+        {"58-gtav-player", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             gtav::BuildFeatures(m);
+             u.tab = core::Tab::Survival;
+         }, ImVec2(0, 0), nullptr},
+        {"59-gtav-weapons", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             gtav::BuildFeatures(m);
+             u.tab = core::Tab::Crafting;
+         }, ImVec2(0, 0), nullptr},
+        {"60-gtav-vehicles", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             gtav::BuildFeatures(m);
+             u.tab = core::Tab::BaseHub;
+         }, ImVec2(0, 0), nullptr},
+        {"61-gtav-world", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             gtav::BuildFeatures(m);
+             u.tab = core::Tab::World;
+         }, ImVec2(0, 0), nullptr},
+        {"62-gtav-troll", [](core::Model& m, ui::Menu& u) {
+             m = core::Model();
+             gtav::BuildFeatures(m);
+             u.tab = core::Tab::Legit;
          }, ImVec2(0, 0), nullptr},
         {"23-sotf-player", [](core::Model& m, ui::Menu& u) {
              m = core::Model();
