@@ -1,8 +1,11 @@
 #include "ingame/guard.h"
 #include <windows.h>
 #include <tlhelp32.h>
+#include <cstdint>
+#include <cstdio>
 #include <cwctype>
 #include <string>
+#include <vector>
 
 namespace guard {
 
@@ -55,6 +58,25 @@ Report Check() {
 }
 
 bool Blocked(const Report& r) { return r.service || r.launcher || r.client || !r.flag; }
+
+std::string GameVersion() {
+    wchar_t path[MAX_PATH * 2] = {};
+    if (!GetModuleFileNameW(nullptr, path, MAX_PATH * 2)) return "unknown";
+    DWORD handle = 0;
+    DWORD size = GetFileVersionInfoSizeW(path, &handle);
+    if (!size) return "unknown";
+    std::vector<uint8_t> buf(size);
+    if (!GetFileVersionInfoW(path, 0, size, buf.data())) return "unknown";
+    VS_FIXEDFILEINFO* info = nullptr;
+    UINT len = 0;
+    if (!VerQueryValueW(buf.data(), L"\\", (void**)&info, &len) || !info) return "unknown";
+    char out[64];
+    snprintf(out, sizeof(out), "%u.%u.%u.%u", HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS), HIWORD(info->dwFileVersionLS),
+             LOWORD(info->dwFileVersionLS));
+    return out;
+}
+
+bool KnownVersion(const std::string& version) { return version.rfind("1.0.1158.", 0) == 0; }
 
 std::string Describe(const Report& r) {
     if (!Blocked(r)) return "BattlEye is off";

@@ -96,23 +96,6 @@ std::string BackupSaves() {
     }
 }
 
-std::string GameVersion() {
-    wchar_t path[MAX_PATH * 2] = {};
-    GetModuleFileNameW(nullptr, path, MAX_PATH * 2);
-    DWORD handle = 0;
-    DWORD size = GetFileVersionInfoSizeW(path, &handle);
-    if (!size) return "unknown";
-    std::vector<uint8_t> buf(size);
-    if (!GetFileVersionInfoW(path, 0, size, buf.data())) return "unknown";
-    VS_FIXEDFILEINFO* info = nullptr;
-    UINT len = 0;
-    if (!VerQueryValueW(buf.data(), L"\\", (void**)&info, &len) || !info) return "unknown";
-    char out[64];
-    snprintf(out, sizeof(out), "%u.%u.%u.%u", HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS), HIWORD(info->dwFileVersionLS),
-             LOWORD(info->dwFileVersionLS));
-    return out;
-}
-
 void Frame() {
     std::lock_guard<std::mutex> g(modelLock);
     if (!greeted) {
@@ -175,7 +158,7 @@ void Leave(const char* why) {
 
 DWORD WINAPI MainThread(void*) {
     glog::Open(dir + L"\\fathom.log");
-    LOG("Fathom for Grand Theft Auto V starting, game version %s", GameVersion().c_str());
+    LOG("Fathom for Grand Theft Auto V starting, game version %s", guard::GameVersion().c_str());
     guard::Report report = guard::Check();
     if (guard::Blocked(report)) {
         LOG("%s", guard::Describe(report).c_str());
@@ -332,6 +315,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI FathomInject(LPVOID) {
     dir = ModuleFolder();
     guard::Report report = guard::Check();
     if (guard::Blocked(report)) return Refuse(3, guard::Describe(report));
+    std::string version = guard::GameVersion();
+    if (!guard::KnownVersion(version)) return Refuse(6, "game version " + version + " has not been checked with this menu yet");
     std::wstring shvPath;
     if (!shv::Locate(dir, shvPath)) return Refuse(5, "ScriptHookV.dll was not found next to the menu file or in the game folder");
     HANDLE t = CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);

@@ -24,7 +24,6 @@ Feature& Add(Model& m, Tab tab, const char* group, const char* id, const char* l
     f.id = id;
     f.label = label;
     f.hint = hint;
-    f.building = true;
     m.features.push_back(std::move(f));
     return m.features.back();
 }
@@ -75,7 +74,7 @@ void BuildFeatures(Model& m) {
                    {World, "World", ICON_GLOBE},
                    {Troll, "Troll", ICON_SKULL}};
     m.categories = {"Pistols", "SMGs", "Shotguns", "Assault rifles", "Machine guns", "Sniper rifles", "Heavy weapons", "Throwables",
-                    "Melee", "Ammo", "Armor and items"};
+                    "Melee", "Ammo", "Armor and items", "Snacks"};
 
     Toggle(m, Player, "Health", "god_mode", "God mode", "Nothing can hurt or kill you: bullets, explosions, falling, fire or drowning");
     Toggle(m, Player, "Health", "unlimited_health", "Unlimited health", "You still get hit, but your health fills back up right away");
@@ -87,9 +86,9 @@ void BuildFeatures(Model& m) {
     Toggle(m, Player, "Police", "police_blind", "Invisible to police", "The police can't see or chase you, even with stars");
     Slider(m, Player, "Money", "money_amount", "Money amount", "How much Story Mode money Give money adds", 10000.0f, 10000000.0f, 1000000.0f,
            10000.0f, "$%.0f", false);
-    Action(m, Player, "Money", "give_money", "Give money", "Adds the Money amount to the character you are playing", "Apply");
+    Action(m, Player, "Money", "give_money", "Give money", "Adds the Money amount to the character you are playing. Your saves are backed up first", "Apply", true);
     Toggle(m, Player, "Money", "unlimited_money", "Unlimited money", "Your Story Mode money never goes down when you buy things");
-    Toggle(m, Player, "Movement", "fly", "Fly", "Fly like a superhero with WASD, Space and Ctrl, but still bump into walls");
+    Toggle(m, Player, "Movement", "fly", "Fly", "Press Space to take off, then fly like a superhero with WASD, Space and Ctrl. You still bump into walls");
     Slider(m, Player, "Movement", "fly_speed", "Fly speed", "How fast Fly moves you", 1.0f, 10.0f, 3.0f, 0.5f, "%.1fx", false);
     Toggle(m, Player, "Movement", "noclip", "Noclip", "Fly through walls and the ground with WASD, Space and Ctrl");
     Slider(m, Player, "Movement", "noclip_speed", "Noclip speed", "How fast Noclip moves you", 1.0f, 10.0f, 3.0f, 0.5f, "%.1fx", false);
@@ -113,7 +112,7 @@ void BuildFeatures(Model& m) {
     Toggle(m, World, "Time", "stop_time", "Stop time", "The clock stops, so it stays the same time of day");
     Toggle(m, World, "Camera", "freecam", "Freecam", "The camera flies free with WASD, Space and Ctrl while your character stays put");
     Slider(m, World, "Camera", "freecam_speed", "Freecam speed", "How fast the free camera moves", 1.0f, 10.0f, 3.0f, 0.5f, "%.1fx", false);
-    Slider(m, World, "Camera", "fov", "FOV", "How wide the camera sees", 30.0f, 120.0f, 50.0f, 1.0f, "%.0f");
+    Slider(m, World, "Camera", "fov", "FOV", "How wide the camera sees in third person and Freecam. 50 is the game's normal view", 30.0f, 120.0f, 50.0f, 1.0f, "%.0f");
 
     Toggle(m, Troll, "Cars", "fling_cars", "Fling cars aura", "Every car near you is flung into the air");
     Toggle(m, Troll, "Cars", "invisible_car", "Invisible car", "The vehicle you are in turns invisible");
