@@ -350,6 +350,8 @@ bool Shutdown() {
 }
 
 void Detach(void* module) {
+    ULONGLONG start = GetTickCount64();
+    while (MapshotWriting() && GetTickCount64() - start < 20000) Sleep(50);
     if (!attached) return;
     shv::Unregister(module);
     attached = false;

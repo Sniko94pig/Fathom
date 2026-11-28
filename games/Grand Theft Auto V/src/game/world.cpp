@@ -85,6 +85,10 @@ void StartTeleport(float x, float y, float z, bool useZ) {
         Note("Teleport works when your character is alive");
         return;
     }
+    if (MapshotBusy()) {
+        Note("Wait until the map scan is done");
+        return;
+    }
     bool vehicle = false;
     int e = TpEntity(vehicle);
     undoPos = n::GET_ENTITY_COORDS(e, false);

@@ -28,5 +28,8 @@ int VirtualKeyFor(int imguiKey);
 uint64_t FrameCount();
 void TakeLook(float& dx, float& dy);
 bool GameActive();
+void RequestShot();
+bool TakeShot(std::vector<uint8_t>& rgba, int& w, int& h);
+void CancelShot();
 
 }

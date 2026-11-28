@@ -97,5 +97,6 @@ void MapshotInit(core::Model& m);
 void MapshotTick();
 void MapshotOff();
 bool MapshotBusy();
+bool MapshotWriting();
 
 }

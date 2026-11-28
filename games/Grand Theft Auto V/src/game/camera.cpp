@@ -151,6 +151,11 @@ void CameraInit() {
 }
 
 void CameraTick() {
+    if (MapshotBusy()) {
+        FreeRelease();
+        WideRelease();
+        return;
+    }
     FreeTick();
     WideTick();
 }

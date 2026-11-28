@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cfloat>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <future>
 #include <mutex>
@@ -127,6 +128,19 @@ std::future<ui::Atlas> atlasJob;
 std::mutex mapLock;
 std::vector<uint8_t> mapPending;
 int mapW = 0, mapH = 0;
+
+std::atomic<bool> shotWanted{false};
+bool shotPending = false;
+UINT64 shotFence = 0;
+ID3D12Resource* shotBuf = nullptr;
+UINT64 shotBufSize = 0;
+D3D12_PLACED_SUBRESOURCE_FOOTPRINT shotPrint{};
+DXGI_FORMAT shotFormat = DXGI_FORMAT_UNKNOWN;
+UINT shotW = 0, shotH = 0;
+std::mutex shotLock;
+std::vector<uint8_t> shotRgba;
+int shotRgbaW = 0, shotRgbaH = 0;
+bool shotReady = false;
 
 enum class EvType { Key, Char, Button, Wheel };
 struct Ev {
@@ -387,6 +401,145 @@ void WaitGpu() {
     if (!q || !fence) return;
     q->Signal(fence, ++fenceValue);
     WaitFence(fenceValue, 2000);
+}
+
+float HalfToFloat(uint16_t h) {
+    uint32_t sign = (uint32_t)(h & 0x8000) << 16, exp = (h >> 10) & 0x1F, man = h & 0x3FF;
+    uint32_t bits;
+    if (exp == 0) {
+        if (man == 0) {
+            bits = sign;
+        } else {
+            exp = 127 - 15 + 1;
+            while (!(man & 0x400)) {
+                man <<= 1;
+                --exp;
+            }
+            man &= 0x3FF;
+            bits = sign | (exp << 23) | (man << 13);
+        }
+    } else if (exp == 31) {
+        bits = sign | 0x7F800000 | (man << 13);
+    } else {
+        bits = sign | ((exp + 127 - 15) << 23) | (man << 13);
+    }
+    float f;
+    std::memcpy(&f, &bits, 4);
+    return f;
+}
+
+uint8_t LinearTo8(float v) {
+    if (!(v > 0.0f)) return 0;
+    if (v >= 1.0f) return 255;
+    float s = v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+    return (uint8_t)std::clamp((int)(s * 255.0f + 0.5f), 0, 255);
+}
+
+bool ConvertShot(const uint8_t* src, UINT pitch, UINT w, UINT h, DXGI_FORMAT f, std::vector<uint8_t>& out) {
+    out.assign((size_t)w * h * 4, 255);
+    for (UINT y = 0; y < h; ++y) {
+        const uint8_t* row = src + (size_t)y * pitch;
+        uint8_t* o = out.data() + (size_t)y * w * 4;
+        for (UINT x = 0; x < w; ++x, o += 4) {
+            switch (f) {
+            case DXGI_FORMAT_R8G8B8A8_UNORM:
+            case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+            case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+                o[0] = row[x * 4];
+                o[1] = row[x * 4 + 1];
+                o[2] = row[x * 4 + 2];
+                break;
+            case DXGI_FORMAT_B8G8R8A8_UNORM:
+            case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+            case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+            case DXGI_FORMAT_B8G8R8X8_UNORM:
+                o[0] = row[x * 4 + 2];
+                o[1] = row[x * 4 + 1];
+                o[2] = row[x * 4];
+                break;
+            case DXGI_FORMAT_R10G10B10A2_UNORM:
+            case DXGI_FORMAT_R10G10B10A2_TYPELESS: {
+                uint32_t v;
+                std::memcpy(&v, row + x * 4, 4);
+                o[0] = (uint8_t)(((v >> 0) & 0x3FF) >> 2);
+                o[1] = (uint8_t)(((v >> 10) & 0x3FF) >> 2);
+                o[2] = (uint8_t)(((v >> 20) & 0x3FF) >> 2);
+                break;
+            }
+            case DXGI_FORMAT_R16G16B16A16_FLOAT:
+            case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
+                uint16_t c[3];
+                std::memcpy(c, row + x * 8, 6);
+                o[0] = LinearTo8(HalfToFloat(c[0]));
+                o[1] = LinearTo8(HalfToFloat(c[1]));
+                o[2] = LinearTo8(HalfToFloat(c[2]));
+                break;
+            }
+            default:
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool EnsureShotBuffer(ID3D12Resource* bb) {
+    D3D12_RESOURCE_DESC d = bb->GetDesc();
+    if (shotBuf && shotW == (UINT)d.Width && shotH == d.Height && shotFormat == d.Format) return true;
+    if (shotBuf) {
+        shotBuf->Release();
+        shotBuf = nullptr;
+    }
+    UINT64 total = 0;
+    device12->GetCopyableFootprints(&d, 0, 1, 0, &shotPrint, nullptr, nullptr, &total);
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_READBACK;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    rd.Width = total;
+    rd.Height = 1;
+    rd.DepthOrArraySize = 1;
+    rd.MipLevels = 1;
+    rd.SampleDesc.Count = 1;
+    rd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    if (FAILED(device12->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                 IID_PPV_ARGS(&shotBuf))) ||
+        !shotBuf) {
+        LOG("picture buffer could not be created");
+        shotBuf = nullptr;
+        return false;
+    }
+    shotBufSize = total;
+    shotW = (UINT)d.Width;
+    shotH = d.Height;
+    shotFormat = d.Format;
+    LOG("picture buffer ready: %ux%u format %d", shotW, shotH, (int)shotFormat);
+    return true;
+}
+
+void CollectShot() {
+    if (!shotPending || !fence || fence->GetCompletedValue() < shotFence) return;
+    shotPending = false;
+    void* p = nullptr;
+    D3D12_RANGE r{0, (SIZE_T)shotBufSize};
+    if (!shotBuf || FAILED(shotBuf->Map(0, &r, &p)) || !p) return;
+    std::vector<uint8_t> rgba;
+    bool ok = ConvertShot((const uint8_t*)p + shotPrint.Offset, shotPrint.Footprint.RowPitch, shotW, shotH, shotFormat, rgba);
+    D3D12_RANGE none{0, 0};
+    shotBuf->Unmap(0, &none);
+    if (!ok) {
+        static bool told = false;
+        if (!told) {
+            told = true;
+            LOG("pictures are not supported for back buffer format %d", (int)shotFormat);
+        }
+        return;
+    }
+    std::lock_guard<std::mutex> g(shotLock);
+    shotRgba.swap(rgba);
+    shotRgbaW = (int)shotW;
+    shotRgbaH = (int)shotH;
+    shotReady = true;
 }
 
 ID3D11ShaderResourceView* MakeTexture11(const uint8_t* rgba, int w, int h) {
@@ -886,24 +1039,40 @@ void Draw12(IDXGISwapChain* raw, IDXGISwapChain3* sc) {
     LoadStatic();
     PumpAtlas();
     PumpMap();
+    CollectShot();
     FeedInput();
     ImGui_ImplDX12_NewFrame();
     ImGui::NewFrame();
     DrawMenu();
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();
-    if (!dd || dd->TotalVtxCount <= 0 || dd->DisplaySize.x <= 0 || dd->DisplaySize.y <= 0) return;
+    bool menu = dd && dd->TotalVtxCount > 0 && dd->DisplaySize.x > 0 && dd->DisplaySize.y > 0;
+    bool shot = shotWanted.load() && !shotPending;
+    if (!menu && !shot) return;
 
     FrameCtx& f = frames[drawCalls % frames.size()];
     if (!WaitFence(f.fence, 250)) return;
-    if (TexturesBusy(dd) && !WaitFence(fenceValue, 1000)) return;
+    if (menu && TexturesBusy(dd) && !WaitFence(fenceValue, 1000)) {
+        if (!shot) return;
+        menu = false;
+    }
     ID3D12Resource* bb = nullptr;
     if (FAILED(sc->GetBuffer(sc->GetCurrentBackBufferIndex(), IID_PPV_ARGS(&bb))) || !bb) return;
-    D3D12_RENDER_TARGET_VIEW_DESC rd{};
-    rd.Format = rtvFormat;
-    rd.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+    if (shot && !EnsureShotBuffer(bb)) {
+        shot = false;
+        shotWanted = false;
+    }
+    if (!menu && !shot) {
+        bb->Release();
+        return;
+    }
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
-    device12->CreateRenderTargetView(bb, &rd, rtv);
+    if (menu) {
+        D3D12_RENDER_TARGET_VIEW_DESC rd{};
+        rd.Format = rtvFormat;
+        rd.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+        device12->CreateRenderTargetView(bb, &rd, rtv);
+    }
 
     f.alloc->Reset();
     list->Reset(f.alloc, nullptr);
@@ -911,13 +1080,32 @@ void Draw12(IDXGISwapChain* raw, IDXGISwapChain3* sc) {
     b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     b.Transition.pResource = bb;
     b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    b.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-    b.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    list->ResourceBarrier(1, &b);
-    list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-    list->SetDescriptorHeaps(1, &srvHeap);
-    ImGui_ImplDX12_RenderDrawData(dd, list);
-    b.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;
+    if (shot) {
+        b.Transition.StateBefore = state;
+        b.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        list->ResourceBarrier(1, &b);
+        state = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        D3D12_TEXTURE_COPY_LOCATION dst{};
+        dst.pResource = shotBuf;
+        dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        dst.PlacedFootprint = shotPrint;
+        D3D12_TEXTURE_COPY_LOCATION src{};
+        src.pResource = bb;
+        src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        src.SubresourceIndex = 0;
+        list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+    }
+    if (menu) {
+        b.Transition.StateBefore = state;
+        b.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        list->ResourceBarrier(1, &b);
+        state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        list->SetDescriptorHeaps(1, &srvHeap);
+        ImGui_ImplDX12_RenderDrawData(dd, list);
+    }
+    b.Transition.StateBefore = state;
     b.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     list->ResourceBarrier(1, &b);
     list->Close();
@@ -927,6 +1115,11 @@ void Draw12(IDXGISwapChain* raw, IDXGISwapChain3* sc) {
     q->Signal(fence, ++fenceValue);
     f.fence = fenceValue;
     ++drawCalls;
+    if (shot) {
+        shotFence = fenceValue;
+        shotPending = true;
+        shotWanted = false;
+    }
     bb->Release();
 }
 
@@ -1087,6 +1280,9 @@ void Shutdown12() {
     FreeTex(mapTex);
     for (Retired& r : retired) r.res->Release();
     retired.clear();
+    if (shotBuf) shotBuf->Release();
+    shotBuf = nullptr;
+    shotPending = false;
     for (FrameCtx& f : frames)
         if (f.alloc) f.alloc->Release();
     frames.clear();
@@ -1178,6 +1374,33 @@ void LoadAtlas(const std::wstring& folder) {
 }
 
 uint64_t FrameCount() { return presents.load(); }
+
+void RequestShot() {
+    {
+        std::lock_guard<std::mutex> g(shotLock);
+        shotReady = false;
+        shotRgba.clear();
+    }
+    shotWanted = true;
+}
+
+bool TakeShot(std::vector<uint8_t>& rgba, int& w, int& h) {
+    std::lock_guard<std::mutex> g(shotLock);
+    if (!shotReady) return false;
+    rgba.swap(shotRgba);
+    w = shotRgbaW;
+    h = shotRgbaH;
+    shotReady = false;
+    shotRgba.clear();
+    return true;
+}
+
+void CancelShot() {
+    shotWanted = false;
+    std::lock_guard<std::mutex> g(shotLock);
+    shotReady = false;
+    shotRgba.clear();
+}
 
 void TakeLook(float& dx, float& dy) {
     dx = lookDx.exchange(0);

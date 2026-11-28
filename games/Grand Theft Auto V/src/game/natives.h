@@ -34,6 +34,10 @@ inline void CLEAR_FOCUS() {
     shv::Invoke<void>(0x31B73D1EA9F01DA2ull);
 }
 
+inline void CLEAR_OVERRIDE_WEATHER() {
+    shv::Invoke<void>(0x338D2E3477711050ull);
+}
+
 inline void CLEAR_PED_BLOOD_DAMAGE(int ped) {
     shv::Invoke<void>(0x8FE22675A5A45817ull, ped);
 }
@@ -52,6 +56,10 @@ inline void CLEAR_PLAYER_WANTED_LEVEL(int player) {
 
 inline void CLEAR_RELATIONSHIP_BETWEEN_GROUPS(int relationship, uint32_t group1, uint32_t group2) {
     shv::Invoke<void>(0x5E29243FB56FC6D4ull, relationship, group1, group2);
+}
+
+inline void CLEAR_WEATHER_TYPE_PERSIST() {
+    shv::Invoke<void>(0xCCC39339BEF76CF5ull);
 }
 
 inline int CREATE_CAM_WITH_PARAMS(const char* camName, float posX, float posY, float posZ, float rotX, float rotY, float rotZ, float fov, int p8, int p9) {
@@ -105,6 +113,22 @@ inline float GET_APPROX_HEIGHT_FOR_POINT(float x, float y) {
 inline V3 GET_BLIP_INFO_ID_COORD(int blip) {
     shv::NVec3 r = shv::Invoke<shv::NVec3>(0xFA7C7F0AADF25D09ull, blip);
     return {r.x, r.y, r.z};
+}
+
+inline int GET_CLOCK_HOURS() {
+    return shv::Invoke<int>(0x25223CA6B4D20B7Full);
+}
+
+inline int GET_CLOCK_MINUTES() {
+    return shv::Invoke<int>(0x13D2B8ADD79640F2ull);
+}
+
+inline int GET_CLOCK_SECONDS() {
+    return shv::Invoke<int>(0x494E97C2EF27C470ull);
+}
+
+inline void GET_CURR_WEATHER_STATE(uint32_t* weatherType1, uint32_t* weatherType2, float* percentWeather2) {
+    shv::Invoke<void>(0xF3BBE884A14BB413ull, weatherType1, weatherType2, percentWeather2);
 }
 
 inline float GET_DISABLED_CONTROL_NORMAL(int control, int action) {
@@ -330,6 +354,10 @@ inline int HAS_PED_GOT_WEAPON(int ped, uint32_t weaponHash, int p2) {
     return shv::Invoke<int>(0x8DECB02F88F428BCull, ped, weaponHash, p2);
 }
 
+inline void HIDE_HUD_AND_RADAR_THIS_FRAME() {
+    shv::Invoke<void>(0x719FF505F097FD20ull);
+}
+
 inline int IS_CUTSCENE_PLAYING() {
     return shv::Invoke<int>(0xD3C2E180A40F031Eull);
 }
@@ -506,6 +534,10 @@ inline void SET_CAM_COORD(int cam, float posX, float posY, float posZ) {
     shv::Invoke<void>(0x4D41783FB745E42Eull, cam, posX, posY, posZ);
 }
 
+inline void SET_CAM_FAR_CLIP(int cam, float farClip) {
+    shv::Invoke<void>(0xAE306F2A904BF86Eull, cam, farClip);
+}
+
 inline void SET_CAM_FOV(int cam, float fieldOfView) {
     shv::Invoke<void>(0xB13C14F66A00D047ull, cam, fieldOfView);
 }
@@ -514,8 +546,16 @@ inline void SET_CAM_ROT(int cam, float rotX, float rotY, float rotZ, int rotatio
     shv::Invoke<void>(0x85973643155D0B07ull, cam, rotX, rotY, rotZ, rotationOrder);
 }
 
+inline void SET_CLOCK_TIME(int hour, int minute, int second) {
+    shv::Invoke<void>(0x47C3B5848C3E45D8ull, hour, minute, second);
+}
+
 inline void SET_CURRENT_PED_WEAPON(int ped, uint32_t weaponHash, int bForceInHand) {
     shv::Invoke<void>(0xADF692B254977C0Cull, ped, weaponHash, bForceInHand);
+}
+
+inline void SET_CURR_WEATHER_STATE(uint32_t weatherType1, uint32_t weatherType2, float percentWeather2) {
+    shv::Invoke<void>(0x578C752848ECFA0Cull, weatherType1, weatherType2, percentWeather2);
 }
 
 inline void SET_DISABLE_VEHICLE_PETROL_TANK_DAMAGE(int vehicle, int toggle) {
@@ -750,6 +790,10 @@ inline void SET_VEHICLE_WHEELS_CAN_BREAK(int vehicle, int enabled) {
     shv::Invoke<void>(0x29B18B4FD460CA8Full, vehicle, enabled);
 }
 
+inline void SET_WEATHER_TYPE_NOW_PERSIST(const char* weatherType) {
+    shv::Invoke<void>(0xED712CA327900C8Aull, weatherType);
+}
+
 inline void SHOOT_SINGLE_BULLET_BETWEEN_COORDS_IGNORE_ENTITY(float x1, float y1, float z1, float x2, float y2, float z2, int damage, int p7, uint32_t weaponHash, int ownerPed, int isAudible, int isInvisible, float speed, int entity, int p14) {
     shv::Invoke<void>(0xE3A7742E0B7A2F8Bull, x1, y1, z1, x2, y2, z2, damage, p7, weaponHash, ownerPed, isAudible, isInvisible, speed, entity, p14);
 }
@@ -784,6 +828,10 @@ inline void TASK_STAND_STILL(int ped, int time) {
 
 inline void TASK_WANDER_STANDARD(int ped, float heading, int flags) {
     shv::Invoke<void>(0xBB9CE077274F6A1Bull, ped, heading, flags);
+}
+
+inline void THEFEED_HIDE_THIS_FRAME() {
+    shv::Invoke<void>(0x25F87B30C382FCA7ull);
 }
 
 inline void WASH_DECALS_FROM_VEHICLE(int vehicle, float p1) {
