@@ -75,6 +75,7 @@ struct Home {
     MapPic mapPics[maps::Count];
     std::vector<MapPic> mapSheets[maps::Count];
     int mapSheet[maps::Count] = {};
+    bool mapSheetOpen = false;
     std::string mapStatus[maps::Count];
     float mapZoom[maps::Count] = {};
     float mapCx[maps::Count] = {0.5f, 0.5f, 0.5f, 0.5f};

@@ -50,6 +50,7 @@ const char* Title(int game);
 const Kind* Kinds(int game, int& count);
 const Sheet* Sheets(int game, int& count);
 const Place* Places(int game, int& count);
+const Place* SheetPlaces(int game, int sheet, int& count);
 const Area* Areas(int game, int& count);
 bool World(int game, float& x0, float& z0, float& x1, float& z1);
 const char* Axis(int game);

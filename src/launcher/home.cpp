@@ -316,11 +316,6 @@ void Home::DrawMapList() {
             if (!line.empty()) line += "  \xc2\xb7  ";
             line += std::to_string(n) + " " + Lower(kinds[k].name);
         }
-        if (sc > 0) {
-            int dlc = 0;
-            for (int s = 0; s < sc; ++s) dlc += sheets[s].dlc ? 1 : 0;
-            line = std::to_string(sc - dlc) + " planets  \xc2\xb7  " + std::to_string(dlc) + " DLC maps";
-        }
         if (line.empty()) line = pic.partial ? "Shows the places you have been to" : "No places marked for this game yet";
         float ly = a.y + ph + S(12);
         float x = a.x;
@@ -329,7 +324,7 @@ void Home::DrawMapList() {
             x += S(11);
         }
         TextFit(dl, T().regular, 12, ImVec2(x + (kc ? S(4) : 0), ly), a.x + cw - x - S(4), White(0.6f), line.c_str());
-        Text(dl, T().regular, 11.5f, ImVec2(a.x, ly + S(22)), White(0.38f), pc ? (std::to_string(pc) + " places, click to open").c_str() : sc > 0 ? (many + ", click to open").c_str() : "Click to open");
+        Text(dl, T().regular, 11.5f, ImVec2(a.x, ly + S(22)), White(0.38f), pc ? (std::to_string(pc) + " places" + (sc > 0 ? " on " + many : std::string()) + ", click to open").c_str() : sc > 0 ? (many + ", click to open").c_str() : "Click to open");
         if (clicked) {
             mapGame = g;
             mapSearch.clear();
@@ -355,11 +350,12 @@ void Home::DrawMapView() {
     const std::string& status = mapStatus[gi];
     int kc = 0, pc = 0, ac = 0;
     const mapdata::Kind* kinds = mapdata::Kinds(gi, kc);
-    const mapdata::Place* places = mapdata::Places(gi, pc);
+    const mapdata::Place* places = sc > 0 ? mapdata::SheetPlaces(gi, si, pc) : mapdata::Places(gi, pc);
     const mapdata::Area* areas = mapdata::Areas(gi, ac);
     float wx0 = 0, wz0 = 0, wx1 = 1, wz1 = 1;
-    bool world = mapdata::World(gi, wx0, wz0, wx1, wz1);
-    auto toUv = [&](float x, float z) { return ImVec2((x - wx0) / (wx1 - wx0), (wz1 - z) / (wz1 - wz0)); };
+    bool flat = sc > 0;
+    bool world = flat || mapdata::World(gi, wx0, wz0, wx1, wz1);
+    auto toUv = [&](float x, float z) { return flat ? ImVec2(x, z) : ImVec2((x - wx0) / (wx1 - wx0), (wz1 - z) / (wz1 - wz0)); };
     auto kindCol = [&](int k, float alpha) { return IM_COL32(kinds[k].r, kinds[k].g, kinds[k].b, (int)(alpha * 255)); };
 
     if (Button("mapback", "All maps", o, ImVec2(S(124), S(34)), Btn::Ghost, ICON_ARROW_LEFT)) {
@@ -378,7 +374,7 @@ void Home::DrawMapView() {
         mapsReload = true;
 
     float top = o.y + S(50), h = std::max(S(320), avail - S(50) - S(34));
-    float side = kc > 0 ? S(256) : sc > 0 ? S(300) : 0.0f, sgap = side > 0 ? S(16) : 0.0f;
+    float side = sc > 0 ? S(300) : kc > 0 ? S(256) : 0.0f, sgap = side > 0 ? S(16) : 0.0f;
     std::string q = Lower(mapSearch);
     auto visible = [&](int i) {
         const mapdata::Place& p = places[i];
@@ -388,11 +384,44 @@ void Home::DrawMapView() {
                Lower(kinds[p.kind].name).find(q) != std::string::npos;
     };
     bool fly = false;
-    if (kc > 0) {
-        ImVec2 sa(o.x, top), sb(o.x + side, top + h);
+    bool picking = sc > 0 && mapSheetOpen;
+    ImVec2 sa(o.x, top), sb(o.x + side, top + h);
+    float y = top + S(12);
+    if (side > 0) {
         dl->AddRectFilled(sa, sb, White(0.03f));
         dl->AddRect(sa, sb, White(0.06f));
-        float y = top + S(12);
+    }
+    auto sheetSub = [&](ImDrawList* to, float tx, float ly, float tw, const mapdata::Sheet& sh) {
+        if (sh.dlc) {
+            ImVec2 ds = MeasureUpper(T().semibold, 9.5f, "DLC");
+            ImVec2 ca(tx, ly), cb(tx + ds.x + S(14), ly + S(16));
+            Para(to, ca, cb, Accent());
+            Upper(to, T().semibold, 9.5f, ImVec2(ca.x + S(7), ca.y + (S(16) - ds.y) * 0.5f), White(0.95f), "DLC");
+            if (*sh.note) TextFit(to, T().regular, 11, ImVec2(cb.x + S(8), ly + S(1)), tx + tw - cb.x - S(8), White(0.45f), sh.note);
+        } else {
+            TextFit(to, T().regular, 11, ImVec2(tx, ly + S(1)), tw, White(0.45f), "Main game");
+        }
+    };
+    if (sc > 0) {
+        const mapdata::Sheet& cur = sheets[si];
+        ImVec2 ra(sa.x + S(8), y), rb(sb.x - S(8), y + S(54));
+        ImGui::SetCursorScreenPos(ra);
+        if (ImGui::InvisibleButton("mappicker", ImVec2(rb.x - ra.x, rb.y - ra.y))) mapSheetOpen = !mapSheetOpen;
+        bool ph = ImGui::IsItemHovered();
+        picking = mapSheetOpen;
+        dl->AddRectFilled(ra, rb, picking ? Accent(0.16f) : White(ph ? 0.08f : 0.05f));
+        dl->AddRect(ra, rb, picking ? Accent(0.7f) : White(ph ? 0.14f : 0.08f));
+        ImVec2 c(ra.x + S(20), (ra.y + rb.y) * 0.5f);
+        dl->AddCircleFilled(c, S(10), cur.dlc ? Accent() : White(0.85f), 20);
+        Icon(dl, c, S(11.5f), cur.dlc ? White() : Black(0.8f), cur.dlc ? ICON_PACKAGE : ICON_GLOBE);
+        float tx = ra.x + S(40), tw = rb.x - S(34) - tx;
+        TextFit(dl, T().medium, 13, ImVec2(tx, ra.y + S(9)), tw, White(0.95f), cur.name);
+        sheetSub(dl, tx, ra.y + S(30), tw, cur);
+        Icon(dl, ImVec2(rb.x - S(17), c.y), S(15), White(ph || picking ? 0.9f : 0.6f), picking ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN);
+        if (ph && !picking) Tip("Pick another map");
+        y += S(66);
+    }
+    if (kc > 0 && !picking) {
         Input("mapsearch", &mapSearch, "Search places", ImVec2(sa.x + S(12), y), side - S(24), ICON_SEARCH);
         y += S(50);
         Upper(dl, T().semibold, 10.5f, ImVec2(sa.x + S(14), y), White(0.5f), "Show on the map");
@@ -476,12 +505,9 @@ void Home::DrawMapView() {
             ImGui::EndChild();
             dl = ImGui::GetWindowDrawList();
         }
-    } else if (sc > 0) {
-        ImVec2 sa(o.x, top), sb(o.x + side, top + h);
-        dl->AddRectFilled(sa, sb, White(0.03f));
-        dl->AddRect(sa, sb, White(0.06f));
-        float y = top + S(14);
-        std::string head = "Maps (" + std::to_string(sc) + ")";
+    }
+    if (picking) {
+        std::string head = "Pick a map (" + std::to_string(sc) + ")";
         Upper(dl, T().semibold, 10.5f, ImVec2(sa.x + S(14), y), White(0.5f), head.c_str());
         y += S(22);
         float lh = sb.y - S(8) - y;
@@ -508,27 +534,25 @@ void Home::DrawMapView() {
                 Icon(cl, c, S(10.5f), sh.dlc ? White() : Black(0.8f), sh.dlc ? ICON_PACKAGE : ICON_GLOBE);
                 float tx = ra.x + S(38), tw = rw - S(44);
                 TextFit(cl, T().medium, 12.5f, ImVec2(tx, ra.y + S(7)), tw, White(0.92f), sh.name);
-                float ly = ra.y + S(26);
-                if (sh.dlc) {
-                    ImVec2 ds = MeasureUpper(T().semibold, 9.5f, "DLC");
-                    ImVec2 ca(tx, ly), cb(tx + ds.x + S(14), ly + S(16));
-                    Para(cl, ca, cb, Accent());
-                    Upper(cl, T().semibold, 9.5f, ImVec2(ca.x + S(7), ca.y + (S(16) - ds.y) * 0.5f), White(0.95f), "DLC");
-                    if (*sh.note) TextFit(cl, T().regular, 11, ImVec2(cb.x + S(8), ly + S(1)), tx + tw - cb.x - S(8), White(0.45f), sh.note);
-                } else {
-                    TextFit(cl, T().regular, 11, ImVec2(tx, ly + S(1)), tw, White(0.45f), "Main game");
-                }
+                sheetSub(cl, tx, ra.y + S(26), tw, sh);
+                int n = 0;
+                mapdata::SheetPlaces(gi, s, n);
+                if (n > 0) TextRight(cl, T().regular, 11.5f, ImVec2(rb.x - S(8), ra.y + S(8)), White(0.4f), std::to_string(n).c_str());
                 if (hovered) {
                     std::string tip = sh.name;
                     if (sh.dlc) tip += "\nDLC";
                     if (*sh.note) tip += std::string("\n") + sh.note;
                     Tip(tip.c_str());
                 }
-                if (hit && !sel) {
-                    si = s;
-                    mapZoom[gi] = 0;
-                    mapCx[gi] = mapCy[gi] = 0.5f;
-                    mapFly[gi] = 0;
+                if (hit) {
+                    if (!sel) {
+                        si = s;
+                        mapZoom[gi] = 0;
+                        mapCx[gi] = mapCy[gi] = 0.5f;
+                        mapFly[gi] = 0;
+                        mapPick[gi] = -1;
+                    }
+                    mapSheetOpen = false;
                 }
             }
             ImGui::SetCursorScreenPos(co);
@@ -671,7 +695,7 @@ void Home::DrawMapView() {
                     }
                 }
         }
-        if (hov && world) {
+        if (hov && world && !flat) {
             float mu = cu + (io.MousePos.x - c.x) / (zoom * pic.w), mv = cv + (io.MousePos.y - c.y) / (zoom * pic.h);
             if (mu >= 0 && mu <= 1 && mv >= 0 && mv <= 1) {
                 char buf[64];
@@ -686,8 +710,9 @@ void Home::DrawMapView() {
         if (hov && !dragging && ImGui::IsMouseReleased(0) && io.MouseDragMaxDistanceSqr[0] < S(4) * S(4)) mapPick[gi] = hot;
         if (hot >= 0 && !dragging) {
             const mapdata::Place& pl = places[hot];
-            char tip[256];
-            std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   %s %d", pl.name, pl.note && *pl.note ? pl.note : kinds[pl.kind].name, (int)std::lround(pl.x),
+            char tip[512];
+            if (flat) std::snprintf(tip, sizeof(tip), "%s\n%s", pl.name, pl.note && *pl.note ? pl.note : kinds[pl.kind].name);
+            else std::snprintf(tip, sizeof(tip), "%s\n%s\nX %d   %s %d", pl.name, pl.note && *pl.note ? pl.note : kinds[pl.kind].name, (int)std::lround(pl.x),
                           mapdata::Axis(gi), (int)std::lround(pl.z));
             Tip(tip);
         }
@@ -722,9 +747,7 @@ void Home::DrawMapView() {
     dl->AddRect(a, b, White(0.07f));
     std::string foot = !status.empty() ? status + "\xe2\x80\xa6"
                        : !pic.tex      ? std::string()
-                       : sc > 0        ? std::string(sheets[si].name) + (sheets[si].dlc ? " (DLC)." : ".") +
-                                      (*sheets[si].note ? std::string(" ") + sheets[si].note + "." : std::string()) +
-                                      "  Scroll to zoom, drag to move, pick another map in the list."
+                       : sc > 0        ? std::string("Markers sit next to each area's name on the picture.  Scroll to zoom, drag to move, click a marker or a place in the list.")
                                        : pic.note + "  Scroll to zoom, drag to move, click a marker or a place in the list.";
     TextFit(dl, T().regular, 12, ImVec2(a.x, b.y + S(12)), cw, White(0.5f), foot.c_str());
     ImGui::SetCursorScreenPos(o);

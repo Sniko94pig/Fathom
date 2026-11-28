@@ -1,5 +1,6 @@
 #include "launcher/maps.h"
 #include "ui/icons.h"
+#include "maps/places.h"
 
 namespace launcher::maps {
 
@@ -21,6 +22,14 @@ const Kind kSn2Kinds[] = {
     {"Terminals", ICON_ZAP, 120, 226, 150},
 };
 
+const Kind kBl3Kinds[] = {
+    {bl3map::kKinds[0].name, ICON_MAP_PIN, bl3map::kKinds[0].r, bl3map::kKinds[0].g, bl3map::kKinds[0].b},
+    {bl3map::kKinds[1].name, ICON_SKULL, bl3map::kKinds[1].r, bl3map::kKinds[1].g, bl3map::kKinds[1].b},
+    {bl3map::kKinds[2].name, ICON_USERS, bl3map::kKinds[2].r, bl3map::kKinds[2].g, bl3map::kKinds[2].b},
+    {bl3map::kKinds[3].name, ICON_BOX, bl3map::kKinds[3].r, bl3map::kKinds[3].g, bl3map::kKinds[3].b},
+    {bl3map::kKinds[4].name, ICON_SPARKLES, bl3map::kKinds[4].r, bl3map::kKinds[4].g, bl3map::kKinds[4].b},
+};
+
 const Sheet kBl3Sheets[] = {
     {"pandora.png", "Pandora", "", false},
     {"sanctuary.png", "Sanctuary III", "", false},
@@ -28,11 +37,11 @@ const Sheet kBl3Sheets[] = {
     {"athenas.png", "Athenas", "", false},
     {"eden6.png", "Eden-6", "", false},
     {"nekrotafeyo.png", "Nekrotafeyo", "", false},
-    {"dlc_moxxis_heist.png", "Moxxi's Heist of the Handsome Jackpot", "Also shows Midnight's Cairn from Takedown at the Maliwan Blacksite", true},
+    {"dlc_moxxis_heist.png", "Moxxi's Heist of the Handsome Jackpot", "Also shows Midnight's Cairn from the free Takedown at the Maliwan Blacksite", true},
     {"dlc_guns_love_and_tentacles.png", "Guns, Love, and Tentacles", "", true},
     {"dlc_bounty_of_blood.png", "Bounty of Blood", "", true},
     {"dlc_psycho_krieg.png", "Psycho Krieg and the Fantastic Fustercluck", "", true},
-    {"dlc_guardian_breach_and_villa_ultraviolet.png", "Takedown at the Guardian Breach, Villa Ultraviolet and The Heck Hole", "", true},
+    {"dlc_guardian_breach_and_villa_ultraviolet.png", "Takedown at the Guardian Breach, Villa Ultraviolet and The Heck Hole", "Free updates and events, not paid DLC", true},
 };
 
 }
@@ -65,6 +74,10 @@ const Kind* Kinds(int game, int& count) {
     if (game == SonsOfTheForest) {
         count = (int)(sizeof(kSotfKinds) / sizeof(kSotfKinds[0]));
         return kSotfKinds;
+    }
+    if (game == Borderlands3) {
+        count = (int)(sizeof(kBl3Kinds) / sizeof(kBl3Kinds[0]));
+        return kBl3Kinds;
     }
     count = 0;
     return nullptr;

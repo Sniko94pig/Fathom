@@ -410,7 +410,8 @@ int main(int argc, char** argv) {
              static launcher::Home home;
              home.game = -1;
              home.mapGame = launcher::maps::Borderlands3;
-             home.mapSheet[launcher::maps::Borderlands3] = 6;
+             home.mapSheet[launcher::maps::Borderlands3] = 0;
+             home.mapPick[launcher::maps::Borderlands3] = 1;
              LoadShotMaps(home);
              u.showGameTabs = false;
              u.homePage = [] {
@@ -423,6 +424,24 @@ int main(int argc, char** argv) {
              u.homeIndex = 2;
              u.onHome = true;
          }, ImVec2(700, 300), nullptr},
+        {"54-launcher-bl3-pick", [&](core::Model&, ui::Menu& u) {
+             static launcher::Home home;
+             home.game = -1;
+             home.mapGame = launcher::maps::Borderlands3;
+             home.mapSheet[launcher::maps::Borderlands3] = 6;
+             home.mapSheetOpen = true;
+             LoadShotMaps(home);
+             u.showGameTabs = false;
+             u.homePage = [] {
+                 home.maps = true;
+                 home.Draw();
+             };
+             u.homeName = "Games";
+             u.homeIcon = ICON_LAYERS;
+             u.homeTabs = {{"My games", ICON_GAMEPAD_2}, {"Maps", ICON_MAP}};
+             u.homeIndex = 2;
+             u.onHome = true;
+         }, ImVec2(470, 330), nullptr},
         {"46-launcher-help", [&](core::Model&, ui::Menu& u) {
              static launcher::Home home;
              home.game = -1;

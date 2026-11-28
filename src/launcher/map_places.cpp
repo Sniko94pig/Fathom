@@ -1,4 +1,7 @@
 #include "launcher/maps.h"
+#include "maps/places.h"
+#include <cstring>
+#include <vector>
 
 namespace launcher::maps {
 
@@ -273,6 +276,31 @@ const Area kSn1Areas[] = {
     {"Crag Field", -90.1f, -981.8f, 132.3f},
 };
 
+std::vector<Place> bl3All;
+std::vector<std::vector<Place>> bl3BySheet;
+
+void BuildBl3() {
+    if (!bl3All.empty()) return;
+    int sc = 0;
+    const Sheet* sheets = Sheets(Borderlands3, sc);
+    bl3BySheet.assign(sc, {});
+    for (const bl3map::Spot& s : bl3map::kSpots) {
+        Place p{s.kind, s.name, s.note, s.u, 0.0f, s.v};
+        bl3All.push_back(p);
+        for (int i = 0; i < sc; ++i)
+            if (std::strcmp(sheets[i].file, s.sheet) == 0) bl3BySheet[i].push_back(p);
+    }
+}
+
+}
+
+const Place* SheetPlaces(int game, int sheet, int& count) {
+    count = 0;
+    if (game != Borderlands3) return nullptr;
+    BuildBl3();
+    if (sheet < 0 || sheet >= (int)bl3BySheet.size() || bl3BySheet[sheet].empty()) return nullptr;
+    count = (int)bl3BySheet[sheet].size();
+    return bl3BySheet[sheet].data();
 }
 
 const Place* Places(int game, int& count) {
@@ -287,6 +315,11 @@ const Place* Places(int game, int& count) {
     if (game == SonsOfTheForest) {
         count = (int)(sizeof(kSotfPlaces) / sizeof(kSotfPlaces[0]));
         return kSotfPlaces;
+    }
+    if (game == Borderlands3) {
+        BuildBl3();
+        count = (int)bl3All.size();
+        return bl3All.data();
     }
     count = 0;
     return nullptr;
