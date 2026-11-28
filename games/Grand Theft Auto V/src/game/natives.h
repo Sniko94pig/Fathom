@@ -654,10 +654,6 @@ inline void SET_PED_GRAVITY(int ped, int toggle) {
     shv::Invoke<void>(0x9FF447B6B6AD960Aull, ped, toggle);
 }
 
-inline void SET_PED_INFINITE_AMMO(int ped, int toggle, uint32_t weaponHash) {
-    shv::Invoke<void>(0x3EDCB0505123623Bull, ped, toggle, weaponHash);
-}
-
 inline void SET_PED_INTO_VEHICLE(int ped, int vehicle, int seatIndex) {
     shv::Invoke<void>(0xF75B0D629E1C063Dull, ped, vehicle, seatIndex);
 }

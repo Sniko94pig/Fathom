@@ -45,11 +45,6 @@ struct Seen {
     int total = -1;
 } seen;
 
-struct Infinite {
-    bool active = false;
-    int ped = 0;
-} infinite;
-
 bool noRecoilShake = false;
 
 uint32_t Selected() { return st.ped ? (uint32_t)n::GET_SELECTED_PED_WEAPON(st.ped) : 0; }
@@ -247,20 +242,10 @@ int CountShots(uint32_t w, int clip, int total) {
     return std::min(shots, 6);
 }
 
-void InfiniteRelease() {
-    if (!infinite.active) return;
-    if (infinite.ped && n::DOES_ENTITY_EXIST(infinite.ped)) n::SET_PED_INFINITE_AMMO(infinite.ped, 0, 0);
-    infinite = Infinite{};
-}
-
 void AmmoTick(uint32_t w, int& clip, int& total) {
     bool unlimited = On("unlimited_ammo") && st.alive;
-    if (!unlimited) InfiniteRelease();
     if (!st.alive || !IsGun(w)) return;
     if (unlimited) {
-        if (infinite.active && infinite.ped != st.ped) InfiniteRelease();
-        infinite.active = true;
-        infinite.ped = st.ped;
         int max = 0;
         if (n::GET_MAX_AMMO(st.ped, w, &max) && max > 0 && total < max) {
             n::SET_PED_AMMO(st.ped, w, max, 0);
@@ -335,7 +320,6 @@ void WeaponsTick() {
 
 void WeaponsOff() {
     RestoreAll();
-    InfiniteRelease();
     seen = Seen{};
 }
 
