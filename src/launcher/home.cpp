@@ -127,7 +127,7 @@ void Home::Draw() {
 namespace {
 
 const char* const kHelpEmail = "ion_fiber94@tutamail.com";
-const char* const kDiscordUrl = "";
+const char* const kDiscordUrl = "https://discord.gg/vsyAbTkvRm";
 const char* const kWebsiteUrl = "";
 
 struct Faq {
